@@ -145,7 +145,7 @@ class IcebertModel(RobertaModel):
 
         if classification_head_name is not None:
             features_only = True
-        x, extra = self.decoder(src_tokens, features_only, return_all_hiddens, **kwargs)
+        x, extra = self.encoder(src_tokens, features_only, return_all_hiddens, **kwargs)
 
         if classification_head_name is not None:
             x = self.classification_heads[classification_head_name](x, **kwargs)
@@ -346,10 +346,14 @@ class IcebertHubInterface(RobertaHubInterface):
         # TODO, remove hard coding
         num_labels = 61
 
+        labels = []
+
         for wc, sc_labels in zip(wc_pred[0], bin_pred[0]):
             word_vec = [wc] + sc_labels
             one_hot_word = F.one_hot(torch.tensor(word_vec), num_labels)
-            return vec2idf(one_hot_word)
+            labels.append(vec2idf(one_hot_word))
+
+        return labels[:-1]
 
 
 @register_model_architecture("icebert", "icebert")

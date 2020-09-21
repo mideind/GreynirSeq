@@ -11,7 +11,7 @@ ENCODER_JSON_PATH='/home/vesteinn/icebert-base-36k/icebert-bpe-vocab.json'
 VOCAB_BPE_PATH='/home/vesteinn/icebert-base-36k/icebert-bpe-merges.txt'
 CRITERION=multi_label_idf
 
-for ITERATION in 06 07 08 09 10
+for ITERATION in 01 02 03 04 05 06 07 08 09 10
 do
     NAME=multilabel_split_$ITERATION
     

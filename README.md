@@ -19,6 +19,19 @@ GreynirSeq is licensed under the MIT license unless otherwise stated.
 * Simple Docker setup to serve models
 * NER pre and post processing for NMT corpuses
 
+## Neural Icelandic Language Processing - NIceNLP
+
+### IceBERT
+
+IceBERT is an Icelandic language model.
+
+The following fine tuning tasks are available
+
+0. Fill Mask - IceBERT without fine tuning
+1. [POS tagging](src/greynirseq/nicenlp/examples/pos/README.md)
+2. NER tagging
+3. Constituency tagging
+
 ## Installation
 
 To install GreynirSeq in development mode add the `-e` as shown below

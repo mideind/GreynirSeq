@@ -41,10 +41,10 @@ do
         python -m multiprocessing_bpe_encoder \
             --encoder-json $ENCODER_JSON_PATH \
             --vocab-bpe $VOCAB_BPE_PATH \
-	    --inputs $SPLIT_PATH/$SPLIT.input0 \
-	    --outputs $SPLIT_PATH/$SPLIT.input0.bpe \
-	    --workers 60 \
-	    --keep-empty
+            --inputs $SPLIT_PATH/$SPLIT.input0 \
+            --outputs $SPLIT_PATH/$SPLIT.input0.bpe \
+            --workers 60 \
+            --keep-empty
     done
     
     fairseq-preprocess \
