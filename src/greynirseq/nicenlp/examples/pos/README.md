@@ -10,7 +10,7 @@ See `./train.sh` which trains all ten sets for crossvalidation.
 
 ### Simple inference
 
-Point the model class to the checkpoint (any of the splits) and auxiliary data as e.g.
+Point the model class to the checkpoint (any of the splits or an averaged checkpoint) and auxiliary data as e.g.
 
 ```python
 from greynirseq.nicenlp.models.icebert import IcebertModel
