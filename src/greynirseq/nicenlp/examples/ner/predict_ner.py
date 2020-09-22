@@ -7,7 +7,7 @@ from greynirseq.nicenlp.data.datasets import *
 from greynirseq.nicenlp.models.multi_span_model import *
 from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
 from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
-from greynirseq.utils.ner import EvalNER
+from greynirseq.ner.utils.ner_f1_stats import EvalNER
 from greynirseq.nicenlp.utils.greynir.greynir_utils import Node
 import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
 

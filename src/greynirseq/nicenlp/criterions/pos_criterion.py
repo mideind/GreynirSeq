@@ -16,7 +16,7 @@ try:
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
-from greynirseq.utils.ner import EvalNER
+from greynirseq.ner.ner_f1_stats import EvalNER
 import greynirseq.nicenlp.utils.greynir.greynir_utils as greynir_utils
 
 import pyximport

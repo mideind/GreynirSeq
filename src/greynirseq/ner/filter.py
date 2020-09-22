@@ -86,7 +86,7 @@ BASE_STATS = {
 }
 
 
-class EvalNerTrans:
+class ParallelNER:
     lang_1 = None
     lang_2 = None
 
@@ -96,9 +96,9 @@ class EvalNerTrans:
         dataset: copy.copy(BASE_STATS) for dataset in DATASETS
     }
 
-    neer_hist_1 = defaultdict(int)
-    neer_hist_2 = defaultdict(int)
-    neer_pair_hist = defaultdict(int)
+    ner_hist_1 = defaultdict(int)
+    ner_hist_2 = defaultdict(int)
+    ner_pair_hist = defaultdict(int)
 
     default_mode = 'is'
     provenance_sets = {
@@ -231,7 +231,7 @@ class EvalNerTrans:
         )
         self.print_data_file.writelines(output)
 
-    def parse_files(self, pause=False, print_data=None):
+    def parse_files(self, print_data=None):
         with open(self.lang_1) as lang_1, open(self.lang_2) as lang_2:
             for l1, l2 in tqdm.tqdm(zip(lang_1, lang_2)):
                 p1 = self.parse_line(l1)
@@ -241,11 +241,9 @@ class EvalNerTrans:
 
                 if print_data is not None:
                     self.print_line(p1, p2, pair_info, print_data)
-
-                if pause:
-                    print(p1)
-                    print(p2)
-                    input("Press any key for next pair")
+                else:
+                    yield p1, p2, pair_info
+             
 
     def parse_pair(self, p1, p2):
         try:
@@ -267,9 +265,9 @@ class EvalNerTrans:
         pers2 = [" ".join(p2[0].split()[t[0]:t[1]]).lower() for t in tags2]
 
         for per in pers1:
-            self.neer_hist_1[per] += 1
+            self.ner_hist_1[per] += 1
         for per in pers2:
-            self.neer_hist_2[per] += 1
+            self.ner_hist_2[per] += 1
 
         pair_map = []
 
@@ -279,7 +277,7 @@ class EvalNerTrans:
             if hits:
                 for hit in hits:
                     text_1, text_2, loc_1, loc_2, distance = hit
-                    self.neer_pair_hist["{}\t{}\t{}\t{}".format(
+                    self.ner_pair_hist["{}\t{}\t{}\t{}".format(
                         text_1,
                         text_2,
                         text_1 == text_2,
@@ -338,13 +336,13 @@ class EvalNerTrans:
                 of.writelines("{}\t{}\n".format(k, v))
 
     def write_ner_hist(self, hist_file1, hist_file2, hist_file_pair):
-        self._write_ner_hist(hist_file1, self.neer_hist_1)
-        self._write_ner_hist(hist_file2, self.neer_hist_2)
-        self._write_ner_hist(hist_file_pair, self.neer_pair_hist)
+        self._write_ner_hist(hist_file1, self.ner_hist_1)
+        self._write_ner_hist(hist_file2, self.ner_hist_2)
+        self._write_ner_hist(hist_file_pair, self.ner_pair_hist)
         
         
 def main():
-    eval_ner = EvalNerTrans(
+    eval_ner = ParallelNER(
         '/data/datasets/parice_ner_mideind_set/en-is.train.en.huggingface.spacy.ner',
         '/data/datasets/parice_ner_mideind_set/en-is.train.is.ner'
     )
