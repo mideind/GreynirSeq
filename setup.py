@@ -5,5 +5,5 @@ setup(
     description='Natural language processing for Icelandic, using fairseq',
     version='0.01',
     package_dir={'': 'src'},
-    packages=['greynirseq']
+    packages=find_packages(where='src')
 )

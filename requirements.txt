@@ -82,4 +82,6 @@ Werkzeug==1.0.1
 wrapt==1.12.1
 zipp==3.1.0
 Flask-Cors==3.0.9
-reynir
+reynir==2.5.0
+spacy==2.3.2
+scipy==1.5.2
