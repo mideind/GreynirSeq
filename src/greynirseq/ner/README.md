@@ -86,7 +86,6 @@ python patcher.py --input testdata/en_is.pos.tsv --output testdata/en_is.synth.t
 which outputs
 
 ```
-Sigríður Einarsdóttir was visited by Ingvar Blöndal .	Ingvar Blöndal fór í heimsókn til Sigríðar Einarsdóttur .
-Sigríður got a gift from Ingvar , Jón and Jón Jónsson .	Sigríður fékk gjöf frá Jóni Jónssyni , Ingvari og Jóni .
+Jón was visited by Sigríður .	Sigríður fór í heimsókn til Jóns .
+Sigga got a gift from Bubbi Morthens , Ingvar and Jón .	Sigga fékk gjöf frá Jóni , Bubba Morthens og Ingvari .
 ```
-

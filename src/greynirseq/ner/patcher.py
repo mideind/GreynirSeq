@@ -150,11 +150,11 @@ def main():
     with open(args.input) as sentence_file:
         for line in sentence_file.readlines():
             en_sent, is_sent = line.strip().split('\t')
-            is_sent, en_sent = parse_sentence_pair(is_sent, en_sent)
+            en_sent, is_sent = parse_sentence_pair(en_sent, is_sent)
 
             names = []
 
-            for segment in is_sent:
+            for segment in en_sent:
                 if segment["ner"] is not None:
                     try:
                         gen, kasus = idf2kasus(segment["pos"])
