@@ -1,9 +1,10 @@
+import argparse
 import os
 import re
 
-from greynirseq.ner.filter import ParallelNER
+from greynirseq.ner.aligner import ParallelNER
 from greynirseq.nicenlp.models.icebert import IcebertModel
-from greynirseq.settings import MODEL_DIR, DATASET_DIR
+from greynirseq.settings import IceBERT_POS_PATH, IceBERT_POS_CONFIG
 
 from reynir import NounPhrase
 
@@ -45,22 +46,25 @@ def tag_ner_pair(pos_model, p1, p2, pair_info, max_distance=1):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--is_ent')
+    parser.add_argument('--en_ent')
+    parser.add_argument('--output')
+    args = parser.parse_args()
 
     pos_model = IcebertModel.from_pretrained(
-        os.path.join(MODEL_DIR, 'icebert_pos'),
-        checkpoint_file='checkpoint_last.pt',
-        gpt2_encoder_json=os.path.join(MODEL_DIR, 'icebert-base-36k/icebert-bpe-vocab.json'),  
-        gpt2_vocab_bpe=os.path.join(MODEL_DIR, 'icebert-base-36k/icebert-bpe-merges.txt'),
+        IceBERT_POS_PATH,
+        **IceBERT_POS_CONFIG
     )
     pos_model.to('cuda')
     pos_model.eval()
 
     eval_ner = ParallelNER(
-        os.path.join(DATASET_DIR, 'parice_ner_mideind_set/en-is.train.en.huggingface.spacy.ner'),
-        os.path.join(DATASET_DIR, 'parice_ner_mideind_set/en-is.train.is.ner')
+        args.en_ent,
+        args.is_ent
     )
-    with open('/tmp/pos_patch_ner.tsv', 'w') as ofile:
-        for p1, p2, pair_info in eval_ner.parse_files():
+    with open(args.output, 'w') as ofile:
+        for p1, p2, pair_info in eval_ner.parse_files_gen():
             if pair_info['pair_map']:
                 en_sent, is_sent = tag_ner_pair(pos_model, p1, p2, pair_info, max_distance=0.9)
                 if en_sent is not None:

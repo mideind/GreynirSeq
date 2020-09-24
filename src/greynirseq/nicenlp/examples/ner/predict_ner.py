@@ -31,7 +31,7 @@ batch_size = 1
 
 eval_ner = EvalNER(model)
 
-for dataset_offset in range(dataset_size): #np.random.randint(0, dataset_size, 100):
+for dataset_offset in range(dataset_size):
     start = time.time()
     sample = dataset.collater([dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)])
     ntokens = sample["net_input"]["nsrc_tokens"]
@@ -44,7 +44,7 @@ for dataset_offset in range(dataset_size): #np.random.randint(0, dataset_size, 1
         sentences,
         device="cpu"
     )
-    eval_ner.compare(res[0], pred_cats)
+    eval_ner.compare(pred_cats, target_cats)
     eval_ner.print_all_stats()
 
  

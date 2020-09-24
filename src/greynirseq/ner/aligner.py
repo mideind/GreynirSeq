@@ -1,3 +1,4 @@
+import argparse
 import copy
 import re
 import spacy
@@ -231,19 +232,23 @@ class ParallelNER:
         )
         self.print_data_file.writelines(output)
 
-    def parse_files(self, print_data=None):
+    def parse_files(self, print_data):
         with open(self.lang_1) as lang_1, open(self.lang_2) as lang_2:
             for l1, l2 in tqdm.tqdm(zip(lang_1, lang_2)):
                 p1 = self.parse_line(l1)
                 p2 = self.parse_line(l2)
                 pair_info = self.parse_pair(p1, p2)
                 self.update_stats(pair_info)
+                self.print_line(p1, p2, pair_info, print_data)
 
-                if print_data is not None:
-                    self.print_line(p1, p2, pair_info, print_data)
-                else:
-                    yield p1, p2, pair_info
-             
+    def parse_files_gen(self):
+        with open(self.lang_1) as lang_1, open(self.lang_2) as lang_2:
+            for l1, l2 in tqdm.tqdm(zip(lang_1, lang_2)):
+                p1 = self.parse_line(l1)
+                p2 = self.parse_line(l2)
+                pair_info = self.parse_pair(p1, p2)
+                self.update_stats(pair_info)
+                yield p1, p2, pair_info
 
     def parse_pair(self, p1, p2):
         try:
@@ -342,15 +347,28 @@ class ParallelNER:
         
         
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--is_ent')
+    parser.add_argument('--en_ent')
+    parser.add_argument('--output')
+    parser.add_argument('--provenance', type=bool, default=False)
+    parser.add_argument('--name_histograms', type=bool, default=False)
+
+    args = parser.parse_args()
+
     eval_ner = ParallelNER(
-        '/data/datasets/parice_ner_mideind_set/en-is.train.en.huggingface.spacy.ner',
-        '/data/datasets/parice_ner_mideind_set/en-is.train.is.ner'
+        args.en_ent,
+        args.is_ent
     )
-    eval_ner.load_provenance()
-    eval_ner.parse_files(print_data="en-is.train.ner.tsv")
-    eval_ner.print_stats()
-    
-    #eval_ner.write_ner_hist('en-is.train.en.hist.ner', 'en-is.train.is.hist.ner', 'en-is.train.pair.hist.ner')
+
+    if args.provenance:
+        eval_ner.load_provenance()
+        eval_ner.print_stats()
+
+    eval_ner.parse_files(print_data=args.output)
+
+    if args.name_histograms:   
+        eval_ner.write_ner_hist('en.hist.ner', 'is.hist.ner', 'en-is.hist.ner')
 
 
 if __name__ == "__main__":

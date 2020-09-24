@@ -1,12 +1,11 @@
+import argparse
 import os
 import random
 import re
 
 from collections import defaultdict
 
-from greynirseq.ner.filter import ParallelNER
-from greynirseq.nicenlp.models.icebert import IcebertModel
-from greynirseq.settings import MODEL_DIR, DATASET_DIR
+from greynirseq.ner.aligner import ParallelNER
 
 from reynir import NounPhrase
 
@@ -15,7 +14,7 @@ NER_PATTERN = "<\s*e:([0-9]):([^:]*):>([^>]*?)<\s*/\s*e[0-9]+>"
 
 def parse_sentence(sentence):
     # Parses sentence of form
-    # A dog is named <e0 pos="">Doug Cat</e0> .
+    # A dog is named <e:0:asd:>Doug Cat</e0> .
     # into a list of dictionaries
     # [..., {"ner": 0, "text": "Doug Cat", "pos": ""}, ...]
     
@@ -111,6 +110,12 @@ def patch_sentence(sentence, names, force=None):
 
 def main():
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input')
+    parser.add_argument('--output')
+    parser.add_argument('--names')
+    args = parser.parse_args()
+
     # We fill sentences with random names until all names have been
     # used in all declentions.
     
@@ -127,7 +132,7 @@ def main():
         "e": set()
     }
 
-    with open("/data/datasets/NER/greynir_persons_20200923.tsv") as names_file:
+    with open(args.names) as names_file:
         for line in names_file.readlines():
             gen, name = line.strip().split('\t')
             if gen == "kvk":
@@ -141,7 +146,8 @@ def main():
                     first_name = name.split()[0]
                     masc_names[k].add(first_name)
 
-    with open("/tmp/pos_patch_ner.tsv") as sentence_file:
+    ofile = open(args.output, 'w')
+    with open(args.input) as sentence_file:
         for line in sentence_file.readlines():
             en_sent, is_sent = line.strip().split('\t')
             is_sent, en_sent = parse_sentence_pair(is_sent, en_sent)
@@ -154,8 +160,8 @@ def main():
                         gen, kasus = idf2kasus(segment["pos"])
                     except TypeError:
                         continue
-
-                    if gen == k:
+                    
+                    if gen == 'v':
                         name = random.sample(fem_names[kasus], 1)[0]
                         fem_names[kasus].remove(name)
                     else:
@@ -167,8 +173,8 @@ def main():
             if patch_sent_is is None:
                 continue
             patch_sent_en = patch_sentence(en_sent, names, force="n")
-            print("{}\t{}\t".format(patch_sent_en, patch_sent_is))
-
+            ofile.writelines("{}\t{}\n".format(patch_sent_en, patch_sent_is))
+    ofile.close()
 
 
 if __name__ == "__main__":
