@@ -6,8 +6,9 @@ import re
 from collections import defaultdict
 
 from greynirseq.ner.aligner import ParallelNER
-
 from reynir import NounPhrase
+
+import tqdm
 
 NER_PATTERN = "<\s*e:([0-9]):([^:]*):>([^>]*?)<\s*/\s*e[0-9]+>"
 
@@ -148,7 +149,7 @@ def main():
 
     ofile = open(args.output, 'w')
     with open(args.input) as sentence_file:
-        for line in sentence_file.readlines():
+        for line in tqdm.tqdm(sentence_file.readlines()):
             en_sent, is_sent = line.strip().split('\t')
             en_sent, is_sent = parse_sentence_pair(en_sent, is_sent)
 
