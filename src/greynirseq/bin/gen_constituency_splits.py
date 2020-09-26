@@ -3,13 +3,14 @@ from pathlib import Path
 
 try:
     from icecream import ic
+
     ic.configureOutput(includeContext=True)
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
 
 def main(basedir, destdir, train_size=None, valid_size=None, test_size=None):
-    train_size = (train_size or -1)
+    train_size = train_size or -1
     if train_size < 0:
         train_size = sys.maxsize
 
@@ -33,13 +34,17 @@ def main(basedir, destdir, train_size=None, valid_size=None, test_size=None):
         with open(path, "r") as fp_in:
             lines = fp_in.readlines()
         for split_name, split_size in splits.items():
-            with open(destdir / ("{0}.{1}.txt".format(split_name, content_type)), "w") as fp_out:
+            with open(
+                destdir / ("{0}.{1}.txt".format(split_name, content_type)), "w"
+            ) as fp_out:
                 out_lines = lines[:split_size]
                 lines = lines[split_size:]
                 fp_out.write("".join(out_lines))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
+
     try:
         import argcomplete
     except ImportError as e:
@@ -83,4 +88,10 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
-    main(Path(args.BASE), Path(args.DEST), args.train_size, args.valid_size, args.test_size)
+    main(
+        Path(args.BASE),
+        Path(args.DEST),
+        args.train_size,
+        args.valid_size,
+        args.test_size,
+    )

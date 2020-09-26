@@ -12,7 +12,7 @@ class LookupDataset(BaseWrapperDataset):
     def __getitem__(self, index):
         indexes = [
             self.lookup_dictionary.get(int(v), self.default)
-            for v in self.dataset[index]  #[:-1]
+            for v in self.dataset[index]  # [:-1]
         ]
         if self.label_first:
             indexes[0] = self.default

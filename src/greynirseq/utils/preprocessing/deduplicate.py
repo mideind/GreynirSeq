@@ -9,7 +9,9 @@ from tokenizers import ByteLevelBPETokenizer
 
 
 class Corpus:
-    def __init__(self, files, max_lines, min_lines, max_bpe_length, merge_file, vocab_file):
+    def __init__(
+        self, files, max_lines, min_lines, max_bpe_length, merge_file, vocab_file
+    ):
         self.files = files
         self.pg_hashes = set()
         self.line_hashes = {i: set() for i in range(min_lines, max_lines + 1)}
@@ -18,13 +20,10 @@ class Corpus:
         self.min_lines = min_lines
         self.max_bpe_length = max_bpe_length
 
-        self.bpe_tokenizer = self.load_tokenizer(merge_file, vocab_file) 
+        self.bpe_tokenizer = self.load_tokenizer(merge_file, vocab_file)
 
     def load_tokenizer(self, merge_file, vocab_file):
-        return ByteLevelBPETokenizer(
-            merges_file=merge_file,
-            vocab_file=vocab_file
-        )
+        return ByteLevelBPETokenizer(merges_file=merge_file, vocab_file=vocab_file)
 
     @classmethod
     def hash(cls, text):
@@ -40,7 +39,7 @@ class Corpus:
     def add_pg_to_line_hashes(self, sentences):
         for wsz in range(self.min_lines, self.max_lines + 1):
             for i in range(0, len(sentences) + 1 - wsz):
-                window = " ".join(sentences[i * wsz: (i + 1) * wsz])
+                window = " ".join(sentences[i * wsz : (i + 1) * wsz])
                 wdw_hash = self.hash(window)
                 self.line_hashes[wsz].add(wdw_hash)
 
@@ -61,7 +60,7 @@ class Corpus:
                 if idx + j > n_sentences:
                     continue
 
-                sentence_batch = " ".join(sentences[idx: idx + j])
+                sentence_batch = " ".join(sentences[idx : idx + j])
                 sh = self.hash(sentence_batch)
                 if sh in self.line_hashes[j]:
                     idx += j
@@ -76,7 +75,7 @@ class Corpus:
         if n_pg:
             self.add_pg_to_line_hashes(sentences)
 
-        return "\n".join(n_pg) 
+        return "\n".join(n_pg)
 
     def deduplicate_file(self, f, of):
         line = f.readline()
@@ -86,10 +85,10 @@ class Corpus:
                 pg += line
                 line = f.readline()
             line = f.readline()
-            
+
             if not self.is_new_pg(pg):
                 continue
-            
+
             pg = self.clean_pg(pg)
 
             of.writelines(pg)
@@ -104,13 +103,13 @@ class Corpus:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--bpe-merges')
-    parser.add_argument('--bpe-vocab')
-    parser.add_argument('--max-sentences', type=int)
-    parser.add_argument('--min-sentences', type=int)
-    parser.add_argument('--max-bpe-length', type=int, default=512)
-    parser.add_argument('--output')
-    parser.add_argument('files', type=argparse.FileType('r'), nargs='+')
+    parser.add_argument("--bpe-merges")
+    parser.add_argument("--bpe-vocab")
+    parser.add_argument("--max-sentences", type=int)
+    parser.add_argument("--min-sentences", type=int)
+    parser.add_argument("--max-bpe-length", type=int, default=512)
+    parser.add_argument("--output")
+    parser.add_argument("files", type=argparse.FileType("r"), nargs="+")
     args = parser.parse_args()
 
     corpus = Corpus(
@@ -119,10 +118,10 @@ def main():
         args.min_sentences,
         args.max_bpe_length,
         args.bpe_merges,
-        args.bpe_vocab
+        args.bpe_vocab,
     )
     corpus.deduplicate(args.output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

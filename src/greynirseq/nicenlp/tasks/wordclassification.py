@@ -67,16 +67,20 @@ class WordPredictionTask(SentencePredictionTask):
     @classmethod
     def setup_task(cls, args, **kwargs):
         data_dict = cls.load_dictionary(
-            args, os.path.join(args.data, "input0", "dict.txt"), source=True,
+            args,
+            os.path.join(args.data, "input0", "dict.txt"),
+            source=True,
         )
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
 
         label_dict = cls.load_label_dictionary(
-            args, os.path.join(args.data, "labels0", "dict.txt"), source=False,
+            args,
+            os.path.join(args.data, "labels0", "dict.txt"),
+            source=False,
         )
         logger.info("[label] dictionary: {} types".format(len(label_dict)))
         is_word_begin = cls.get_word_beginnings(args, data_dict)
-        
+
         return WordPredictionTask(args, data_dict, label_dict, is_word_begin)
 
     @classmethod
@@ -94,13 +98,13 @@ class WordPredictionTask(SentencePredictionTask):
         if bpe is not None:
 
             # Punctuation is BOW ?
-            bow_ids = bpe.encode('.,:;').split()
+            bow_ids = bpe.encode(".,:;").split()
 
             def is_beginning_of_word(i):
                 if i < dictionary.nspecial:
                     return True
                 tok = dictionary[i]
-                #if tok in bow_ids:
+                # if tok in bow_ids:
                 #    return True
                 if tok.startswith("madeupword"):
                     return True
@@ -116,18 +120,28 @@ class WordPredictionTask(SentencePredictionTask):
         return None
 
     def debug_dataset(self, dataset, idx):
-        ni = dataset['net_input']
-        src_tokens = ni['src_tokens']
-        src_spans = ni['src_spans']
-        target = dataset['target'][idx]
-        debug_data = [self.bpe.decode(self.dictionary.symbols[v.item()]) for v in src_tokens[idx][:-1]]  # Need to unpad
-        debug_data_tar = [self.label_dictionary.symbols[v.item()] for v in target if v>-1] 
-        print(''.join(debug_data))
+        ni = dataset["net_input"]
+        src_tokens = ni["src_tokens"]
+        src_spans = ni["src_spans"]
+        target = dataset["target"][idx]
+        debug_data = [
+            self.bpe.decode(self.dictionary.symbols[v.item()])
+            for v in src_tokens[idx][:-1]
+        ]  # Need to unpad
+        debug_data_tar = [
+            self.label_dictionary.symbols[v.item()] for v in target if v > -1
+        ]
+        print("".join(debug_data))
         print(debug_data)
         print(src_tokens[idx], src_tokens[idx].shape)
         print(src_spans[idx], src_tokens[idx].shape)
         print(debug_data_tar)
-        print([(x, y.tolist(), z.item()) for x, y, z in zip(debug_data, src_tokens[idx], src_spans[idx])])
+        print(
+            [
+                (x, y.tolist(), z.item())
+                for x, y, z in zip(debug_data, src_tokens[idx], src_spans[idx])
+            ]
+        )
         print(target, target.shape)
 
     def load_dataset(self, split, combine=False, **kwargs):
@@ -140,7 +154,9 @@ class WordPredictionTask(SentencePredictionTask):
             split_path = get_path(type, split)
 
             dataset = data_utils.load_indexed_dataset(
-                split_path, dictionary, combine=combine,
+                split_path,
+                dictionary,
+                combine=combine,
             )
             return dataset
 
@@ -163,15 +179,16 @@ class WordPredictionTask(SentencePredictionTask):
         mutex_binary_labels = MutexBinaryDataset(
             labels,
             num_mutex_classes=self.args.num_classes_mutex,
-            skip_n=self.label_dictionary.nspecial, #+ 1,  # Add one to count label ?
-            separator=self.span_separator
+            skip_n=self.label_dictionary.nspecial,  # + 1,  # Add one to count label ?
+            separator=self.span_separator,
         )
 
         dataset = {
             "id": IdDataset(),
             "net_input": {
                 "src_tokens": RightPadDataset(
-                    src_tokens, pad_idx=self.source_dictionary.pad(),
+                    src_tokens,
+                    pad_idx=self.source_dictionary.pad(),
                 ),
                 "src_spans": RightPadDataset(
                     LookupDataset(src_tokens, self.is_word_begin),
@@ -180,22 +197,29 @@ class WordPredictionTask(SentencePredictionTask):
                 "nspans": NumelDataset(mutex_binary_labels),
             },
             "target": RightPadDataset(
-                mutex_binary_labels, pad_idx=self.label_dictionary.pad(),
+                mutex_binary_labels,
+                pad_idx=self.label_dictionary.pad(),
             ),
             "ntargets": NumelDataset(labels, reduce=True),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
         }
 
-        #self.debug_dataset(dataset, 5)
-        #import pdb; pdb.set_trace()
+        # self.debug_dataset(dataset, 5)
+        # import pdb; pdb.set_trace()
 
-        nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes],)
+        nested_dataset = NestedDictionaryDatasetFix(
+            dataset,
+            sizes=[src_tokens.sizes],
+        )
 
         if self.args.no_shuffle:
             dataset = nested_dataset
         else:
-            dataset = SortDataset(nested_dataset, sort_order=[shuffle],)
+            dataset = SortDataset(
+                nested_dataset,
+                sort_order=[shuffle],
+            )
 
         logger.info("Loaded {0} with #samples: {1}".format(split, len(dataset)))
 
@@ -219,7 +243,7 @@ class WordPredictionTask(SentencePredictionTask):
         model.register_classification_head(
             "multi_label_word_classification",
             num_classes_mutex=num_classes_mutex,
-            num_classes_binary=num_classes_binary
+            num_classes_binary=num_classes_binary,
         )
 
         return model

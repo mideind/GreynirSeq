@@ -20,6 +20,7 @@ from greynirseq.ner.ner_f1_stats import EvalNER
 import greynirseq.nicenlp.utils.greynir.greynir_utils as greynir_utils
 
 import pyximport
+
 pyximport.install()
 import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
 
@@ -74,7 +75,7 @@ class POSCriterion(FairseqCriterion):
 
             (ao does not allow empty in annotald)
         """
-        label_shift  = self.task.label_dictionary.nspecial
+        label_shift = self.task.label_dictionary.nspecial
         label_schema = self.task.label_schema
         pad_idx = self.task.label_dictionary.pad()
         group_names = label_schema.group_name_to_labels.keys()
@@ -88,27 +89,25 @@ class POSCriterion(FairseqCriterion):
             for gname in group_names
         }
 
-        cat_target_to_vec_idx = target_cats.new_empty(len(self.task.label_dictionary)).fill_(
-            len(self.task.label_dictionary) - 1
-        )
+        cat_target_to_vec_idx = target_cats.new_empty(
+            len(self.task.label_dictionary)
+        ).fill_(len(self.task.label_dictionary) - 1)
         for vec_idx, lbl in enumerate(label_schema.label_categories):
             cat_target_to_vec_idx[self.task.label_dictionary.index(lbl)] = vec_idx
 
         target_padding_mask = target_cats.ne(pad_idx)
         target_cats_flat = target_cats[target_padding_mask]
 
-        flat_mask_no_bos = targets_to_flat_mask_no_bos(
-            target_cats, pad_idx
-        ).unsqueeze(-1)
+        flat_mask_no_bos = targets_to_flat_mask_no_bos(target_cats, pad_idx).unsqueeze(
+            -1
+        )
 
         pred_flat = cat_logits.masked_select(flat_mask_no_bos).reshape(
             -1, self.task.num_cats
         )
         mapped_target_cats_flat = cat_target_to_vec_idx[target_cats_flat]
         # TODO: use weights?
-        cat_loss = F.cross_entropy(
-            pred_flat, mapped_target_cats_flat, reduction="sum"
-        )
+        cat_loss = F.cross_entropy(pred_flat, mapped_target_cats_flat, reduction="sum")
 
         target_attrs_flat = target_attrs.masked_select(
             target_padding_mask.unsqueeze(-1)
@@ -122,21 +121,25 @@ class POSCriterion(FairseqCriterion):
             # we want fixed iteration order of group names
             mapped_group_idxs = group_name_to_mapped_vec_idxs[group_name]
             group_targets = target_attrs_flat[:, mapped_group_idxs].max(dim=-1)[1]
-            group_target_mask = target_attrs_flat[:, mapped_group_idxs].bool().any(dim=-1)
+            group_target_mask = (
+                target_attrs_flat[:, mapped_group_idxs].bool().any(dim=-1)
+            )
             group_logits = attr_logits[:, mapped_group_idxs]
             if len(mapped_group_idxs) == 1:
                 group_loss = F.binary_cross_entropy_with_logits(
                     group_logits.squeeze(-1),
                     group_targets.type_as(attr_logits),
-                    reduction="none"
+                    reduction="none",
                 )
             else:
-                group_loss = F.cross_entropy(group_logits, group_targets, reduction="none")
+                group_loss = F.cross_entropy(
+                    group_logits, group_targets, reduction="none"
+                )
 
             group_losses.append(group_loss * group_target_mask.type_as(group_loss))
             correct = (group_logits.max(dim=-1)[1] == group_targets) * group_target_mask
             ignore_mask = group_target_mask.bool().bitwise_not()
-            correct_attrs *= (ignore_mask + correct.bool())
+            correct_attrs *= ignore_mask + correct.bool()
 
         # group_losses after:  (bsz * words) x group
         group_losses = torch.stack(group_losses, dim=1)

@@ -240,21 +240,21 @@ class IcebertHubInterface(RobertaHubInterface):
                         wc_true = ["{:>2s}".format(foo) for foo in wc_true]
                         scpr = scpr[: len(sc_true)]
 
-                        #print("-----")
-                        #print(sent)
-                        #print("Pred:\t{}".format(" ".join(pr)))
-                        #print("True:\t{}".format(" ".join(wc_true)))
+                        # print("-----")
+                        # print(sent)
+                        # print("Pred:\t{}".format(" ".join(pr)))
+                        # print("True:\t{}".format(" ".join(wc_true)))
 
-                        #print(
+                        # print(
                         #    "Sub pred:\t{}".format(
                         #        " | ".join([" ".join(sc_pr) for sc_pr in scpr])
                         #    )
-                        #)
-                        #print(
+                        # )
+                        # print(
                         #    "Sub true:\t{}".format(
                         #        " | ".join([" ".join(sc) for sc in sc_true])
                         #    )
-                        #)
+                        # )
 
                         no_tokens = len(sc_true)
                         total += no_tokens

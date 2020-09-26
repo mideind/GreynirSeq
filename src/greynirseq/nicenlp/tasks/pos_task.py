@@ -52,8 +52,15 @@ logger = logging.getLogger(__name__)
 def parse_label_schema(path):
     LabelSchema = namedtuple(
         "LabelSchema",
-        ["labels", "group_name_to_labels", "label_categories", "category_to_group_names",
-         "separator", "group_names", "null", "null_leaf"
+        [
+            "labels",
+            "group_name_to_labels",
+            "label_categories",
+            "category_to_group_names",
+            "separator",
+            "group_names",
+            "null",
+            "null_leaf",
         ],
     )
     with open(path, "r") as fp:
@@ -110,7 +117,9 @@ class POSTask(FairseqTask):
         super().__init__(args)
         self.dictionary = data_dictionary
         self._label_dictionary = label_dictionary
-        self._label_dictionary.sep = lambda : self._label_dictionary.index(label_schema.separator)
+        self._label_dictionary.sep = lambda: self._label_dictionary.index(
+            label_schema.separator
+        )
         assert self._label_dictionary.index("<mask>") == self._label_dictionary.unk()
         assert self._label_dictionary.sep() != self._label_dictionary.unk()
         if not hasattr(args, "max_positions"):
@@ -131,7 +140,9 @@ class POSTask(FairseqTask):
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
 
         is_word_initial = cls.get_word_beginnings(args, data_dict)
-        term_dict = cls.load_dictionary(args, os.path.join(args.data, "dict_term.txt"), add_mask=False)
+        term_dict = cls.load_dictionary(
+            args, os.path.join(args.data, "dict_term.txt"), add_mask=False
+        )
 
         # label_dict, label_schema = cls.load_label_dictionary(args, args.term_schema)
         _, label_schema = cls.load_label_dictionary(args, args.term_schema)
@@ -142,15 +153,15 @@ class POSTask(FairseqTask):
             exists = lbl in label_schema.labels
             seen.add(lbl)
             if not exists and idx > term_dict.nspecial and lbl != "<mask>":
-                assert False, "Unexpected POS label item in term_dict.txt: {}".format(lbl)
+                assert False, "Unexpected POS label item in term_dict.txt: {}".format(
+                    lbl
+                )
         for lbl in label_schema.labels:
             if lbl in seen:
                 continue
             assert False, "Unexpected POS label item in label_schema {}".format(lbl)
 
-        return POSTask(
-            args, data_dict, term_dict, is_word_initial, label_schema
-        )
+        return POSTask(args, data_dict, term_dict, is_word_initial, label_schema)
 
     @classmethod
     def load_label_dictionary(cls, args, filename, **kwargs):
@@ -220,9 +231,7 @@ class POSTask(FairseqTask):
             self.args.dataset_impl,
             combine=combine,
         )
-        assert term_labels is not None, "could not find labels: {}".format(
-            targets_path
-        )
+        assert term_labels is not None, "could not find labels: {}".format(targets_path)
 
         term_cats, term_attrs = POSDataset.make_both(
             term_labels,
@@ -243,11 +252,14 @@ class POSTask(FairseqTask):
                 ),
                 "nsrc_tokens": NumelDataset(src_tokens),
                 "word_mask_w_bos": RightPadDataset(
-                    word_masks_w_bos, pad_idx=0,
+                    word_masks_w_bos,
+                    pad_idx=0,
                 ),
             },
-            "target_cats": RightPadDataset(term_cats, pad_idx=self.label_dictionary.pad()),
-            "target_attrs":RightPad2dDataset(term_attrs, pad_idx=0),
+            "target_cats": RightPadDataset(
+                term_cats, pad_idx=self.label_dictionary.pad()
+            ),
+            "target_attrs": RightPad2dDataset(term_attrs, pad_idx=0),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
             "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),

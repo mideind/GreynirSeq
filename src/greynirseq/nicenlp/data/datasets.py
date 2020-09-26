@@ -42,15 +42,22 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
     """
 
     @classmethod
-    def make_both(cls, dataset, label_dictionary, rebinarize_fn=None, seed=1
-    ):
+    def make_both(cls, dataset, label_dictionary, rebinarize_fn=None, seed=1):
         dataset = LRUCacheDataset(dataset)
         return (
             DynamicLabelledSpanDataset(
-                dataset, label_dictionary, return_spans=True, rebinarize_fn=rebinarize_fn, seed=seed
+                dataset,
+                label_dictionary,
+                return_spans=True,
+                rebinarize_fn=rebinarize_fn,
+                seed=seed,
             ),
             DynamicLabelledSpanDataset(
-                dataset, label_dictionary, return_spans=False, rebinarize_fn=rebinarize_fn, seed=seed
+                dataset,
+                label_dictionary,
+                return_spans=False,
+                rebinarize_fn=rebinarize_fn,
+                seed=seed,
             ),
         )
 
@@ -143,7 +150,7 @@ class SparseProductSpanDataset(BaseWrapperDataset):
 
 class ProductSpanDataset(BaseWrapperDataset):
     """Take in span starts and span ends as contiguous 1d tensor.
-       Return product spans, (starts x ends), as contiguous 1d tensor."""
+    Return product spans, (starts x ends), as contiguous 1d tensor."""
 
     def __init__(self, span_dataset, end_is_fence_post=True):
         super().__init__(span_dataset)
@@ -258,7 +265,14 @@ class POSDataset(BaseWrapperDataset):
 
 
 class WordEndMaskDataset(BaseWrapperDataset):
-    def __init__(self, dataset, is_word_initial, has_bos=True, include_bos=True, include_eos=False):
+    def __init__(
+        self,
+        dataset,
+        is_word_initial,
+        has_bos=True,
+        include_bos=True,
+        include_eos=False,
+    ):
         super().__init__(dataset)
         assert not (include_bos and not has_bos), "has_bos must be True for include_bos"
         self.is_word_initial = is_word_initial
@@ -287,13 +301,8 @@ class GroupMaskDataset(BaseWrapperDataset):
 
     def __getitem__(self, index):
         item = self.dataset[index]
-        assert all(
-            lbl_idx in self.group_masks for lbl_idx in item.tolist()
-        )
-        masks = torch.stack([
-            self.group_masks[lbl_idx]
-            for lbl_idx in item.tolist()
-        ])
+        assert all(lbl_idx in self.group_masks for lbl_idx in item.tolist())
+        masks = torch.stack([self.group_masks[lbl_idx] for lbl_idx in item.tolist()])
         return masks
 
 

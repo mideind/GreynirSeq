@@ -18,7 +18,7 @@ def parse_sentence(sentence):
     # A dog is named <e:0:asd:>Doug Cat</e0> .
     # into a list of dictionaries
     # [..., {"ner": 0, "text": "Doug Cat", "pos": ""}, ...]
-    
+
     parsed = []
     matches = re.finditer(NER_PATTERN, sentence)
 
@@ -26,9 +26,7 @@ def parse_sentence(sentence):
     for match in matches:
         start, end = match.span()
         if last_span < start:
-            parsed.append(
-                {"text": sentence[last_span:start], "ner": None, "pos": None}
-            )
+            parsed.append({"text": sentence[last_span:start], "ner": None, "pos": None})
         idx, pos, text = match.groups()
         parsed.append({"text": text, "ner": idx, "pos": pos})
 
@@ -36,9 +34,7 @@ def parse_sentence(sentence):
 
     if last_span != len(sentence):
         # Does not end with NER
-        parsed.append(
-            {"text": sentence[last_span:], "ner": None, "pos": None}
-        )
+        parsed.append({"text": sentence[last_span:], "ner": None, "pos": None})
     return parsed
 
 
@@ -51,7 +47,7 @@ def parse_sentence_pair(sentence_1, sentence_2):
 
     psent_1 = parse_sentence(sentence_1)
     psent_2 = parse_sentence(sentence_2)
-    
+
     for idx, segment in enumerate(psent_1):
         nidx = segment["ner"]
         if nidx is None:
@@ -60,27 +56,22 @@ def parse_sentence_pair(sentence_1, sentence_2):
             if segment_2["ner"] == nidx:
                 segment["oidx"] = oidx
                 segment_2["oidx"] = idx
-    
+
     return psent_1, psent_2
 
 
 def idf2kasus(idf_tag):
     # Only works for nouns
-    if idf_tag[0] != 'n':
+    if idf_tag[0] != "n":
         return None
-    
+
     gender = idf_tag[1]
     kasus = idf_tag[3]
     return gender, kasus
 
 
 def decline_np(phrase, idf_tag):
-    kasus_map = {
-        "n": "nominative",
-        "o": "accusative",
-        "þ": "dative",
-        "e": "genitive"
-    }
+    kasus_map = {"n": "nominative", "o": "accusative", "þ": "dative", "e": "genitive"}
     np = NounPhrase(phrase)
     return getattr(np, kasus_map[idf_tag])
 
@@ -112,30 +103,20 @@ def patch_sentence(sentence, names, force=None):
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input')
-    parser.add_argument('--output')
-    parser.add_argument('--names')
+    parser.add_argument("--input")
+    parser.add_argument("--output")
+    parser.add_argument("--names")
     args = parser.parse_args()
 
     # We fill sentences with random names until all names have been
     # used in all declentions.
-    
-    fem_names = {
-        "n": set(),
-        "o": set(),
-        "þ": set(),
-        "e": set()
-    }
-    masc_names = {
-        "n": set(),
-        "o": set(),
-        "þ": set(),
-        "e": set()
-    }
+
+    fem_names = {"n": set(), "o": set(), "þ": set(), "e": set()}
+    masc_names = {"n": set(), "o": set(), "þ": set(), "e": set()}
 
     with open(args.names) as names_file:
         for line in names_file.readlines():
-            gen, name = line.strip().split('\t')
+            gen, name = line.strip().split("\t")
             if gen == "kvk":
                 for k in fem_names:
                     fem_names[k].add(name)
@@ -147,10 +128,10 @@ def main():
                     first_name = name.split()[0]
                     masc_names[k].add(first_name)
 
-    ofile = open(args.output, 'w')
+    ofile = open(args.output, "w")
     with open(args.input) as sentence_file:
         for line in tqdm.tqdm(sentence_file.readlines()):
-            en_sent, is_sent = line.strip().split('\t')
+            en_sent, is_sent = line.strip().split("\t")
             en_sent, is_sent = parse_sentence_pair(en_sent, is_sent)
 
             names = []
@@ -161,8 +142,8 @@ def main():
                         gen, kasus = idf2kasus(segment["pos"])
                     except TypeError:
                         continue
-                    
-                    if gen == 'v':
+
+                    if gen == "v":
                         name = random.sample(fem_names[kasus], 1)[0]
                         fem_names[kasus].remove(name)
                     else:

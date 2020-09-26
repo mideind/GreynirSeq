@@ -27,6 +27,7 @@ ESCAPED_RPAREN = "\)"
 ESCAPED_LPAREN_PAT = re.compile("\\\\\(")
 ESCAPED_RPAREN_PAT = re.compile("\\\\\)")
 
+
 class Node:
     def __init__(self):
         self._span = None
@@ -127,6 +128,7 @@ class Node:
             text = ESCAPED_LPAREN_PAT.sub(HTML_LPAREN, text)
             text = ESCAPED_RPAREN_PAT.sub(HTML_RPAREN, text)
             return text
+
         def parse_nltk_tree(text):
             try:
                 nktree = nltk.Tree.fromstring(escape_parens(text))
@@ -139,7 +141,9 @@ class Node:
                     ic("skipping bad delimiter")
                     return None
                 ic(exc.args)
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
                 _ = 1 + 1
             except Exception as e:
                 ic()
@@ -151,6 +155,7 @@ class Node:
                 except Exception as e2:
                     ic()
                     import traceback
+
                     traceback.print_exc()
                     print(p.sub("", text))
                     return None
@@ -185,14 +190,14 @@ class Node:
 
         def constructor(nktree):
             if isinstance(nktree, nltk.Tree) and nktree.label().isupper():
-                #nonterminal
+                # nonterminal
                 children = []
                 for child in nktree:
                     node = constructor(child)
                     children.append(node)
                 return NonterminalNode(nktree.label(), children)
             if isinstance(nktree, nltk.Tree):
-                #terminal node
+                # terminal node
                 text = []
                 terminal = nktree.label()
                 # skip lemma, exp-seg and exp-abbrev
@@ -203,16 +208,30 @@ class Node:
                 text = text.replace(HTML_LPAREN, "(").replace(HTML_RPAREN, ")")
                 return TerminalNode(text, terminal)
             ic(nktree)
-            import pdb; pdb.set_trace()
+            import pdb
 
-        MONTHS = ["janúar", "febrúar", "mars", "apríl", "maí", "júní", "júlí", "ágúst", "september", "október", "nóvember", "desember"]
+            pdb.set_trace()
+
+        MONTHS = [
+            "janúar",
+            "febrúar",
+            "mars",
+            "apríl",
+            "maí",
+            "júní",
+            "júlí",
+            "ágúst",
+            "september",
+            "október",
+            "nóvember",
+            "desember",
+        ]
         IGNORE_MISSING_CAT = set(['"19"'])
         MONTHS = set(['"{}"'.format(month) for month in MONTHS])
         for _idx, nktree in enumerate(nltk_tree_reader(line_stream, limit=limit)):
-            if nktree is None or not any([
-                    child.label() in ("S0", "S0-X")
-                    for child in nktree
-            ]):
+            if nktree is None or not any(
+                [child.label() in ("S0", "S0-X") for child in nktree]
+            ):
                 ic("could not find tree root", nktree)
                 if nktree is not None:
                     nktree.pprint()
@@ -229,14 +248,22 @@ class Node:
                 elif e.args and e.args[0] in IGNORE_MISSING_CAT:
                     ic("skipping missing cat")
                     continue
-                elif e.args and e.args[0] == 'eight="100%"width="100%"scrolling="no"frameborder="0"seamless"':
+                elif (
+                    e.args
+                    and e.args[0]
+                    == 'eight="100%"width="100%"scrolling="no"frameborder="0"seamless"'
+                ):
                     ic("skipping html error")
                     continue
-                text = " ".join([leaf[0] for leaf in nktree.pos() if "lemma" not in leaf])
+                text = " ".join(
+                    [leaf[0] for leaf in nktree.pos() if "lemma" not in leaf]
+                )
                 nktree.pprint()
                 print(text)
                 ic("constructor exception", e.args)
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
                 raise e
             yield constructor(nktree)
 
@@ -326,7 +353,9 @@ class Node:
                     nterm_1wide = LabelledSpan(node.span, NULL_LEAF, depth, node, None)
                     nterms.append(nterm_1wide)
                     depth = depth + 1
-                lspan = LabelledSpan(node.span, node.simple_tag, depth, node, node.flags)
+                lspan = LabelledSpan(
+                    node.span, node.simple_tag, depth, node, node.flags
+                )
                 terms.append(lspan)
                 return
             # nonterminal
@@ -418,8 +447,8 @@ class Node:
         return tree
 
     def to_postfix(self, include_terminal=False):
-        """ Export tree to postfix ordering
-            with node-labels as keys """
+        """Export tree to postfix ordering
+        with node-labels as keys"""
         if self.terminal:
             return []
         result = []
@@ -452,7 +481,6 @@ class Node:
                 continue
             new_children.append(new_child)
         return NonterminalNode(self.nonterminal, new_children)
-
 
 
 class NonterminalNode(Node):
@@ -500,7 +528,6 @@ class NonterminalNode(Node):
 
 
 class TerminalNode(Node):
-
     def __init__(self, text, terminal_label, category=None):
         super(TerminalNode, self).__init__()
         self._text = text
@@ -1060,7 +1087,9 @@ def rebinarize(spans, labels):
     # new_tree.pretty_print()
     nterms, terms = new_tree.labelled_spans(include_null=True)
     # pprint(nterms)
-    new_spans, new_labels = zip(*[((it.span[0], it.span[1]), it.label) for it in nterms])
+    new_spans, new_labels = zip(
+        *[((it.span[0], it.span[1]), it.label) for it in nterms]
+    )
     # time.sleep(10)
     return new_spans, new_labels
 

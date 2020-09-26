@@ -3,13 +3,15 @@ from greynirseq.ner.patcher import (
     parse_sentence,
     idf2casus,
     decline_np,
-    parse_sentence_pair
+    parse_sentence_pair,
 )
 
 
 class NERPatchingTests(unittest.TestCase):
     sent_1 = "Um <e:0:nvxo:>Guðrúnu Helgadóttur</e0> hefur <e:1:nkxn:>Einar</e1> ort ."
-    sent_2 = "<e:1:nkxn:>Einar</e1> has written about <e:0:nvxo:>Guðrún Helgadóttir</e0> ."
+    sent_2 = (
+        "<e:1:nkxn:>Einar</e1> has written about <e:0:nvxo:>Guðrún Helgadóttir</e0> ."
+    )
 
     def test_parse_sentence(self):
         parse = parse_sentence(self.sent_1)

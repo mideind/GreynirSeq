@@ -3,7 +3,11 @@ import argparse
 from greynirseq.nicenlp.utils.ifd_utils import ifd2labels
 
 
-def load_file(input, output_folder, prefix, ):
+def load_file(
+    input,
+    output_folder,
+    prefix,
+):
     o_d = open("{}/{}.input0".format(output_folder, prefix), "w")
     o_l = open("{}/{}.label0".format(output_folder, prefix), "w")
 
@@ -15,7 +19,9 @@ def load_file(input, output_folder, prefix, ):
             if inp is not None:
                 o_d.writelines("{}\n".format(" ".join(inp)))
             if lab is not None:
-                o_l.writelines("{}\n".format(" <SEP> ".join([" ".join(slab) for slab in lab])))
+                o_l.writelines(
+                    "{}\n".format(" <SEP> ".join([" ".join(slab) for slab in lab]))
+                )
             inp = []
             lab = []
             while line and line != "\n":
@@ -32,13 +38,13 @@ def load_file(input, output_folder, prefix, ):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input')
-    parser.add_argument('--output_folder')
-    parser.add_argument('--prefix')
+    parser.add_argument("--input")
+    parser.add_argument("--output_folder")
+    parser.add_argument("--prefix")
     args = parser.parse_args()
 
     load_file(args.input, args.output_folder, args.prefix)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
