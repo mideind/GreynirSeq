@@ -16,7 +16,21 @@ TEN = list(range(21, 24))
 VOI = list(range(24, 26))
 
 
-LABEL_GROUPS = [GENDER, PER, GENDER_OR_PER, NUMBER, CASE, DEF, PROP, ADJ_C, DEG, TEN, VOI]
+LABEL_GROUPS = [
+    GENDER,
+    PER,
+    GENDER_OR_PER,
+    NUMBER,
+    CASE,
+    DEF,
+    PROP,
+    ADJ_C,
+    DEG,
+    TEN,
+    VOI,
+]
+
+
 def groups_to_label(groups):
     return [LABEL_GROUPS.index(grp) for grp in groups]
 
@@ -35,7 +49,10 @@ CATS_W_LABELS = [
     ("fo", [GENDER_OR_PER, NUMBER, CASE]),
     ("fp", [GENDER_OR_PER, NUMBER, CASE]),
     ("fs", [GENDER, NUMBER, CASE]),
-    ("ft", [GENDER, NUMBER, CASE]),  # Deprecated but needs to be here for backwards compatibility.
+    (
+        "ft",
+        [GENDER, NUMBER, CASE],
+    ),  # Deprecated but needs to be here for backwards compatibility.
     # numerals
     ("tf", [GENDER, NUMBER, CASE]),
     ("ta", []),
@@ -43,23 +60,23 @@ CATS_W_LABELS = [
     ("to", []),
     # verbs+
     ("sn", [VOI]),
-    ("sb", [VOI, PER, NUMBER, TEN]), # imp
-    ("sf", [VOI, PER, NUMBER, TEN]), # indic.
-    ("sv", [VOI, PER, NUMBER, TEN]), # subjunct.
-    ("ss", [VOI]), # supine
-    ("sl", [VOI, PER, NUMBER, TEN]), # present part.
-    ("sþ", [VOI, GENDER, NUMBER, CASE]), # past part.
+    ("sb", [VOI, PER, NUMBER, TEN]),  # imp
+    ("sf", [VOI, PER, NUMBER, TEN]),  # indic.
+    ("sv", [VOI, PER, NUMBER, TEN]),  # subjunct.
+    ("ss", [VOI]),  # supine
+    ("sl", [VOI, PER, NUMBER, TEN]),  # present part.
+    ("sþ", [VOI, GENDER, NUMBER, CASE]),  # past part.
     # conjunctions
     ("cn", []),
     ("ct", []),
     ("c", []),
     # adverbs, adpositions, interjections, misc
-    ("aa", [DEG]), # no case governing
-    ("au", [DEG]), # interjections
-    ("ao", [DEG]), # govern acc
-    ("aþ", [DEG]), # govern dat
-    ("ae", [DEG]), # govern gen
-    ("as", [DEG]), # abbreviation
+    ("aa", [DEG]),  # no case governing
+    ("au", [DEG]),  # interjections
+    ("ao", [DEG]),  # govern acc
+    ("aþ", [DEG]),  # govern dat
+    ("ae", [DEG]),  # govern gen
+    ("as", [DEG]),  # abbreviation
     # punctuation
     ("p", []),
 ]
@@ -71,35 +88,26 @@ FEATS = [
     "fem",
     "neut",
     "gender_undet",
-
     "1",  # person
     "2",
     "3",
-
     "sing",
     "plur",
-
     "nom",
     "acc",
     "dat",
     "gen",
-
     "definite",  # noun with clitic article
-    
     "proper",
-
     "strong",
     "weak",
     "equiinflected",  # "óbeygt"
-
     "pos",  # positive degree
     "cmp",
     "superl",
-
     "past",
     "pres",
     "pass",  # Not used but needs to be here for backwards compatibility.
-    
     "act",
     "mid",
     # "supine",
@@ -136,9 +144,7 @@ FEATS_MUTEX = {
     "def": [
         "definite",
     ],
-    "pro": [
-        "proper"
-    ],
+    "pro": ["proper"],
     "dec": [
         "strong",
         "weak",
@@ -157,7 +163,7 @@ FEATS_MUTEX = {
     "voi": [
         "act",
         "mid",
-    ]
+    ],
 }
 FEATS_MUTEX_MAP = {}
 FEATS_MUTEX_MAP_IDX = {}
@@ -165,7 +171,9 @@ for feat, i in enumerate(FEATS):
     for feat_map in FEATS_MUTEX:
         if feat in FEATS_MUTEX[feat_map]:
             FEATS_MUTEX_MAP[feat] = FEATS_MUTEX[feat_map]
-            FEATS_MUTEX_MAP_IDX[FEATS.index(feat)] = [FEATS.index(f) for f in FEATS_MUTEX[feat_map]]
+            FEATS_MUTEX_MAP_IDX[FEATS.index(feat)] = [
+                FEATS.index(f) for f in FEATS_MUTEX[feat_map]
+            ]
 
 
 LABELS = CATS + FEATS
@@ -186,9 +194,9 @@ TENSE = {"n": "pres", "þ": "past"}
 # PRONTYPE = {
 #     # "name":"PronType",
 #     "a":"dem",  # ábendingarfornafn
-        #ic(pred_idxs)
-        #ic(target_idxs)
-        #assert n_pred_idxs == len(target_idxs)
+# ic(pred_idxs)
+# ic(target_idxs)
+# assert n_pred_idxs == len(target_idxs)
 #     "p":"prs",  # persónufornafn
 #     "s":"int",  # spurnarfornafn
 #     "t": None,  # tilvísunarfornafn  # er þetta enn í notkun?

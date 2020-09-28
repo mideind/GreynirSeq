@@ -4,6 +4,7 @@ import time
 
 try:
     from icecream import ic
+
     ic.configureOutput(includeContext=True)
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
@@ -16,9 +17,9 @@ from greynirseq.nicenlp.utils.greynir.greynir_utils import Node
 import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
 
 model = IcebertConstModel.from_pretrained(
-    '/data/models/constituency_parser/icebert_const_debug_07',
-    checkpoint_file='checkpoint_last.pt',
-    data_name_or_path='/home/haukur/github/nicenlp-icebert/data-bin/sym',
+    "/data/models/constituency_parser/icebert_const_debug_07",
+    checkpoint_file="checkpoint_last.pt",
+    data_name_or_path="/home/haukur/github/nicenlp-icebert/data-bin/sym",
 )
 model.to("cpu")
 model.eval()
@@ -38,10 +39,14 @@ batch_size = 1
 
 for dataset_offset in np.random.randint(0, dataset_size, 100):
     start = time.time()
-    sample = dataset.collater([dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)])
+    sample = dataset.collater(
+        [dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)]
+    )
     ntokens = sample["net_input"]["nsrc_tokens"]
     tokens = [tokens for tokens in sample["net_input"]["src_tokens"]]
-    sentences = [model.decode(seq[:ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)]
+    sentences = [
+        model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)
+    ]
 
     seq_idx = 0
     ntargets = sample["ntargets"][seq_idx]
@@ -64,7 +69,9 @@ for dataset_offset in np.random.randint(0, dataset_size, 100):
     pred_tree.pretty_print()
     pred_roof = pred_tree.roof()
 
-    gold_tree = Node.from_labelled_spans(seq_spans, seq_labels, tokenize(sentences[seq_idx]))
+    gold_tree = Node.from_labelled_spans(
+        seq_spans, seq_labels, tokenize(sentences[seq_idx])
+    )
     gold_tree = gold_tree.debinarize()
     ic(dataset_name)
     gold_tree.pretty_print()
@@ -72,25 +79,34 @@ for dataset_offset in np.random.randint(0, dataset_size, 100):
 
     seq_ii, seq_jj = zip(*seq_spans)
     ncorr = (
-        (presult.masked_lchart[seq_ii, seq_jj] == (torch.tensor(seq_label_idxs) - lbl_shift))
-        * presult.masked_lchart[seq_ii, seq_jj].gt(1)
-    ).sum().item()
+        (
+            (
+                presult.masked_lchart[seq_ii, seq_jj]
+                == (torch.tensor(seq_label_idxs) - lbl_shift)
+            )
+            * presult.masked_lchart[seq_ii, seq_jj].gt(1)
+        )
+        .sum()
+        .item()
+    )
     npred = presult.labels.gt(1).sum().item()
     ngold = targets.gt(model.task.label_dictionary.nspecial + 1).sum().item()
     prec = round(ncorr / (npred or 1), 3)
     recall = round(ncorr / ngold, 3)
-    f1 = round(2 * (prec * recall)/((prec + recall) or 1), 3)
+    f1 = round(2 * (prec * recall) / ((prec + recall) or 1), 3)
 
     ic((ncorr, npred, ngold), (prec, recall, f1))
     gold_pred_tree_dist = int(tree_dist.tree_dist(gold_tree, pred_tree, None))
     gold_pred_roof_dist = int(tree_dist.tree_dist(gold_roof, pred_roof, None))
-    unif_gold_pred_dist = int(tree_dist.tree_dist(gold_roof.uniform(), pred_roof.uniform(), None))
+    unif_gold_pred_dist = int(
+        tree_dist.tree_dist(gold_roof.uniform(), pred_roof.uniform(), None)
+    )
     ic(gold_pred_roof_dist)
     ic(unif_gold_pred_dist)
 
     lbls = presult.labels
 
-    ic((time.time() - start)/batch_size)
+    ic((time.time() - start) / batch_size)
     input("Press enter to continue...")
 
 
@@ -116,4 +132,3 @@ for dataset_offset in np.random.randint(0, dataset_size, 100):
 #     # input()
 
 # import code; code.interact(local=locals())
-

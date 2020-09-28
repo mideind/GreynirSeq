@@ -53,7 +53,7 @@ class BinaryMultiLabelCriterion(FairseqCriterion):
                     sent,
                     lambda x: x == self.task.span_separator
                     or x == self.task.label_dictionary.pad()
-                    or x == 4 # Hack because double sep....,
+                    or x == 4,  # Hack because double sep....,
                 )
                 if not x[0]
             ]
@@ -62,20 +62,21 @@ class BinaryMultiLabelCriterion(FairseqCriterion):
                 for k in w:
                     nh[i][k.item() - num_special] = 1
             return nh
-        
+
         for i in range(bsz):
             targets_hot[i] = targets_to_n_hot(targets[i], targets_hot.shape)
 
         word_sep = self.task.span_separator
         unknown_word_id = 2  # x token in data
 
-
         # Ignore unknown words
         x_count = (targets == unknown_word_id).sum()
         # Number of words to match, works since word_sep is also at end of last word
 
         # TODO RESOLVE TEMPORARY HACK
-        word_count = (targets == word_sep).int().sum() / 2 - x_count # Divided by 2 because sep around sep... FIX
+        word_count = (
+            targets == word_sep
+        ).int().sum() / 2 - x_count  # Divided by 2 because sep around sep... FIX
         # Number of labels times number of words
         sample_size = word_count * num_all_labels
 
@@ -104,7 +105,7 @@ class BinaryMultiLabelCriterion(FairseqCriterion):
             word_targets_idxs,
             reduction="sum",
             ignore_index=-1,
-            weight=word_cls_weights
+            weight=word_cls_weights,
         )
 
         # bin_targets: (bsz, num_words, num_bin_labels)
@@ -235,7 +236,9 @@ class GeneralMultiLabelCriterion(BinaryMultiLabelCriterion):
 
             if num_members == 1:
                 loss = F.binary_cross_entropy_with_logits(
-                    label_group_logits, targets[:, :, start:end].type(label_group_logits.dtype), reduction="none"
+                    label_group_logits,
+                    targets[:, :, start:end].type(label_group_logits.dtype),
+                    reduction="none",
                 )
             else:
                 loss = F.cross_entropy(
@@ -271,7 +274,9 @@ class GeneralMultiLabelCriterion(BinaryMultiLabelCriterion):
                 binary_logits[i], LABEL_GROUPS, softmax_by_bin=True
             )
 
-            filtered_bin_logits[i] = maxed * torch.mm(label_mask[i].float(), lab_grp_cats.float()).type(maxed.dtype)
+            filtered_bin_logits[i] = maxed * torch.mm(
+                label_mask[i].float(), lab_grp_cats.float()
+            ).type(maxed.dtype)
             # Special case for when both gender and person
             for j in range(len(label_mask[i])):
                 if label_mask[i][j][3] == 1:

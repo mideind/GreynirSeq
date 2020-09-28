@@ -18,11 +18,12 @@ from fairseq import options, tasks, utils
 from fairseq.data import indexed_dataset, Dictionary
 from fairseq.binarizer import Binarizer
 
-#from . import multi_span_prediction_task
+# from . import multi_span_prediction_task
 from greynirseq.nicenlp.tasks import multi_span_prediction_task
 
 try:
     from icecream import ic
+
     ic.configureOutput(includeContext=True)
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
@@ -79,7 +80,9 @@ def main(args):
             padding_factor=args.padding_factor,
         )
 
-    label_dictionary, label_schema = task.load_label_dictionary(args, args.nonterm_schema)
+    label_dictionary, label_schema = task.load_label_dictionary(
+        args, args.nonterm_schema
+    )
     labelled_span_parser = make_parse_labelled_spans(label_dictionary, label_schema)
 
     def make_binary_labelled_spans_dataset(input_prefix, output_prefix, num_workers):
@@ -166,18 +169,20 @@ def main(args):
                         prefix,
                         lang,
                         offsets[worker_id],
-                        offsets[worker_id + 1]
+                        offsets[worker_id + 1],
                     ),
-                    callback=merge_result
+                    callback=merge_result,
                 )
             pool.close()
 
-        ds = indexed_dataset.make_builder(dataset_dest_file(args, output_prefix, lang, "bin"),
-                                          impl=args.dataset_impl, vocab_size=len(vocab))
+        ds = indexed_dataset.make_builder(
+            dataset_dest_file(args, output_prefix, lang, "bin"),
+            impl=args.dataset_impl,
+            vocab_size=len(vocab),
+        )
         merge_result(
             Binarizer.binarize(
-                input_file, vocab, lambda t: ds.add_item(t),
-                offset=0, end=offsets[1]
+                input_file, vocab, lambda t: ds.add_item(t), offset=0, end=offsets[1]
             )
         )
         if num_workers > 1:
@@ -214,36 +219,77 @@ def main(args):
             make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers)
 
     if args.nonterm_suffix:
-        if args.trainpref and os.path.exists("{}.{}".format(args.trainpref, args.nonterm_suffix)):
-            make_binary_labelled_spans_dataset("{}.{}".format(args.trainpref, args.nonterm_suffix), "train.nonterm", args.workers)
-        if args.validpref and os.path.exists("{}.{}".format(args.validpref, args.nonterm_suffix)):
-            make_binary_labelled_spans_dataset("{}.{}".format(args.validpref, args.nonterm_suffix), "valid.nonterm", args.workers)
-        if args.testpref and os.path.exists("{}.{}".format(args.testpref, args.nonterm_suffix)):
-            make_binary_labelled_spans_dataset("{}.{}".format(args.testpref, args.nonterm_suffix), "test.nonterm", args.workers)
+        if args.trainpref and os.path.exists(
+            "{}.{}".format(args.trainpref, args.nonterm_suffix)
+        ):
+            make_binary_labelled_spans_dataset(
+                "{}.{}".format(args.trainpref, args.nonterm_suffix),
+                "train.nonterm",
+                args.workers,
+            )
+        if args.validpref and os.path.exists(
+            "{}.{}".format(args.validpref, args.nonterm_suffix)
+        ):
+            make_binary_labelled_spans_dataset(
+                "{}.{}".format(args.validpref, args.nonterm_suffix),
+                "valid.nonterm",
+                args.workers,
+            )
+        if args.testpref and os.path.exists(
+            "{}.{}".format(args.testpref, args.nonterm_suffix)
+        ):
+            make_binary_labelled_spans_dataset(
+                "{}.{}".format(args.testpref, args.nonterm_suffix),
+                "test.nonterm",
+                args.workers,
+            )
     elif args.term_suffix:
         if args.trainpref:
-            make_dataset(label_dictionary, args.trainpref + "." + args.term_suffix, "train.term", args.source_lang, num_workers=args.workers)
+            make_dataset(
+                label_dictionary,
+                args.trainpref + "." + args.term_suffix,
+                "train.term",
+                args.source_lang,
+                num_workers=args.workers,
+            )
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
                 outprefix = "valid.term{}".format(k) if k > 0 else "valid.term"
-                make_dataset(label_dictionary, validpref + "." + args.term_suffix, outprefix, args.source_lang, num_workers=args.workers)
+                make_dataset(
+                    label_dictionary,
+                    validpref + "." + args.term_suffix,
+                    outprefix,
+                    args.source_lang,
+                    num_workers=args.workers,
+                )
         if args.testpref:
             for k, testpref in enumerate(args.testpref.split(",")):
                 outprefix = "test.term{}".format(k) if k > 0 else "test.term"
-                make_dataset(label_dictionary, testpref + "." + args.term_suffix, outprefix, args.source_lang, num_workers=args.workers)
+                make_dataset(
+                    label_dictionary,
+                    testpref + "." + args.term_suffix,
+                    outprefix,
+                    args.source_lang,
+                    num_workers=args.workers,
+                )
 
 
 def binarize(args, filename, vocab, output_prefix, lang, offset, end, append_eos=True):
-    ds = indexed_dataset.make_builder(dataset_dest_file(args, output_prefix, lang, "bin"),
-                                      impl=args.dataset_impl, vocab_size=len(vocab))
+    ds = indexed_dataset.make_builder(
+        dataset_dest_file(args, output_prefix, lang, "bin"),
+        impl=args.dataset_impl,
+        vocab_size=len(vocab),
+    )
 
     def consumer(tensor):
         ds.add_item(tensor)
 
-    res = Binarizer.binarize(filename, vocab, consumer, append_eos=append_eos,
-                             offset=offset, end=end)
+    res = Binarizer.binarize(
+        filename, vocab, consumer, append_eos=append_eos, offset=offset, end=end
+    )
     ds.finalize(dataset_dest_file(args, output_prefix, lang, "idx"))
     return res
+
 
 def binarize_alignments(args, filename, parse_alignment, output_prefix, offset, end):
     ds = indexed_dataset.make_builder(
@@ -282,6 +328,7 @@ def binarize_labelled_spans(args, filename, parse_spans, output_prefix, offset, 
 def make_parse_labelled_spans(label_dictionary, label_schema):
     cat_set = set(label_schema.label_categories)
     assert len(cat_set) == len(label_schema.label_categories)
+
     def parse_labelled_spans(line):
         items = line.strip().split()
         assert len(items) % 3 == 0, "Expected labelled span items to be multiple of 3"
@@ -292,9 +339,23 @@ def make_parse_labelled_spans(label_dictionary, label_schema):
             parsed_spans[3 * span_idx + 1] = int(span_end)
             encoded_label = label_dictionary.index(span_label)
             parsed_spans[3 * span_idx + 2] = encoded_label
-            if not (0 <= encoded_label - label_dictionary.nspecial <= len(cat_set)) or  span_label not in cat_set:
-                ic((span_label, encoded_label, encoded_label - label_dictionary.nspecial, len(cat_set), span_label in cat_set), line)
-                import pdb; pdb.set_trace()
+            if (
+                not (0 <= encoded_label - label_dictionary.nspecial <= len(cat_set))
+                or span_label not in cat_set
+            ):
+                ic(
+                    (
+                        span_label,
+                        encoded_label,
+                        encoded_label - label_dictionary.nspecial,
+                        len(cat_set),
+                        span_label in cat_set,
+                    ),
+                    line,
+                )
+                import pdb
+
+                pdb.set_trace()
             assert span_label in cat_set
             assert encoded_label - label_dictionary.nspecial <= len(cat_set)
             if encoded_label == label_dictionary.unk():
@@ -334,6 +395,6 @@ def cli_main():
     args = parser.parse_args()
     main(args)
 
+
 if __name__ == "__main__":
     cli_main()
-

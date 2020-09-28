@@ -35,7 +35,9 @@ def word_classes_to_mask(
 
     # todo: check if needed
     del word_class_tensor_cp
-    return torch.mm(wc_one_hot.float(), word_class_mask.float()).type(word_class_tensor.dtype)
+    return torch.mm(wc_one_hot.float(), word_class_mask.float()).type(
+        word_class_tensor.dtype
+    )
 
 
 def filter_logits(logits, unique_together):

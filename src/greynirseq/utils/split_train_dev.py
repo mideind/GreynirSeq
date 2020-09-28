@@ -17,13 +17,14 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('input')
-    parser.add_argument('sample_output', help='train output file')
-    parser.add_argument('remainder_output', help='valid output file')
-    parser.add_argument('-p', type=float, help="remainder size 0-1")
-    parser.add_argument('--seed', default=1, type=int, help="seed")
-    parser.add_argument('--lines', action='store_true',
-                        help='split lines instead of docs')
+    parser.add_argument("input")
+    parser.add_argument("sample_output", help="train output file")
+    parser.add_argument("remainder_output", help="valid output file")
+    parser.add_argument("-p", type=float, help="remainder size 0-1")
+    parser.add_argument("--seed", default=1, type=int, help="seed")
+    parser.add_argument(
+        "--lines", action="store_true", help="split lines instead of docs"
+    )
     args = parser.parse_args()
 
     data = []
@@ -34,7 +35,7 @@ def main():
         data.append(doc.copy())
         doc.clear()
 
-    with open(args.input, 'r', encoding='utf-8') as h:
+    with open(args.input, "r", encoding="utf-8") as h:
         doc = []
         for i, line in enumerate(h):
             if line.strip() == "":  # empty line indicates new document
@@ -67,7 +68,7 @@ def main():
     print("Data size {}".format(data_size))
     print("Remainder size {}".format(remainder_size))
 
-    with open(args.sample_output, 'w', encoding='utf-8') as out:
+    with open(args.sample_output, "w", encoding="utf-8") as out:
         first = True
         for doc in sample:
             if not first and not args.lines:
@@ -76,7 +77,7 @@ def main():
             for line in doc:
                 out.write(line)
 
-    with open(args.remainder_output, 'w', encoding='utf-8') as out:
+    with open(args.remainder_output, "w", encoding="utf-8") as out:
         first = True
         for doc in remainder:
             if not first and not args.lines:
@@ -86,5 +87,5 @@ def main():
                 out.write(line)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

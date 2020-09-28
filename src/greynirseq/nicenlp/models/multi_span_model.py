@@ -52,9 +52,7 @@ except ImportError:  # Graceful fallback if IceCream isn't installed.
 class MultiLabelSequenceTaggingHead(nn.Module):
     """Head for sentence-level classification tasks."""
 
-    def __init__(
-        self, in_features, out_features, num_cats, pooler_dropout
-    ):
+    def __init__(self, in_features, out_features, num_cats, pooler_dropout):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features  # num_labels
@@ -69,7 +67,9 @@ class MultiLabelSequenceTaggingHead(nn.Module):
 
     def forward(self, features, **kwargs):
         mask = kwargs["word_mask_w_bos"]
-        words_w_bos = features.masked_select(mask.unsqueeze(-1).bool()).reshape(-1, self.in_features)
+        words_w_bos = features.masked_select(mask.unsqueeze(-1).bool()).reshape(
+            -1, self.in_features
+        )
         x = self.dropout(words_w_bos)
         x = self.dense(x)
         x = self.layer_norm(x)
@@ -161,7 +161,11 @@ class MultiSpanClassificationHead(nn.Module):
             final_logits = self.out_proj(torch.cat((x, span_cat_probits), -1))
         else:
             final_logits = self.out_proj(x)
-            bsz, nspans, _, = final_logits.shape
+            (
+                bsz,
+                nspans,
+                _,
+            ) = final_logits.shape
             # final_logits: (bsz, max_nwords * max_nwords, num_labels - 1)
             # make label_idx of 0 correspond to NULL label, fixed at label-span score of 0
             final_logits = torch.cat(
@@ -275,11 +279,14 @@ class IcebertConstHubInterface(RobertaHubInterface):
                 ),
                 "nsrc_tokens": NumelDataset(tokens),
                 "word_mask_w_bos": RightPadDataset(
-                    word_masks_w_bos, pad_idx=0,
+                    word_masks_w_bos,
+                    pad_idx=0,
                 ),
             },
             "ntokens": NumelDataset(tokens, reduce=True),
-            "nwords": NumWordsDataset(tokens, is_word_initial=self.task.is_word_initial),
+            "nwords": NumWordsDataset(
+                tokens, is_word_initial=self.task.is_word_initial
+            ),
         }
         dataset = NestedDictionaryDatasetFix2(dataset)
         return dataset
@@ -308,28 +315,40 @@ class IcebertConstHubInterface(RobertaHubInterface):
         }
 
         from greynirseq.nicenlp.tasks.pos_task import make_group_masks
+
         group_masks = make_group_masks(label_schema, self.task.label_dictionary)
 
         try:
             features = self.extract_features(net_input["src_tokens"])
         except ValueError:
-            # TODO remove this... 
-            return None, ['O' for i in sentences[0]], sentences[0]
+            # TODO remove this...
+            return None, ["O" for i in sentences[0]], sentences[0]
 
-        cat_logits, attr_logits, _words_w_bos = self.model.classification_heads["pos_ice"](
-            features.to(device), word_mask_w_bos=word_mask_w_bos.to(device)
-        )
+        cat_logits, attr_logits, _words_w_bos = self.model.classification_heads[
+            "pos_ice"
+        ](features.to(device), word_mask_w_bos=word_mask_w_bos.to(device))
 
         # remove bos token at start of each sequence (used for constituency parsing)
         zero = tokens.new_zeros(1)
         one = tokens.new_ones(1)
-        no_bos_mask = torch.cat([
-            # (bsz * (nwords + 1))
-            torch.cat([zero, tokens.new_ones(seq_nwords)])
-            for seq_nwords in nwords.tolist()
-        ]).unsqueeze(-1).bool().to(device)
-        cat_logits = cat_logits.masked_select(no_bos_mask).reshape(-1, cat_logits.shape[-1])
-        attr_logits = attr_logits.masked_select(no_bos_mask).reshape(-1, attr_logits.shape[-1])
+        no_bos_mask = (
+            torch.cat(
+                [
+                    # (bsz * (nwords + 1))
+                    torch.cat([zero, tokens.new_ones(seq_nwords)])
+                    for seq_nwords in nwords.tolist()
+                ]
+            )
+            .unsqueeze(-1)
+            .bool()
+            .to(device)
+        )
+        cat_logits = cat_logits.masked_select(no_bos_mask).reshape(
+            -1, cat_logits.shape[-1]
+        )
+        attr_logits = attr_logits.masked_select(no_bos_mask).reshape(
+            -1, attr_logits.shape[-1]
+        )
 
         pred_cats = cat_logits.max(dim=-1)[1]
 
@@ -386,23 +405,29 @@ class IcebertConstHubInterface(RobertaHubInterface):
 
         pred_cats_ = pred_cats
         pred_cats = map_cats[pred_cats]
-        pred_attr_padded = torch.gather((mapped_attr_idxs + label_shift).to(device), 0, group_preds)
+        pred_attr_padded = torch.gather(
+            (mapped_attr_idxs + label_shift).to(device), 0, group_preds
+        )
 
-        non_binary_pred_mask = group_pred_mask.bool() * binary_group_mask.bool().bitwise_not()
+        non_binary_pred_mask = (
+            group_pred_mask.bool() * binary_group_mask.bool().bitwise_not()
+        )
         binary_pred_mask = group_pred_mask.bool() * binary_group_mask.bool()
         # if (group_preds * binary_group_mask).bool().any():
         #     import pdb; pdb.set_trace()
 
         # import pdb; pdb.set_trace()
         # pred_attrs = pred_attr_padded.masked_select(non_binary_pred_mask).split(non_binary_pred_mask.sum(-1).tolist())
-        pred_attrs = pred_attr_padded.masked_select(group_pred_mask.bool().to(device)).split(group_pred_mask.sum(-1).tolist())
+        pred_attrs = pred_attr_padded.masked_select(
+            group_pred_mask.bool().to(device)
+        ).split(group_pred_mask.sum(-1).tolist())
         # bin_pred_attrs = pred_attr_padded.masked_select(binary_pred_mask).split(binary_pred_mask.sum(-1).tolist())
         # bin_pred_attrs = (binary_pred_mask * group_preds * pred_attr_padded).masked_select(binary_pred_mask).split(binary_pred_mask.sum(-1).tolist())
         # bin_pred_attrs = pred_attr_padded.masked_select(binary_pred_mask * group_preds.gt(0)).split(binary_pred_mask.sum(-1).tolist())
 
         # import pdb; pdb.set_trace()
         # import pdb; pdb.set_trace()
-        # pred_bin_attrs = 
+        # pred_bin_attrs =
 
         sentence = [tokenize(sentence) for sentence in sentences][seq_idx]
 
@@ -414,14 +439,17 @@ class IcebertConstHubInterface(RobertaHubInterface):
             cat = ldict.symbols[cat_idx]
             cat_idxs.append(cat_idx)
             labels.append(cat)
-            attrs = [ldict.symbols[lbl_idx] for lbl_idx in attrs_idxs[attrs_idxs.gt(4)].sort()[0]]
+            attrs = [
+                ldict.symbols[lbl_idx]
+                for lbl_idx in attrs_idxs[attrs_idxs.gt(4)].sort()[0]
+            ]
             attrs = " ".join([attr for attr in attrs if "empty" not in attr])
             # bins = ""
             # if len(bin_idxs) > 0:
             #     bins = ldict.string(bin_idxs)
             # # ic(tok, cat, attrs)
             # print("    {:>20}   {:<10s}   {} {}".format(tok, cat, attrs, bins))
-            #print("    {:>20}   {:<10s}   {}".format(tok, cat, attrs))
+            # print("    {:>20}   {:<10s}   {}".format(tok, cat, attrs))
 
         return cat_idxs, labels, sentence
 
@@ -449,7 +477,7 @@ class IcebertConstHubInterface(RobertaHubInterface):
                 },
                 "nwords": nwords,
                 "word_spans": RightPadDataset(
-                        word_spans, pad_idx=self.task.label_dictionary.pad()
+                    word_spans, pad_idx=self.task.label_dictionary.pad()
                 ),
             }
         )
@@ -482,7 +510,9 @@ class IcebertConstHubInterface(RobertaHubInterface):
             for i in range(1, ntokens[seq_idx] - 1)
         ]
         bpe_per_word = []
-        for (start, end) in (word_spans[seq_idx][:2 * nwords[seq_idx]] - 1).reshape(-1, 2).tolist():
+        for (start, end) in (
+            (word_spans[seq_idx][: 2 * nwords[seq_idx]] - 1).reshape(-1, 2).tolist()
+        ):
             bpe_per_word.append(bpe_tokens[start:end])
 
         seq_labels = [

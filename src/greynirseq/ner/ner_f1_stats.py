@@ -2,7 +2,9 @@ class EvalNER:
     EMPTY_SPAN = ["", 0, 0]
 
     def __init__(self, model, ignore=["O", "<sep>"]):
-        self.labels = [lbl[2:] for lbl in model.task.label_schema.labels if lbl not in ignore]
+        self.labels = [
+            lbl[2:] for lbl in model.task.label_schema.labels if lbl not in ignore
+        ]
         self.true_positive = {lbl: 0 for lbl in self.labels}
         self.false_positive = {lbl: 0 for lbl in self.labels}
         self.true_negative = {lbl: 0 for lbl in self.labels}
@@ -48,7 +50,7 @@ class EvalNER:
             else:
                 # New NE ("Correctly" marked B or first marked I)
                 if cur_span[0]:
-                    spans.append(cur_span)    
+                    spans.append(cur_span)
                 cur_span = [self.labels[idx], i, i]
 
         if cur_span[0] != "":
@@ -66,18 +68,18 @@ class EvalNER:
         tbl_num_string = "{:>13}   {:>10.4f}    {:>10.4f}    {:>10.4f}"
         print(tbl_string.format("Entity", "Precision", "Recall", "F1"))
         print("")
-        print(tbl_num_string.format(
-            "All",
-            self.precision(set(self.labels)),
-            self.recall(set(self.labels)),
-            self.f1(set(self.labels))
-        ))
+        print(
+            tbl_num_string.format(
+                "All",
+                self.precision(set(self.labels)),
+                self.recall(set(self.labels)),
+                self.f1(set(self.labels)),
+            )
+        )
         for lbl in set(self.labels):
-            print(tbl_num_string.format(
-                lbl,
-                self.precision([lbl]),
-                self.recall([lbl]),
-                self.f1([lbl])
+            print(
+                tbl_num_string.format(
+                    lbl, self.precision([lbl]), self.recall([lbl]), self.f1([lbl])
                 )
             )
 
@@ -90,20 +92,23 @@ class EvalNER:
         sum_false_positive = sum(self.false_positive[lbl] for lbl in labels)
         sum_true_negative = sum(self.true_negative[lbl] for lbl in labels)
         sum_false_negative = sum(self.false_negative[lbl] for lbl in labels)
-        print(tbl_num_string.format(
-            "All",
-            sum_true_positive,
-            sum_false_positive,
-            sum_true_negative,
-            sum_false_negative
-        ))
+        print(
+            tbl_num_string.format(
+                "All",
+                sum_true_positive,
+                sum_false_positive,
+                sum_true_negative,
+                sum_false_negative,
+            )
+        )
         for lbl in set(self.labels):
-            print(tbl_num_string.format(
-                lbl,
-                self.true_positive[lbl],
-                self.false_positive[lbl],
-                self.true_negative[lbl],
-                self.false_negative[lbl]
+            print(
+                tbl_num_string.format(
+                    lbl,
+                    self.true_positive[lbl],
+                    self.false_positive[lbl],
+                    self.true_negative[lbl],
+                    self.false_negative[lbl],
                 )
             )
 
@@ -116,7 +121,9 @@ class EvalNER:
 
         for lbl in set(self.labels):
             pred_lbl_spans = set([tuple(span) for span in pred_spans if span[0] == lbl])
-            target_lbl_spans = set([tuple(span) for span in target_spans if span[0] == lbl])
+            target_lbl_spans = set(
+                [tuple(span) for span in target_spans if span[0] == lbl]
+            )
 
             true_positive = len(pred_lbl_spans.intersection(target_lbl_spans))
             false_positive = len(pred_lbl_spans.difference(target_lbl_spans))

@@ -5,14 +5,14 @@ from reynir import bintokenizer
 
 
 def prep_text_for_tokenizer(text):
-   return "[[ " + " ]] [[ ".join(text.split("\n\n")) + " ]]"
+    return "[[ " + " ]] [[ ".join(text.split("\n\n")) + " ]]"
 
 
 def index_text(text):
-    """ Segments contiguous (Icelandic) text into paragraphs and sentences
-        and returns:
-            dictionary of sentence indices to sentences
-            dictionary of paragraph index to constituent sentence indices"""
+    """Segments contiguous (Icelandic) text into paragraphs and sentences
+    and returns:
+        dictionary of sentence indices to sentences
+        dictionary of paragraph index to constituent sentence indices"""
     text = prep_text_for_tokenizer(text)
     tok_stream = bintokenizer.tokenize(text)
 
@@ -36,8 +36,8 @@ def index_text(text):
 
 
 def split_text(text):
-    """ Segments contiguous (Icelandic) text into paragraphs and sentences
-        and returns a list of lists
+    """Segments contiguous (Icelandic) text into paragraphs and sentences
+    and returns a list of lists
     """
     text = prep_text_for_tokenizer(text)
     tok_stream = bintokenizer.tokenize(text)

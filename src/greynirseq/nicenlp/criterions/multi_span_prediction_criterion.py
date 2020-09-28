@@ -26,7 +26,7 @@ import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
 
 def gen_2d_diags(chart_width):
     """Generator for all diagonal positions in a 2d matrix, starting with right of center diagonal from pos (0,1),
-       then diagonal starting at (0,2), etc."""
+    then diagonal starting at (0,2), etc."""
     for span_length in range(1, chart_width):
         for start in range(chart_width - span_length):
             ii = start
@@ -215,7 +215,7 @@ class MultiSpanCriterion(FairseqCriterion):
                 0
             )
             if not seq_labels.le(num_labels + label_shift).all():
-                import pdb;
+                import pdb
 
                 pdb.set_trace()
             chart_mask_not_gold[
@@ -342,15 +342,19 @@ class MultiSpanCriterion(FairseqCriterion):
         for seq_idx, presult in enumerate(results_best):
             seq_ntargets = ntargets[seq_idx]
             seq_targets = target_labels[seq_idx, :seq_ntargets]
-            seq_tgt_ii, seq_tgt_jj = tspans[seq_idx, :, : seq_ntargets].chunk(2, dim=0)
+            seq_tgt_ii, seq_tgt_jj = tspans[seq_idx, :, :seq_ntargets].chunk(2, dim=0)
             pred_labels_best = presult.masked_lchart[seq_tgt_ii, seq_tgt_jj]
-            seq_ncorrect_labels = pred_labels_best.gt(1) * (pred_labels_best == (seq_targets - label_shift))
+            seq_ncorrect_labels = pred_labels_best.gt(1) * (
+                pred_labels_best == (seq_targets - label_shift)
+            )
             seq_ncorrect_spans = pred_labels_best.gt(1)
             ncorrect_spans_best_roof.append(seq_ncorrect_spans.sum())
             ncorrect_labels_best_roof.append(seq_ncorrect_labels.sum())
             seq_nlabels = presult.labels.gt(1)
             nlabels_best_roof.append(seq_nlabels.sum())
-            seq_bracketing_errors = seq_nlabels.sum() + seq_ntargets - 2 * seq_ncorrect_spans.sum()
+            seq_bracketing_errors = (
+                seq_nlabels.sum() + seq_ntargets - 2 * seq_ncorrect_spans.sum()
+            )
             bracketing_errors.append(seq_bracketing_errors)
 
         nwords_total = nwords.sum().data
@@ -454,16 +458,17 @@ class MultiSpanCriterion(FairseqCriterion):
             "ppl": label_loss_,
             "label_precision": label_recall,
             "label_recall": label_precision,
-            "label_f1": 2/(1/(label_precision or 1) + 1/(label_recall or 1)),
+            "label_f1": 2 / (1 / (label_precision or 1) + 1 / (label_recall or 1)),
             "bracketing_precision": bracketing_precision,
             "bracketing_recall": bracketing_recall,
-            "bracketing_f1": 2/(1/(bracketing_precision or 1) + 1/(bracketing_recall or 1)),
+            "bracketing_f1": 2
+            / (1 / (bracketing_precision or 1) + 1 / (bracketing_recall or 1)),
             "avg_bracketing_errors": bracketing_errors / (nsentences),
-            "delta_gold_worst": (gold_tree - worst_tree)/nsentences,
-            "delta_best_gold": (best_tree - gold_tree)/(nsentences),
-            "gold_tree": gold_tree/nsentences,
-            "worst_tree": worst_tree/nsentences,
-            "best_tree": best_tree/nsentences,
+            "delta_gold_worst": (gold_tree - worst_tree) / nsentences,
+            "delta_best_gold": (best_tree - gold_tree) / (nsentences),
+            "gold_tree": gold_tree / nsentences,
+            "worst_tree": worst_tree / nsentences,
+            "best_tree": best_tree / nsentences,
             "ntokens": ntokens,
             "nwords": nwords,
             "nsentences": nsentences,
