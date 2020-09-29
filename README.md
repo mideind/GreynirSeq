@@ -6,7 +6,7 @@ GreynirSeq is a natural language parsing toolkit for Icelandic focused on sequen
 
 The modeling part (nicenlp) of GreynirSeq is built on top of the excellent [fairseq](https://github.com/pytorch/fairseq) from Facebook (which is built on top of pytorch).
 
-GreynirSeq is licensed under the MIT license unless otherwise stated at the top of a file.
+GreynirSeq is licensed under the GNU GPLv3 license unless otherwise stated at the top of a file.
 
 ### What's on the horizon?
 * Cleanup and configuration of data / model loading -- currently unavailable for download
