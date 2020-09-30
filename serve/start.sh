@@ -32,4 +32,5 @@ fi
 # Start Gunicorn
 # exec gunicorn --keyfile /key.pem --certfile /cert.pem -k uvicorn.workers.UvicornWorker -c "$GUNICORN_CONF" "$APP_MODULE"
 pip install flask-cors
-exec gunicorn --bind 0.0.0.0:8001 --keyfile /key.pem --certfile /cert.pem serve_all 
+
+exec gunicorn --bind 0.0.0.0:8001 --keyfile /key.pem --certfile /cert.pem serve.serve_all 
