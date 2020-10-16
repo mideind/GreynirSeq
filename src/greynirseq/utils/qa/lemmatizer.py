@@ -18,7 +18,7 @@ class Lemmatizer:
     ib = None
     device = "cpu"
 
-    def __init__(self, use_icebert:bool=True) -> None:
+    def __init__(self, use_icebert: bool = True) -> None:
         self.g = Greynir()
         if use_icebert:
             self.ib = IcebertModel.pos_from_settings()
@@ -36,7 +36,7 @@ class Lemmatizer:
             tokens = sentence.tokens
             # Split on 100 words to not hit 512 token limit in IceBERT
             for i in range(0, len(tokens), 100):
-                p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100: (i + 1) * 100])
+                p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100 : (i + 1) * 100])
                 a_lemmas += p_lemmas
                 a_tokens += p_tokens
             return a_lemmas, a_tokens
@@ -47,9 +47,7 @@ class Lemmatizer:
         parsed = self.parse(text)
         for sentence in parsed:
             lemmas, tokens = self.lemmatize_sentence(sentence)
-            lemmatized.append(
-                ([l.lower() for l in lemmas], tokens, sentence.tidy_text)
-            )
+            lemmatized.append(([l.lower() for l in lemmas], tokens, sentence.tidy_text))
         return lemmatized
 
     def lemmatize_pretty(self, text: str) -> None:
@@ -80,7 +78,11 @@ class Lemmatizer:
                 # Number
                 lemmas.append(tok.txt)
                 continue
-            if cands and len(cands) > 1 and (isinstance(cands[0], int) or isinstance(cands[0], float)):
+            if (
+                cands
+                and len(cands) > 1
+                and (isinstance(cands[0], int) or isinstance(cands[0], float))
+            ):
                 # Punctuation
                 lemmas.append(tok.txt)
                 continue
@@ -96,7 +98,7 @@ class Lemmatizer:
 
             found = False
             for c in cands:
-                if hasattr(c, 'name'):
+                if hasattr(c, "name"):
                     lemmas.append(c.name)
                     found = True
                     break
@@ -132,7 +134,7 @@ class Lemmatizer:
 
         return lemmas, tokens
 
-    def parse(self, text:str) -> List[_Sentence]:
+    def parse(self, text: str) -> List[_Sentence]:
         if self.g is None:
             raise ValueError("Greynir needs to be instantiated.")
         text = text.replace("\n", " ").replace("  ", " ")
@@ -141,7 +143,7 @@ class Lemmatizer:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lemmatize Icelandic text")
-    parser.add_argument('--sentence', type=str)
+    parser.add_argument("--sentence", type=str)
     args = parser.parse_args()
     sentence = args.sentence
 
