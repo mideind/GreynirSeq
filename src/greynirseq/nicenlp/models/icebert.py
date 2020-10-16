@@ -18,6 +18,7 @@ from fairseq.models import (
 
 from greynirseq.nicenlp.criterions.multi_label import GeneralMultiLabelCriterion
 from greynirseq.utils.ifd_utils import vec2idf, FEATS_MUTEX_MAP_IDX
+from greynirseq import settings
 
 
 class BinaryClassifierChain(nn.Module):
@@ -134,6 +135,14 @@ class MultiLabelClassificationHead(nn.Module):
 
 @register_model("icebert")
 class IcebertModel(RobertaModel):
+
+    @staticmethod
+    def pos_from_settings():
+        return IcebertModel.from_pretrained(
+            settings.IceBERT_POS_PATH,
+            **settings.IceBERT_POS_CONFIG
+        )
+
     def forward(
         self,
         src_tokens,
