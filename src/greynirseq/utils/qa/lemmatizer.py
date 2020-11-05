@@ -1,4 +1,22 @@
 #!/usr/bin/env python
+
+"""
+    GreynirSeq: Neural natural language processing for Icelandic
+
+    Copyright (C) 2020 Miðeind ehf.
+       This program is free software: you can redistribute it and/or modify
+       it under the terms of the GNU General Public License as published by
+       the Free Software Foundation, either version 3 of the License, or
+       (at your option) any later version.
+       This program is distributed in the hope that it will be useful,
+       but WITHOUT ANY WARRANTY; without even the implied warranty of
+       MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+       GNU General Public License for more details.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see http://www.gnu.org/licenses/.
+"""
+
+
 import argparse
 
 from reynir import Greynir, _Sentence
@@ -9,11 +27,13 @@ from greynirseq.nicenlp.models.icebert import IcebertModel
 
 from typing import List, Tuple
 
-
 TokLem = Tuple[List[str], List[str]]
 
 
 class Lemmatizer:
+
+    SPLIT_WC = 100
+
     g = None
     ib = None
     device = "cpu"
@@ -23,24 +43,18 @@ class Lemmatizer:
         if use_icebert:
             self.ib = IcebertModel.pos_from_settings()
 
-    def _fallback(self, sentence: _Sentence) -> TokLem:
-        tokens = [t.txt for t in sentence.tokens]
-        return tokens, tokens
-
     def lemmatize_sentence(self, sentence: _Sentence) -> TokLem:
         if sentence.tree is not None:
             return self.g_lemmatize(sentence)
-        else:
-            a_lemmas = []
-            a_tokens = []
-            tokens = sentence.tokens
-            # Split on 100 words to not hit 512 token limit in IceBERT
-            for i in range(0, len(tokens), 100):
-                p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100 : (i + 1) * 100])
-                a_lemmas += p_lemmas
-                a_tokens += p_tokens
-            return a_lemmas, a_tokens
-        return self._fallback(sentence)
+        a_lemmas = []
+        a_tokens = []
+        tokens = sentence.tokens
+        # Split words to not hit 512 token limit in IceBERT
+        for i in range(0, len(tokens), self.SPLIT_WC):
+            p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100 : (i + 1) * 100])
+            a_lemmas += p_lemmas
+            a_tokens += p_tokens
+        return a_lemmas, a_tokens
 
     def lemmatize(self, text: str) -> List[Tuple[List[str], List[str], str]]:
         lemmatized = []
