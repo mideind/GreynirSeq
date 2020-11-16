@@ -34,8 +34,8 @@ class Lemmatizer:
 
     SPLIT_WC = 100
 
-    g = None
-    ib = None
+    g = None  # Placeholder for Greynir instance
+    ib = None  # Placeholder for IceBERT model instance
     device = "cpu"
 
     def __init__(self, use_icebert: bool = True) -> None:
@@ -50,6 +50,7 @@ class Lemmatizer:
         a_tokens = []
         tokens = sentence.tokens
         # Split words to not hit 512 token limit in IceBERT
+        # Consider making this smarter if dealing with a lot of long sentences.
         for i in range(0, len(tokens), self.SPLIT_WC):
             p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100 : (i + 1) * 100])
             a_lemmas += p_lemmas

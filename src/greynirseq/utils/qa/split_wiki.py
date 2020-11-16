@@ -49,18 +49,22 @@ class LemmatizeWiki:
                     for result in results:
                         outfile.writelines(result)
                     article_pool = []
+            for article in article_pool:
+                # Empty the pool
+                outfile.writelines(parse_batch(article))
 
 
 def main() -> None:
     # TODO Add suport for multiprocessing, selection of processes
     #      and selection of file format.
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=str)
-    parser.add_argument("--output", type=str)
+    parser.add_argument("--input", type=str, help="Path to Wikipedia dump")
+    parser.add_argument("--output", type=str, help="Path where output should be written")
+    parser.add_argument("--threads", type=int, help="Number of threads to use")
     args = parser.parse_args()
 
     lw = LemmatizeWiki(args.input)
-    lw.write_sentences(args.output)
+    lw.write_sentences(args.output, args.threads)
 
 
 if __name__ == "__main__":
