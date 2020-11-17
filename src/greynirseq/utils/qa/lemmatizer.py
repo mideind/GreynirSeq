@@ -62,7 +62,7 @@ class Lemmatizer:
         parsed = self.parse(text)
         for sentence in parsed:
             lemmas, tokens = self.lemmatize_sentence(sentence)
-            lemmatized.append(([l.lower() for l in lemmas], tokens, sentence.tidy_text))
+            lemmatized.append(([l for l in lemmas], tokens, sentence.tidy_text))
         return lemmatized
 
     def lemmatize_pretty(self, text: str) -> None:
@@ -132,7 +132,7 @@ class Lemmatizer:
                         b=c.beyging,
                     )
                 except:
-                    lemmas.append(tok.txt.lower())
+                    lemmas.append(tok.txt)
                     found = True
                     break
                 try:
