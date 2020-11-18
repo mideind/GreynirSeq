@@ -189,25 +189,33 @@ def parse_all(dataset_name: str, path: str) -> None:
     """ Parse all examples from the given path and save to `dataset_name`. """
     textfile = open(dataset_name + ".input0", "w")
     labelfile = open(dataset_name + ".label", "w")
+    multilabelfile = open(dataset_name + ".multilabel", "w")
 
     for f in glob.iglob(path, recursive=True):
         res = parse_file(f)
         for r in res:
-            textfile.write(r["text"])
-            textfile.write("\n")
             label = 0
+            error_labels = []
             # Check if there are any errors that are in scope
             if len(r["errors"]) > 0:
                 for e in r["errors"]:
-                    if e["in_scope"]:
+                    if e["in_scope"] and not e['xtype'] == 'dep':
+                        error_labels.append(e['xtype'])
                         label = 1
-                        # label = ERROR_NUMBERS[e['xtype']]
+
+            textfile.write(r["text"])
+            textfile.write("\n")
 
             labelfile.write(str(label))
             labelfile.write("\n")
 
+            multilabelfile.write(" ".join(error_labels))
+            multilabelfile.write("\n")
+
+
     textfile.close()
     labelfile.close()
+    multilabelfile.close()
 
 
 if __name__ == "__main__":
