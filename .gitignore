@@ -148,3 +148,6 @@ cython_debug/
 checkpoints*
 tensorboard*
 .vscode
+
+# mypy
+.mypy_cache
