@@ -2,7 +2,7 @@ import logging
 import os
 from pathlib import Path
 import json
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 
 import numpy as np
 
@@ -12,6 +12,7 @@ from fairseq.data import (
     Dictionary,
     IdDataset,
     NumSamplesDataset,
+    ListDataset,
     NumelDataset,
     RightPadDataset,
     SortDataset,
@@ -21,55 +22,38 @@ from fairseq.data import (
 from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
 from fairseq.tasks.sentence_prediction import SentencePredictionTask
-
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
+from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 
 from greynirseq.nicenlp.data.datasets import (
+    WordEndMaskDataset,
     DynamicLabelledSpanDataset,
-    LabelledSpanDataset,
-    SpanDataset,
-    SparseProductSpanDataset,
-    ProductSpanDataset,
-    NumSpanDataset,
-    NestedDictionaryDatasetFix,
-    LossMaskDataset,
     NumWordsDataset,
+    NestedDictionaryDatasetFix,
 )
-import greynirseq.nicenlp.utils.greynir.greynir_utils as greynir_utils
+from greynirseq.nicenlp.utils.constituency import token_utils
+import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
+
+from greynirseq.nicenlp.utils.label_schema.label_schema import (
+    parse_label_schema,
+    label_schema_as_dictionary,
+)
+
 
 logger = logging.getLogger(__name__)
 
 
-def parse_label_schema(path):
-    LabelSchema = namedtuple(
-        "LabelSchema",
-        [
-            "labels",
-            "group_name_to_labels",
-            "label_categories",
-            "category_to_group_names",
-            "separator",
-            "group_names",
-            "null",
-            "null_leaf",
-        ],
-    )
-    with open(path, "r") as fp:
-        j_obj = json.load(fp)
-    return LabelSchema(**j_obj)
-
-
-@register_task("multi_span_prediction")
-class MultiSpanPredictionTask(FairseqTask):
+@register_task("parser")
+class ParserTask(FairseqTask):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
         parser.add_argument("data", metavar="FILE", help="file prefix for data")
+        parser.add_argument(
+            "--term-schema",
+            metavar="FILE",
+            help="json file providing label-set and label-groups",
+            required=True,
+        )
         parser.add_argument(
             "--nonterm-schema",
             metavar="FILE",
@@ -77,15 +61,31 @@ class MultiSpanPredictionTask(FairseqTask):
                 (mutually exclusive labels)",
             required=True,
         )
-        # parser.add_argument('--no-shuffle', action='store_true', default=False)
+        parser.add_argument(
+            "--nonterm-weight",
+            default=1.0,
+            type=float,
+            help="weight to scale nonterminal loss",
+            required=True,
+        )
+        parser.add_argument(
+            "--term-weight",
+            default=1.0,
+            type=float,
+            help="weight to scale terminal loss",
+            required=False,
+        )
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
     def __init__(
-        self, args, data_dictionary, label_dictionary, is_word_initial, label_schema
+            self, args, data_dictionary, nterm_dict, nterm_schema, is_word_initial
     ):
         super().__init__(args)
         self.dictionary = data_dictionary
-        self._label_dictionary = label_dictionary
+
+        self.nterm_dictionary = nterm_dict
+        self.nterm_schema = nterm_schema
+
         if not hasattr(args, "max_positions"):
             self._max_positions = (args.max_source_positions, args.max_target_positions)
         else:
@@ -93,8 +93,9 @@ class MultiSpanPredictionTask(FairseqTask):
         args.tokens_per_sample = self._max_positions
         self.is_word_initial = is_word_initial
 
-        self.label_schema = label_schema
-        self.num_labels = len(self.label_schema.labels)
+        self.num_nterm_cats = len(self.nterm_schema.label_categories)
+        self.num_nterm_groups = NotImplemented
+        self.num_nterm_labels = len(self.nterm_schema.labels)
 
     @classmethod
     def setup_task(cls, args, **kwargs):
@@ -103,10 +104,18 @@ class MultiSpanPredictionTask(FairseqTask):
 
         is_word_initial = cls.get_word_beginnings(args, data_dict)
 
-        label_dict, label_schema = cls.load_label_dictionary(args, args.nonterm_schema)
-        logger.info("[label] dictionary: {} types".format(len(label_dict)))
-        return MultiSpanPredictionTask(
-            args, data_dict, label_dict, is_word_initial, label_schema
+        # assert labels[0] == "NULL", "Expected label at index 0 to be 'NULL'"
+        nterm_dict, nterm_schema = cls.load_label_dictionary(args, args.nonterm_schema)
+        logger.info("[nterm] dictionary: {} types".format(len(nterm_dict)))
+        nterm_dict.null = lambda : nterm_dict.index(nterm_schema.null)
+        nterm_dict.leaf = lambda : nterm_dict.index(nterm_schema.null_leaf)
+
+        return ParserTask(
+            args,
+            data_dict,
+            nterm_dict=nterm_dict,
+            nterm_schema=nterm_schema,
+            is_word_initial=is_word_initial,
         )
 
     @classmethod
@@ -116,29 +125,19 @@ class MultiSpanPredictionTask(FairseqTask):
             filename (str): the filename
         """
         label_schema = parse_label_schema(filename)
-        label_dict = Dictionary()
 
-        labels = list(label_schema.labels)
-        assert labels[0] == "NULL", "Expected label at index 0 to be 'NULL'"
-        assert len(labels) == len(set(labels))
-
-        for label in labels:
-            label_dict.add_symbol(label)
-
-        assert (
-            label_dict.symbols[label_dict.nspecial] == "NULL"
-        ), "Expected first nonspecial token to be 'NULL'"
-        return label_dict, label_schema
+        return label_schema_as_dictionary(label_schema), label_schema
 
     @classmethod
-    def load_dictionary(cls, args, filename, source=True):
+    def load_dictionary(cls, args, filename, add_mask=True):
         """Load the dictionary from the filename
 
         Args:
             filename (str): the filename
         """
         dictionary = Dictionary.load(filename)
-        dictionary.add_symbol("<mask>")
+        if add_mask:
+            dictionary.add_symbol("<mask>")
         return dictionary
 
     @classmethod
@@ -179,49 +178,28 @@ class MultiSpanPredictionTask(FairseqTask):
             shuffle = np.random.permutation(len(src_tokens))
 
         src_tokens = PrependTokenDataset(src_tokens, self.source_dictionary.bos())
+        word_masks_w_bos = WordEndMaskDataset(
+            src_tokens,
+            self.is_word_initial,
+            include_bos=True,
+        )
 
-        # TODO: it does not make sense to parse partial sequences
-        # if self.args.truncate_sequence:
-        #     src_tokens = TruncateDataset(src_tokens, self.args.max_positions)
-
-        targets_path = Path(self.args.data) / "{}.nonterm".format(split)
+        nterm_targets_path = Path(self.args.data) / "{}.nonterm".format(split)
         labelled_spans = data_utils.load_indexed_dataset(
-            str(targets_path),
-            self.label_dictionary,
+            str(nterm_targets_path),
+            self.nterm_dictionary,
             self.args.dataset_impl,
             combine=combine,
         )
-        assert labelled_spans is not None, "could not find labels: {}".format(
-            targets_path
+        assert labelled_spans is not None, "could not find nonterminal labels: {}".format(
+            nterm_targets_path
         )
-
-        target_spans = DynamicLabelledSpanDataset(
+        target_spans, nterm_cats = DynamicLabelledSpanDataset.make_both(
             labelled_spans,
-            self.label_dictionary,
+            self.nterm_dictionary,
             rebinarize_fn=greynir_utils.rebinarize,
             seed=self.args.seed,
-            return_spans=True,
         )
-        labels = DynamicLabelledSpanDataset(
-            labelled_spans,
-            self.label_dictionary,
-            rebinarize_fn=greynir_utils.rebinarize,
-            seed=self.args.seed,
-            return_spans=False,
-        )
-
-        # all possible word spans in each sequence
-        word_spans = SpanDataset(src_tokens, self.is_word_initial)
-        all_spans = ProductSpanDataset(word_spans)
-        # all_spans = SparseProductSpanDataset(spans)
-
-        # loss_masks = LossMaskDataset(
-        #     labels,
-        #     {
-        #         idx: torch.Tensor(mask)
-        #         for (idx, mask) in LABEL_IDX_TO_GROUP_MASK.items()
-        #     },
-        # )
 
         dataset = {
             "id": IdDataset(),
@@ -230,60 +208,59 @@ class MultiSpanPredictionTask(FairseqTask):
                     src_tokens, pad_idx=self.source_dictionary.pad()
                 ),
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "src_spans": RightPadDataset(
-                    all_spans, pad_idx=self.label_dictionary.pad()
+                "word_mask_w_bos": RightPadDataset(
+                    word_masks_w_bos, pad_idx=0,
                 ),
-                "nsrc_spans": NumSpanDataset(all_spans),
             },
-            "targets": RightPadDataset(labels, pad_idx=self.label_dictionary.pad()),
+            "target_span_labels": RightPadDataset(nterm_cats, pad_idx=self.nterm_dictionary.pad()),
             "target_spans": RightPadDataset(
-                target_spans, pad_idx=self.label_dictionary.pad()
+                target_spans, pad_idx=0,
             ),
-            "ntargets": NumelDataset(labels),
+            "ntarget_span_labels": NumelDataset(nterm_cats),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
             "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
-            "word_spans": RightPadDataset(
-                word_spans, pad_idx=self.label_dictionary.pad()
-            ),
-            # "loss_masks": loss_masks,
         }
 
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
 
-        if self.args.no_shuffle or True:
-            dataset = nested_dataset
-        else:
-            dataset = SortDataset(nested_dataset, sort_order=[shuffle])
+        dataset = SortDataset(nested_dataset, sort_order=[shuffle])
 
         logger.info("Loaded {0} with #samples: {1}".format(split, len(dataset)))
 
         self.datasets[split] = dataset
         return self.datasets[split]
 
-    def build_model(self, args):
-        from fairseq import models
+    def prepare_sentences(self, sentences):
+        tokens = [
+            self.encode(token_utils.tokenize_to_string(sentence))
+            for sentence in sentences
+        ]
+        return self.task.prepare_tokens(tokens)
 
-        model = models.build_model(args, self)
-        model.task = self
+    def prepare_tokens(self, tokens):
+        sizes = [len(seq) for seq in tokens]
+        src_tokens = ListDataset(tokens, sizes=sizes)
+        src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
 
-        # num_classes_mutex = len(self._label_dictionary)
-        # num_classes_binary = 0
-
-        # if hasattr(self.args, "num_classes_mutex"):
-        #     num_classes_mutex = self.args.num_classes_mutex
-
-        # if hasattr(self.args, "num_classes_binary"):
-        #     num_classes_binary = self.args.num_classes_binary
-
-        model.register_classification_head(
-            "multi_span_classification",
-            # num_cats=len(self.label_schema.label_categories),
-            num_cats=None,
-            num_labels=self.num_labels,
+        word_masks_w_bos = WordEndMaskDataset(
+            src_tokens, self.is_word_initial, include_bos=True
         )
 
-        return model
+        dataset = {
+            "id": IdDataset(),
+            "net_input": {
+                "src_tokens": src_tokens,
+                "nsrc_tokens": NumelDataset(src_tokens),
+                "word_mask_w_bos": RightPadDataset(word_masks_w_bos, pad_idx=0),
+            },
+            "ntokens": NumelDataset(src_tokens, reduce=True),
+            "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
+            "nsentences": NumSamplesDataset(),
+        }
+        dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
+        return dataset
+
 
     @property
     def source_dictionary(self):
@@ -292,7 +269,3 @@ class MultiSpanPredictionTask(FairseqTask):
     @property
     def target_dictionary(self):
         return self.dictionary
-
-    @property
-    def label_dictionary(self):
-        return self._label_dictionary

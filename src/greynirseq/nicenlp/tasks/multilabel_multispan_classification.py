@@ -17,34 +17,49 @@ from fairseq.data import (
     SortDataset,
     TruncateDataset,
     PrependTokenDataset,
+    LabelledSpanDataset,
 )
 from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
+from fairseq.tasks.sentence_prediction import SentencePredictionTask
 
 from greynirseq.nicenlp.data.datasets import (
-    POSDataset,
-    ListDataset,
-    WordEndMaskDataset,
-    RightPad2dDataset,
+    DynamicLabelledSpanDataset,
+    LabelledSpanDataset,
+    WordSpanDataset,
+    SparseProductSpanDataset,
+    ProductSpanDataset,
+    NumSpanDataset,
     NestedDictionaryDatasetFix,
+    LossMaskDataset,
     NumWordsDataset,
 )
-from greynirseq.nicenlp.utils.label_schema.label_schema import label_schema_as_dictionary, parse_label_schema
-from greynirseq.nicenlp.utils.constituency import token_utils
+import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
+from greynirseq.nicenlp.utils.label_schema.label_schema import (
+    parse_label_schema,
+    label_schema_as_dictionary,
+    make_group_masks,
+    make_vec_idx_to_dict_idx,
+    make_bos_mask,
+    make_map_cat_to_dict,
+    make_mapped_group_masks,
+)
+
 
 logger = logging.getLogger(__name__)
 
 
-@register_task("pos_ice")
-class POSTask(FairseqTask):
+@register_task("multi_span_prediction")
+class MultiSpanPredictionTask(FairseqTask):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
         parser.add_argument("data", metavar="FILE", help="file prefix for data")
         parser.add_argument(
-            "--term-schema",
+            "--label-schema",
             metavar="FILE",
-            help="json file providing label-set and label-groups",
+            help="json file providing label-set and label-groups \
+                (mutually exclusive labels)",
             required=True,
         )
         parser.add_argument("--no-shuffle", action="store_true", default=False)
@@ -55,11 +70,6 @@ class POSTask(FairseqTask):
         super().__init__(args)
         self.dictionary = data_dictionary
         self._label_dictionary = label_dictionary
-        self._label_dictionary.sep = lambda: self._label_dictionary.index(
-            label_schema.separator
-        )
-        assert self._label_dictionary.index("<mask>") == self._label_dictionary.unk()
-        assert self._label_dictionary.sep() != self._label_dictionary.unk()
         if not hasattr(args, "max_positions"):
             self._max_positions = (args.max_source_positions, args.max_target_positions)
         else:
@@ -68,8 +78,6 @@ class POSTask(FairseqTask):
         self.is_word_initial = is_word_initial
 
         self.label_schema = label_schema
-        self.num_cats = len(self.label_schema.label_categories)
-        self.num_groups = len(self.label_schema.group_name_to_labels.keys())
         self.num_labels = len(self.label_schema.labels)
 
     @classmethod
@@ -78,28 +86,12 @@ class POSTask(FairseqTask):
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
 
         is_word_initial = cls.get_word_beginnings(args, data_dict)
-        term_dict = cls.load_dictionary(
-            args, os.path.join(args.data, "dict_term.txt"), add_mask=False
+
+        label_dict, label_schema = cls.load_label_dictionary(args, args.nonterm_schema)
+        logger.info("[label] dictionary: {} types".format(len(label_dict)))
+        return MultiSpanPredictionTask(
+            args, data_dict, label_dict, is_word_initial, label_schema
         )
-
-        # label_dict, label_schema = cls.load_label_dictionary(args, args.term_schema)
-        _, label_schema = cls.load_label_dictionary(args, args.term_schema)
-        logger.info("[label] dictionary: {} types".format(len(term_dict)))
-
-        seen = set()
-        for idx, lbl in enumerate(term_dict.symbols):
-            exists = lbl in label_schema.labels
-            seen.add(lbl)
-            if not exists and idx > term_dict.nspecial and lbl != "<mask>":
-                assert False, "Unexpected POS label item in term_dict.txt: {}".format(
-                    lbl
-                )
-        for lbl in label_schema.labels:
-            if lbl in seen:
-                continue
-            assert False, "Unexpected POS label item in label_schema {}".format(lbl)
-
-        return POSTask(args, data_dict, term_dict, is_word_initial, label_schema)
 
     @classmethod
     def load_label_dictionary(cls, args, filename, **kwargs):
@@ -108,19 +100,29 @@ class POSTask(FairseqTask):
             filename (str): the filename
         """
         label_schema = parse_label_schema(filename)
+        label_dict = Dictionary()
 
-        return label_schema_as_dictionary(label_schema), label_schema
+        labels = list(label_schema.labels)
+        assert labels[0] == "NULL", "Expected label at index 0 to be 'NULL'"
+        assert len(labels) == len(set(labels))
+
+        for label in labels:
+            label_dict.add_symbol(label)
+
+        assert (
+            label_dict.symbols[label_dict.nspecial] == "NULL"
+        ), "Expected first nonspecial token to be 'NULL'"
+        return label_dict, label_schema
 
     @classmethod
-    def load_dictionary(cls, args, filename, add_mask=True):
+    def load_dictionary(cls, args, filename, source=True):
         """Load the dictionary from the filename
 
         Args:
             filename (str): the filename
         """
         dictionary = Dictionary.load(filename)
-        if add_mask:
-            dictionary.add_symbol("<mask>")
+        dictionary.add_symbol("<mask>")
         return dictionary
 
     @classmethod
@@ -162,25 +164,35 @@ class POSTask(FairseqTask):
 
         src_tokens = PrependTokenDataset(src_tokens, self.source_dictionary.bos())
 
-        targets_path = Path(self.args.data) / "{}.term".format(split)
-        term_labels = data_utils.load_indexed_dataset(
+        targets_path = Path(self.args.data) / "{}.nonterm".format(split)
+        labelled_spans = data_utils.load_indexed_dataset(
             str(targets_path),
             self.label_dictionary,
             self.args.dataset_impl,
             combine=combine,
         )
-        assert term_labels is not None, "could not find labels: {}".format(targets_path)
-
-        term_cats, term_attrs = POSDataset.make_both(
-            term_labels,
-            self.label_dictionary,
+        assert labelled_spans is not None, "could not find labels: {}".format(
+            targets_path
         )
 
-        word_masks_w_bos = WordEndMaskDataset(
+        raise NotImplementedError
+
+        target_spans = LabelledSpanDataset(
+            labelled_spans,
+            return_spans=True,
+        )
+        labels = LabelledSpanDataset(
+            labelled_spans,
+            return_spans=False,
+        )
+
+        # all possible word spans in each sequence
+        word_spans = WordSpanDataset(
             src_tokens,
-            self.is_word_initial,
-            include_bos=True,
+            self.source_dictionary,
+            self.is_word_initial
         )
+        all_spans = ProductSpanDataset(word_spans)
 
         dataset = {
             "id": IdDataset(),
@@ -189,23 +201,27 @@ class POSTask(FairseqTask):
                     src_tokens, pad_idx=self.source_dictionary.pad()
                 ),
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask_w_bos": RightPadDataset(
-                    word_masks_w_bos,
-                    pad_idx=0,
+                "src_spans": RightPadDataset(
+                    all_spans, pad_idx=self.label_dictionary.pad()
                 ),
+                "nsrc_spans": NumSpanDataset(all_spans),
             },
-            "target_cats": RightPadDataset(
-                term_cats, pad_idx=self.label_dictionary.pad()
+            "targets": RightPadDataset(labels, pad_idx=self.label_dictionary.pad()),
+            "target_spans": RightPadDataset(
+                target_spans, pad_idx=self.label_dictionary.pad()
             ),
-            "target_attrs": RightPad2dDataset(term_attrs, pad_idx=0),
+            "ntargets": NumelDataset(labels),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
             "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
+            "word_spans": RightPadDataset(
+                word_spans, pad_idx=self.label_dictionary.pad()
+            ),
         }
 
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
 
-        if self.args.no_shuffle or True:
+        if self.args.no_shuffle:
             dataset = nested_dataset
         else:
             dataset = SortDataset(nested_dataset, sort_order=[shuffle])
@@ -215,35 +231,22 @@ class POSTask(FairseqTask):
         self.datasets[split] = dataset
         return self.datasets[split]
 
-    def prepare_tokens(self, tokens):
-        sizes = [len(seq) for seq in tokens]
-        src_tokens = ListDataset(tokens, sizes=sizes)
-        src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
+    def build_model(self, args):
+        from fairseq import models
 
-        word_masks_w_bos = WordEndMaskDataset(
-            src_tokens, self.is_word_initial, include_bos=True
-        )
+        model = models.build_model(args, self)
+        model.task = self
 
-        dataset = {
-            "id": IdDataset(),
-            "net_input": {
-                "src_tokens": src_tokens,
-                "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask_w_bos": RightPadDataset(word_masks_w_bos, pad_idx=0),
-            },
-            "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
-            "nsentences": NumSamplesDataset(),
-        }
-        dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
-        return dataset
+        raise NotImplementedError
+        # TODO: This is incorrect
+        # model.register_classification_head(
+        #     "multi_span_classification",
+        #     # num_cats=len(self.label_schema.label_categories),
+        #     num_cats=None,
+        #     num_labels=self.num_labels,
+        # )
 
-    def prepare_sentences(self, sentences):
-        tokens = [
-            self.encode(token_utils.tokenize_to_string(sentence))
-            for sentence in sentences
-        ]
-        return self.task.prepare_tokens(tokens)
+        return model
 
     @property
     def source_dictionary(self):

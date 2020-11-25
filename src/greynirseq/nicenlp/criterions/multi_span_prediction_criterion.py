@@ -9,19 +9,12 @@ from fairseq import utils
 import torch
 import torch.nn.functional as F
 
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
-import greynirseq.nicenlp.utils.greynir.greynir_utils as greynir_utils
+import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 
 import pyximport
 
 pyximport.install()
-import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
+import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
 
 
 def gen_2d_diags(chart_width):
@@ -97,24 +90,6 @@ def parse_from_chart(scores, widths, scores_only=False, score_shift=None):
         res = ParseResult(tree_scores[seq_idx], spans, labels, masked_lchart)
         results.append(res)
     return tree_scores, results
-
-
-def sparse_to_chart(scores, widths):
-    bsz, _, num_labels = scores.shape
-    max_nwords = widths.max()
-    chart_scores = scores.new_zeros(bsz, max_nwords + 1, max_nwords + 1, num_labels)
-    chart_mask = torch.zeros_like(chart_scores)
-    for seq_idx in range(bsz):
-        width = widths[seq_idx]
-        square = scores[seq_idx, : (width * width), :].reshape(width, width, num_labels)
-        chart_scores[seq_idx, :width, 1 : 1 + width, :] = square
-        chart_mask[seq_idx, :width, 1 : 1 + width, :] = (
-            torch.triu(chart_mask.new_ones(width, width))
-            .unsqueeze(-1)
-            .expand_as(square)
-        )
-    chart_scores *= chart_mask  # make upper triangular
-    return chart_scores, chart_mask
 
 
 @register_criterion("multi_span")

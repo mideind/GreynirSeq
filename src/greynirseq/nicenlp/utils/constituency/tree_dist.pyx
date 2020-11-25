@@ -17,11 +17,23 @@ try:
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
-ctypedef np.float32_t DTYPE_t
 
 def tree_dist(tree1, tree2, ignore):
-    t1_postorder, t2_postorder = tree1.to_postfix(), tree2.to_postfix()
-    strings = list(set(t1_postorder + t2_postorder + ([] if ignore is None else [ignore])))
+    cdef list t1_postorder
+    cdef list t2_postorder
+
+    if isinstance(tree1, list) and isinstance(tree2, list):
+        return 0.0
+    if isinstance(tree1, list):
+        t1_postorder = []
+    else:
+        t1_postorder = tree1.to_postfix()
+    if isinstance(tree2, list):
+        t2_postorder = []
+    else:
+        t2_postorder = tree2.to_postfix()
+
+    cdef list strings = list(set(t1_postorder + t2_postorder + ([] if ignore is None else [ignore])))
     ignore = strings.index(ignore) if ignore is not None else -1
     # determine necessary dtype at runtime (uint16 or uint8 for cache efficieny)
     # we need a separate dist function for uint8 then
@@ -45,17 +57,16 @@ def tree_dist(tree1, tree2, ignore):
 
 @cython.wraparound(False)
 @cython.boundscheck(False)
-cpdef tree_dist_multi(trees1, trees2, verbose=False, ignore=None):
-    cdef size_t num_seqs = len(trees1)
-
-    t1s_py = []
-    t2s_py = []
-    kr1s_py = []
-    kr2s_py = []
-    l1s_py = []
-    l2s_py = []
-
+cpdef tree_dist_multi(list trees1, list trees2, verbose=False, ignore=None):
     cdef:
+        size_t num_seqs = len(trees1)
+        list t1s_py = []
+        list t2s_py = []
+        list kr1s_py = []
+        list kr2s_py = []
+        list l1s_py = []
+        list l2s_py = []
+
         size_t[:] t1_idxs = np.zeros(2 * num_seqs, dtype=np.uintp)
         size_t[:] t2_idxs = np.zeros(2 * num_seqs, dtype=np.uintp)
         size_t[:] kr1_idxs = np.zeros(2 * num_seqs, dtype=np.uintp)
@@ -64,8 +75,8 @@ cpdef tree_dist_multi(trees1, trees2, verbose=False, ignore=None):
         size_t[:] l2_idxs = np.zeros(2 * num_seqs, dtype=np.uintp)
 
         int buffer_width = -1
+        size_t seq_idx = 0
 
-    cdef size_t seq_idx = 0
     for seq_idx in range(num_seqs):
         t1, kr1, l1, t2, kr2, l2 = _convert(trees1[seq_idx], trees2[seq_idx], ignore=ignore)
         buffer_width = max(buffer_width, len(t1))
@@ -109,8 +120,6 @@ cpdef tree_dist_multi(trees1, trees2, verbose=False, ignore=None):
 
     cdef short ignore_ = -1 if ignore is None else ignore
 
-    # mean 0.0944 std 0.011 min 0.064 at 1000 iters,  24 trees
-    # this means 25% reduction over using single tree_dist with uncythonized iteration over trees
     for seq_idx in prange(num_seqs, nogil=True):
         accum_tree_dists[seq_idx] = tree_distance_cyx(
             tree_dist_buffer[seq_idx],
@@ -214,8 +223,8 @@ def LR_keyroots(tree):
     # assert isinstance(tree, Node)
 
     # pf means postfix
-    def LR_keyroots_inner(tree, is_left_child=False, pf=0):
-        l_desc = -1
+    def LR_keyroots_inner(tree, bint is_left_child=False, int pf=0):
+        cdef int l_desc = -1
         # for idx, child in enumerate(tree.children):
         # TODO: refactor so we can also choose to compare terminals
         for idx, child in enumerate(

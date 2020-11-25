@@ -16,14 +16,6 @@ try:
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
-from greynirseq.ner.ner_f1_stats import EvalNER
-import greynirseq.nicenlp.utils.greynir.greynir_utils as greynir_utils
-
-import pyximport
-
-pyximport.install()
-import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
-
 
 def targets_to_flat_mask_no_bos(targets, pad_idx):
     bsz, _ = targets.shape
@@ -50,7 +42,6 @@ class POSCriterion(FairseqCriterion):
         """
         assert (
             hasattr(model, "classification_heads")
-            # and "multi_label_word_classification" in model.classification_heads
             and "pos_ice" in model.classification_heads
         ), "model must provide sentence classification head for --criterion=pos_ice"
 

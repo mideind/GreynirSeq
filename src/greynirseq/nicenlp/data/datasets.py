@@ -98,19 +98,20 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
             self.dataset.set_epoch(self.epoch)
 
 
-class SpanDataset(BaseWrapperDataset):
-    def __init__(self, dataset, is_word_initial, default=1, has_bos=True):
+class WordSpanDataset(BaseWrapperDataset):
+    def __init__(self, dataset, dictionary, is_word_initial):
         super().__init__(dataset)
         self.is_word_initial = is_word_initial
-        self.default = default
-        self.has_bos = has_bos
+        self.dictionary = dictionary
 
     @lru_cache(maxsize=8)
     def __getitem__(self, index):
-        offset = 1 if self.has_bos else 0
+        item = self.dataset[index]
+        offset = 1 if item[0] == self.dictionary.bos() else 0
+        seq_end = len(item) - 1 if item[-1] == self.dictionary.eos() else len(item)
         idxs = [
-            self.is_word_initial.get(int(v), self.default)
-            for v in self.dataset[index][offset:-1]  # ignore bos and eos
+            self.is_word_initial.get(int(v), 0)
+            for v in item[offset:seq_end]  # ignore bos and eos
         ]
         idxs[0] = 1
         starts = [

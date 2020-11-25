@@ -17,43 +17,6 @@ from fairseq.models import (
 )
 
 from greynirseq.nicenlp.criterions.multi_label import GeneralMultiLabelCriterion
-from greynirseq.utils.ifd_utils import vec2idf, FEATS_MUTEX_MAP_IDX
-
-
-class BinaryClassifierChain(nn.Module):
-    def __init__(self, embed_dim, num_word_classes, num_bin_features):
-        super().__init__()
-        self.num_bin_features = num_bin_features
-        self.embed_dim = embed_dim
-        self.num_word_classes = num_word_classes
-
-        self.dense = nn.ModuleList(
-            [
-                nn.Linear(embed_dim + num_word_classes + num_bin_features, 1)
-                for _ in range(num_bin_features)
-            ]
-        )
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, features, word_class_features):
-        # features:          (bsz, num_words, hidden_dim)
-        # word_cls_features: (bsz, num_words, num_bin_labels)
-        word_class_features = F.softmax(word_class_features)
-        # (batch, words, bin_features)
-        bsz, num_words, _ = features.shape
-        bin_features = features.new_zeros(bsz, num_words, self.num_bin_features)
-        # all_features:
-        # (bsz, num_words, hidden_dim + word_class_features + bin_features)
-        all_features = torch.cat((features, word_class_features, bin_features), 2)
-        offset = self.embed_dim + self.num_word_classes
-        for class__idx, dense in enumerate(self.dense):
-            logit = dense(all_features)
-            prob = self.sigmoid(logit)
-            one_hot = logit.new_zeros(bsz, num_words, offset + self.num_bin_features)
-            one_hot[:, :, offset + class__idx] = prob.squeeze()
-            all_features = all_features + one_hot
-        # (bsz, num_words, num_bin_labels)
-        return all_features[:, :, offset:]
 
 
 class MultiLabelClassificationHead(nn.Module):
@@ -80,10 +43,6 @@ class MultiLabelClassificationHead(nn.Module):
         self.binary_out_proj = nn.Linear(
             inner_dim + num_classes_mutex, num_classes_binary
         )
-        # TODO: compare with BCC
-        # self.classifier_chain = BinaryClassifierChain(
-        #    inner_dim, num_classes_mutex, num_classes_binary
-        # )
 
     @staticmethod
     def get_word_start_indexes(word_starts):
