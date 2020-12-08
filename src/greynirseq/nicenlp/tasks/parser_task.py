@@ -78,7 +78,7 @@ class ParserTask(FairseqTask):
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
     def __init__(
-            self, args, data_dictionary, nterm_dict, nterm_schema, is_word_initial
+        self, args, data_dictionary, nterm_dict, nterm_schema, is_word_initial
     ):
         super().__init__(args)
         self.dictionary = data_dictionary
@@ -107,8 +107,8 @@ class ParserTask(FairseqTask):
         # assert labels[0] == "NULL", "Expected label at index 0 to be 'NULL'"
         nterm_dict, nterm_schema = cls.load_label_dictionary(args, args.nonterm_schema)
         logger.info("[nterm] dictionary: {} types".format(len(nterm_dict)))
-        nterm_dict.null = lambda : nterm_dict.index(nterm_schema.null)
-        nterm_dict.leaf = lambda : nterm_dict.index(nterm_schema.null_leaf)
+        nterm_dict.null = lambda: nterm_dict.index(nterm_schema.null)
+        nterm_dict.leaf = lambda: nterm_dict.index(nterm_schema.null_leaf)
 
         return ParserTask(
             args,
@@ -179,9 +179,7 @@ class ParserTask(FairseqTask):
 
         src_tokens = PrependTokenDataset(src_tokens, self.source_dictionary.bos())
         word_masks_w_bos = WordEndMaskDataset(
-            src_tokens,
-            self.is_word_initial,
-            include_bos=True,
+            src_tokens, self.dictionary, self.is_word_initial, bos_value=1, eos_value=0
         )
 
         nterm_targets_path = Path(self.args.data) / "{}.nonterm".format(split)
@@ -191,7 +189,9 @@ class ParserTask(FairseqTask):
             self.args.dataset_impl,
             combine=combine,
         )
-        assert labelled_spans is not None, "could not find nonterminal labels: {}".format(
+        assert (
+            labelled_spans is not None
+        ), "could not find nonterminal labels: {}".format(
             nterm_targets_path
         )
         target_spans, nterm_cats = DynamicLabelledSpanDataset.make_both(
@@ -208,18 +208,18 @@ class ParserTask(FairseqTask):
                     src_tokens, pad_idx=self.source_dictionary.pad()
                 ),
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask_w_bos": RightPadDataset(
-                    word_masks_w_bos, pad_idx=0,
-                ),
+                "word_mask_w_bos": RightPadDataset(word_masks_w_bos, pad_idx=0),
             },
-            "target_span_labels": RightPadDataset(nterm_cats, pad_idx=self.nterm_dictionary.pad()),
-            "target_spans": RightPadDataset(
-                target_spans, pad_idx=0,
+            "target_span_labels": RightPadDataset(
+                nterm_cats, pad_idx=self.nterm_dictionary.pad()
             ),
+            "target_spans": RightPadDataset(target_spans, pad_idx=0),
             "ntarget_span_labels": NumelDataset(nterm_cats),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
+            "nwords": NumWordsDataset(
+                src_tokens, self.dictionary, self.is_word_initial
+            ),
         }
 
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
@@ -244,7 +244,7 @@ class ParserTask(FairseqTask):
         src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
 
         word_masks_w_bos = WordEndMaskDataset(
-            src_tokens, self.is_word_initial, include_bos=True
+            src_tokens, self.dictionary, self.is_word_initial, bos_value=1, eos_value=0
         )
 
         dataset = {
@@ -255,12 +255,13 @@ class ParserTask(FairseqTask):
                 "word_mask_w_bos": RightPadDataset(word_masks_w_bos, pad_idx=0),
             },
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
+            "nwords": NumWordsDataset(
+                src_tokens, self.dictionary, self.is_word_initial
+            ),
             "nsentences": NumSamplesDataset(),
         }
         dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
         return dataset
-
 
     @property
     def source_dictionary(self):

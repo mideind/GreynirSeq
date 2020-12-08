@@ -220,35 +220,36 @@ class RightPad2dDataset(BaseWrapperDataset):
 
 class POSDataset(BaseWrapperDataset):
     @classmethod
-    def make_both(cls, dataset, label_dictionary, has_bos=False):
+    def make_both(cls, dataset, src_dictionary, label_dictionary):
         dataset = LRUCacheDataset(dataset)
         return (
             POSDataset(
-                dataset, label_dictionary, return_categories=True, has_bos=has_bos
-            ),
+                dataset, src_dictionary, label_dictionary, return_categories=True),
             POSDataset(
-                dataset, label_dictionary, return_categories=False, has_bos=has_bos
+                dataset, src_dictionary, label_dictionary, return_categories=False
             ),
         )
 
     def __init__(
-        self, dataset, label_dictionary, has_bos=False, return_categories=True
+            self, dataset, src_dictionary, label_dictionary, return_categories=True
     ):
         super().__init__(dataset)
-        self.has_bos = has_bos
-        self.dict = label_dictionary
+        self.label_dict = label_dictionary
+        self.src_dict = src_dictionary
         self.return_categories = return_categories
+        self.start_offset = 1 if dataset[0][0] == self.src_dict.bos() else 0
 
     def __getitem__(self, index):
         item = self.dataset[index]
-        offset = 1 if self.has_bos else 0
-        # ignore bos and eos
-        word_items = split_tensor_on(item[offset:-1], self.dict.sep())
+        word_items = split_tensor_on(
+            item[self.start_offset:-1],
+            self.label_dict.sep()
+        )
         assert all(subseq.numel() > 0 for subseq in word_items)
-        assert len(word_items) == (item.eq(self.dict.sep()).sum() + 1)
+        assert len(word_items) == (item.eq(self.label_dict.sep()).sum() + 1)
         num_words = len(word_items)
-        num_labels = len(self.dict) - self.dict.nspecial
-        label_shift = self.dict.nspecial
+        label_shift = self.label_dict.nspecial
+        num_labels = len(self.label_dict) - label_shift
 
         cats = item.new_zeros(num_words)
         attrs = item.new_zeros(num_words, num_labels)
@@ -269,29 +270,24 @@ class WordEndMaskDataset(BaseWrapperDataset):
     def __init__(
         self,
         dataset,
+        dictionary,
         is_word_initial,
-        has_bos=True,
-        include_bos=True,
-        include_eos=False,
+        bos_value=1,
+        eos_value=0,
     ):
         super().__init__(dataset)
-        assert not (include_bos and not has_bos), "has_bos must be True for include_bos"
         self.is_word_initial = is_word_initial
-        self.include_bos = include_bos
-        self.include_eos = include_eos
-        self.has_bos = has_bos
+        self.dictionary = dictionary
+        self.start_offset = 1 if dataset[0][0] == self.dictionary.bos() else 0
+        self.bos_value = bos_value
+        self.eos_value = eos_value
 
     def __getitem__(self, index):
-        offset = 1 if self.has_bos else 0
         item = self.dataset[index]
-        # exclude specials for now
-        starts = [self.is_word_initial.get(int(v), 1) for v in item[offset:-1]]
-
-        mask = torch.zeros_like(item)
-        mask[:offset] = 1 if self.include_bos else 0  # if exists
-        mask[-1] = 1 if self.include_eos else 0
-        mask[offset:-1] = torch.tensor(starts[1:] + [1]).type_as(mask)
-
+        mask = torch.tensor([self.is_word_initial.get(int(v), 1) for v in item])
+        mask[self.start_offset] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
+        mask[:self.start_offset] = self.bos_value
+        mask[-1] = self.eos_value
         return mask
 
 
@@ -308,21 +304,24 @@ class GroupMaskDataset(BaseWrapperDataset):
 
 
 class NumWordsDataset(BaseWrapperDataset):
-    def __init__(self, dataset, is_word_initial, default=1, has_bos=True):
+    def __init__(
+        self,
+        dataset,
+        dictionary,
+        is_word_initial,
+    ):
         super().__init__(dataset)
         self.is_word_initial = is_word_initial
-        self.default = default
-        self.has_bos = has_bos
+        self.dictionary = dictionary
+        self.start_offset = 1 if dataset[0][0] == self.dictionary.bos() else 0
 
     def __getitem__(self, index):
-        offset = 1 if self.has_bos else 0
-        idxs = [
-            self.is_word_initial.get(int(v), self.default)
-            for v in self.dataset[index][offset:-1]  # ignore bos and eos
+        word_starts = [
+            self.is_word_initial.get(int(v), 1)
+            for v in self.dataset[index][self.start_offset:-1]  # ignore bos and eos
         ]
-        idxs[0] = 1
-        # ic(idxs, self.dataset[index], torch.tensor(sum(idxs)).long())
-        return torch.tensor(sum(idxs)).long()
+        word_starts[self.start_offset] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
+        return torch.tensor(sum(word_starts)).long()
 
 
 class NumSpanDataset(BaseWrapperDataset):

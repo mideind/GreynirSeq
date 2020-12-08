@@ -28,13 +28,8 @@ class MultiLabelTokenClassificationHead(nn.Module):
         self.cat_proj = nn.Linear(self.in_features, self.num_cats)
         self.out_proj = nn.Linear(self.in_features + self.num_cats, self.out_features)
 
-    def forward(self, features, **kwargs):
-        assert "word_mask_w_bos" in kwargs
-        mask = kwargs["word_mask_w_bos"]
-        words_w_bos = features.masked_select(mask.unsqueeze(-1).bool()).reshape(
-            -1, self.in_features
-        )
-        x = self.dropout(words_w_bos)
+    def forward(self, x, **kwargs):
+        x = self.dropout(x)
         x = self.dense(x)
         x = self.layer_norm(x)
         x = self.activation_fn(x)
@@ -43,4 +38,4 @@ class MultiLabelTokenClassificationHead(nn.Module):
         cat_probits = torch.softmax(cat_logits, dim=-1)
         attr_logits = self.out_proj(torch.cat((x, cat_probits), -1))
 
-        return cat_logits, attr_logits, words_w_bos
+        return cat_logits, attr_logits

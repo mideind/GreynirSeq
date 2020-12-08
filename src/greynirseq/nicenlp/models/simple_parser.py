@@ -31,7 +31,6 @@ from greynirseq.nicenlp.data.datasets import (
     NestedDictionaryDatasetFix,
     NestedDictionaryDatasetFix2,
     LossMaskDataset,
-    NumWordsDataset,
 )
 
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
@@ -98,7 +97,7 @@ class SimpleParserModel(RobertaModel):
     """Simple chart parser model based on Roberta. Simple in the sense that it does not
        add additional self-attentive layers or feature-engineering from Kitaev and Klein 2018."""
 
-    def __init__(self, args, encoder, num_classes):
+    def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
 
         def freeze_module_params(m):
@@ -116,9 +115,10 @@ class SimpleParserModel(RobertaModel):
         for layer in range(args.n_trans_layers_to_freeze):
             freeze_module_params(sentence_encoder.layers[layer])
 
+        self.task = task
         self.parser_head = ChartParserHead(
             sentence_encoder.embedding_dim,
-            num_classes,
+            self.task.num_nterm_cats,
             self.args.pooler_dropout,
         )
 
@@ -144,7 +144,7 @@ class SimpleParserModel(RobertaModel):
             args.max_positions = args.tokens_per_sample
 
         encoder = RobertaEncoder(args, task.source_dictionary)
-        return cls(args, encoder, task.num_nterm_cats)
+        return cls(args, encoder, task)
 
     def forward(
         self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs

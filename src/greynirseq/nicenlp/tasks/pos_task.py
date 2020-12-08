@@ -17,13 +17,13 @@ from fairseq.data import (
     SortDataset,
     TruncateDataset,
     PrependTokenDataset,
+    ListDataset,
 )
 from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
 
 from greynirseq.nicenlp.data.datasets import (
     POSDataset,
-    ListDataset,
     WordEndMaskDataset,
     RightPad2dDataset,
     NestedDictionaryDatasetFix,
@@ -173,13 +173,16 @@ class POSTask(FairseqTask):
 
         term_cats, term_attrs = POSDataset.make_both(
             term_labels,
+            self.dictionary,
             self.label_dictionary,
         )
 
-        word_masks_w_bos = WordEndMaskDataset(
+        word_mask = WordEndMaskDataset(
             src_tokens,
+            self.dictionary,
             self.is_word_initial,
-            include_bos=True,
+            bos_value=0,
+            eos_value=0,
         )
 
         dataset = {
@@ -189,8 +192,8 @@ class POSTask(FairseqTask):
                     src_tokens, pad_idx=self.source_dictionary.pad()
                 ),
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask_w_bos": RightPadDataset(
-                    word_masks_w_bos,
+                "word_mask": RightPadDataset(
+                    word_mask,
                     pad_idx=0,
                 ),
             },
@@ -200,12 +203,14 @@ class POSTask(FairseqTask):
             "target_attrs": RightPad2dDataset(term_attrs, pad_idx=0),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
+            "nwords": NumWordsDataset(
+                src_tokens, self.dictionary, self.is_word_initial
+            ),
         }
 
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
 
-        if self.args.no_shuffle or True:
+        if self.args.no_shuffle:
             dataset = nested_dataset
         else:
             dataset = SortDataset(nested_dataset, sort_order=[shuffle])
@@ -220,8 +225,8 @@ class POSTask(FairseqTask):
         src_tokens = ListDataset(tokens, sizes=sizes)
         src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
 
-        word_masks_w_bos = WordEndMaskDataset(
-            src_tokens, self.is_word_initial, include_bos=True
+        word_mask = WordEndMaskDataset(
+            src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0
         )
 
         dataset = {
@@ -229,10 +234,12 @@ class POSTask(FairseqTask):
             "net_input": {
                 "src_tokens": src_tokens,
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask_w_bos": RightPadDataset(word_masks_w_bos, pad_idx=0),
+                "word_mask": RightPadDataset(word_mask, pad_idx=0),
             },
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
+            "nwords": NumWordsDataset(
+                src_tokens, self.dictionary, self.is_word_initial
+            ),
             "nsentences": NumSamplesDataset(),
         }
         dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])

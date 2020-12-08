@@ -1,10 +1,10 @@
 from collections import namedtuple
 import json
 
-from fairseq.data import (
-    Dictionary,
-)
+from fairseq.data import Dictionary
 import torch
+import torch.nn.functional as F
+
 
 def parse_label_schema(path):
     LabelSchema = namedtuple(
@@ -45,7 +45,6 @@ def make_map_cat_to_dict(ldict, schema, device="cpu"):
     return map_cat_to_dict
 
 
-
 def make_bos_mask(nwords_w_bos):
     zero = torch.tensor(0)
     bos_mask = torch.cat(
@@ -58,12 +57,12 @@ def make_bos_mask(nwords_w_bos):
     return bos_mask
 
 
-def make_vec_idx_to_dict_idx(ldict, labels, device="cpu"):
+def make_vec_idx_to_dict_idx(dictionary, labels, device="cpu", fill_value=-100):
     map_vec_to_dict = torch.full(
-        (len(ldict),), device=device, fill_value=len(labels) - 1, dtype=torch.long
+        (len(dictionary),), device=device, fill_value=fill_value, dtype=torch.long
     )
     for vec_idx, label in enumerate(labels):
-        map_vec_to_dict[vec_idx] = ldict.index(label)
+        map_vec_to_dict[vec_idx] = dictionary.index(label)
     return map_vec_to_dict
 
 
@@ -96,24 +95,23 @@ def make_mapped_group_masks(schema, ldict, device="cpu"):
     return ret_mask
 
 
-def make_group_name_to_mapped_group_idxs(ldict, group_name_to_labels):
+def make_group_name_to_mapped_group_idxs(dictionary, group_name_to_labels):
     group_names = group_name_to_labels.keys()
-    lshift = ldict.nspecial
+    lshift = dictionary.nspecial
     group_name_to_map_vec_idxs = {
         gname: torch.tensor(
-            [
-                ldict.index(gitem) - lshift
-                for gitem in group_name_to_labels[gname]
-            ]
+            [dictionary.index(gitem) - lshift for gitem in group_name_to_labels[gname]]
         )
         for gname in group_names
     }
     return group_name_to_map_vec_idxs
 
 
-def make_dict_idx_to_vec_idx(ldict, cats, device="cpu"):
+def make_dict_idx_to_vec_idx(dictionary, cats, device="cpu", fill_value=-100):
     # NOTE: when target is not in label_categories, the error is silent
-    map_tgt = torch.full((len(ldict),), device=device, fill_value=len(cats) - 1, dtype=torch.long)
-    for vec_idx, lbl in enumerate(cats):
-        map_tgt[ldict.index(lbl)] = vec_idx
+    map_tgt = torch.full(
+        (len(dictionary),), device=device, fill_value=fill_value, dtype=torch.long
+    )
+    for vec_idx, label in enumerate(cats):
+        map_tgt[dictionary.index(label)] = vec_idx
     return map_tgt

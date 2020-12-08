@@ -213,7 +213,7 @@ class MultiSpanPredictionTask(FairseqTask):
             "ntargets": NumelDataset(labels),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
+            "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
             "word_spans": RightPadDataset(
                 word_spans, pad_idx=self.label_dictionary.pad()
             ),

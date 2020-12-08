@@ -20,13 +20,17 @@ from greynirseq.nicenlp.utils.label_schema.label_schema import (
 )
 
 from greynirseq.nicenlp.utils.constituency import token_utils
-from greynirseq.nicenlp.models.multilabel_word_classification import MultiLabelTokenClassificationHead
+from greynirseq.nicenlp.models.multilabel_word_classification import (
+    MultiLabelTokenClassificationHead
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 @register_model("icebert_pos")
 class IceBERTPOS(RobertaModel):
-
-    def __init__(self, args, encoder, num_cats, num_labels):
+    def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
 
         def freeze_module_params(m):
@@ -44,10 +48,11 @@ class IceBERTPOS(RobertaModel):
         for layer in range(args.n_trans_layers_to_freeze):
             freeze_module_params(sentence_encoder.layers[layer])
 
+        self.task = task
         self.pos_head = MultiLabelTokenClassificationHead(
             in_features=sentence_encoder.embedding_dim,
-            out_features=num_labels,
-            num_cats=num_cats,
+            out_features=self.task.num_labels,
+            num_cats=self.task.num_cats,
             pooler_dropout=self.args.pooler_dropout,
         )
 
@@ -71,43 +76,45 @@ class IceBERTPOS(RobertaModel):
         # make sure all arguments are present
         base_architecture(args)
 
-        if not hasattr(args, 'max_positions'):
+        if not hasattr(args, "max_positions"):
             args.max_positions = args.tokens_per_sample
 
         encoder = RobertaEncoder(args, task.source_dictionary)
-        return cls(args, encoder, task.num_cats, task.num_labels)
+        return cls(args, encoder, task)
 
     def forward(
-
         self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs
     ):
         _x, _extra = self.decoder(
             src_tokens, features_only, return_all_hiddens=True, **kwargs
         )
-        # _x = _x.transpose(0, 1)
 
         x_tag = _extra["inner_states"][self.args.tag_layer - 1]
         x_tag = x_tag.transpose(0, 1)
         x = x_tag
 
-        _, _, nfeatures = x.shape
-        mask = kwargs["word_mask_w_bos"]
-        words_w_bos = x.masked_select(mask.unsqueeze(-1).bool()).reshape(-1, nfeatures)
+        _, _, inner_dim = x.shape
+        word_mask = kwargs["word_mask"]
 
-        nwords_w_bos = kwargs["word_mask_w_bos"].sum(-1)
+        words = x.masked_select(
+            word_mask.unsqueeze(-1).bool()
+        ).reshape(-1, inner_dim)
+        nwords_w_bos = word_mask.sum(-1)
 
-        words_w_bos_padded = pad_sequence(
-            words_w_bos.softmax(-1).split((nwords_w_bos).tolist()),
+        (cat_logits, attr_logits) = self.pos_head(words)
+
+        pcat_logits = pad_sequence(
+            cat_logits.split((nwords_w_bos).tolist()),
+            padding_value=0,
+            batch_first=True,
+        )
+        pattr_logits = pad_sequence(
+            attr_logits.split((nwords_w_bos).tolist()),
             padding_value=0,
             batch_first=True,
         )
 
-        assert "pos_head" in self.classification_heads, "task must be defined as pos_task"
-        pos_features = self.pos_head(
-            words_w_bos_padded, **kwargs
-        )
-
-        return pos_features
+        return (pcat_logits, pattr_logits), _extra
 
     @classmethod
     def from_pretrained(
@@ -134,17 +141,16 @@ class IceBERTPOS(RobertaModel):
     def upgrade_state_dict_named(self, state_dict, name):
         super().upgrade_state_dict_named(state_dict, name)
 
-        prefix = name + '.' if name != '' else ''
+        prefix = name + "." if name != "" else ""
 
         for key, value in self.pos_head.state_dict().items():
             path = prefix + "pos_head." + key
-            logger.info('Initializing pos_head.' + key)
+            logger.info("Initializing pos_head." + key)
             if path not in state_dict:
                 state_dict[path] = value
 
 
 class IceBERTPOSHubInterface(RobertaHubInterface):
-
     def predict_sample(self, sample):
         net_input = sample["net_input"]
         tokens = net_input["src_tokens"]

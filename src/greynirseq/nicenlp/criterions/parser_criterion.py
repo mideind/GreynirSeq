@@ -23,7 +23,6 @@ pyximport.install()
 import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser
 import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
-from greynirseq.nicenlp.criterions.pos_criterion import targets_to_flat_mask_no_bos
 
 
 def gen_2d_diags(chart_width):
