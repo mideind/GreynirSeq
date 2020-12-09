@@ -29,7 +29,16 @@ from greynirseq.nicenlp.data.datasets import (
     NestedDictionaryDatasetFix,
     NumWordsDataset,
 )
-from greynirseq.nicenlp.utils.label_schema.label_schema import label_schema_as_dictionary, parse_label_schema
+from greynirseq.nicenlp.utils.label_schema.label_schema import (
+    label_schema_as_dictionary,
+    parse_label_schema,
+    make_dict_idx_to_vec_idx,
+    make_vec_idx_to_dict_idx,
+    make_group_name_to_group_attr_vec_idxs,
+    make_group_masks,
+)
+
+
 from greynirseq.nicenlp.utils.constituency import token_utils
 
 logger = logging.getLogger(__name__)
@@ -172,17 +181,11 @@ class POSTask(FairseqTask):
         assert term_labels is not None, "could not find labels: {}".format(targets_path)
 
         term_cats, term_attrs = POSDataset.make_both(
-            term_labels,
-            self.dictionary,
-            self.label_dictionary,
+            term_labels, self.dictionary, self.label_dictionary
         )
 
         word_mask = WordEndMaskDataset(
-            src_tokens,
-            self.dictionary,
-            self.is_word_initial,
-            bos_value=0,
-            eos_value=0,
+            src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0
         )
 
         dataset = {
@@ -192,10 +195,7 @@ class POSTask(FairseqTask):
                     src_tokens, pad_idx=self.source_dictionary.pad()
                 ),
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask": RightPadDataset(
-                    word_mask,
-                    pad_idx=0,
-                ),
+                "word_mask": RightPadDataset(word_mask, pad_idx=0),
             },
             "target_cats": RightPadDataset(
                 term_cats, pad_idx=self.label_dictionary.pad()
@@ -263,3 +263,94 @@ class POSTask(FairseqTask):
     @property
     def label_dictionary(self):
         return self._label_dictionary
+
+    @property
+    def group_name_to_group_attr_vec_idxs(self):
+        return make_group_name_to_group_attr_vec_idxs(
+            self.label_dictionary, self.label_schema
+        )
+
+    @property
+    def cat_dict_idx_to_vec_idx(self):
+        return make_dict_idx_to_vec_idx(
+            self.label_dictionary, self.label_schema.label_categories
+        )
+
+    @property
+    def cat_vec_idx_to_dict_idx(self):
+        return make_vec_idx_to_dict_idx(
+            self.label_dictionary, self.label_schema.label_categories
+        )
+
+    @property
+    def group_mask(self):
+        return make_group_masks(self.label_dictionary, self.label_schema)
+
+    def logits_to_labels(self, cat_logits, attr_logits, word_mask):
+        # logits: Batch x Time x Labels
+        bsz, _, num_cats = cat_logits.shape
+        _, _, num_attrs = attr_logits.shape
+        nwords = word_mask.sum(-1)
+        assert num_attrs == len(self.label_schema.labels)
+        assert num_cats == len(self.label_schema.label_categories)
+
+        batch_cats = []
+        batch_attrs = []
+        for seq_idx in range(bsz):
+            seq_nwords = nwords[seq_idx]
+            pred_cats = self.cat_vec_idx_to_dict_idx[
+                cat_logits[seq_idx, :seq_nwords].max(dim=-1).indices
+            ]
+
+            group_mask = self.group_mask[pred_cats]
+            offset = self.label_dictionary.nspecial
+            pred_attrs = []
+            for group_idx, group_name in enumerate(self.label_schema.group_names):
+                group_vec_idxs = self.group_name_to_group_attr_vec_idxs[group_name]
+                # logits: (bsz * nwords) x labels
+                group_logits = attr_logits[seq_idx, :seq_nwords, group_vec_idxs]
+                if len(group_vec_idxs) == 1:
+                    group_pred_vec_idxs = group_logits.sigmoid().ge(0.5).long()
+                else:
+                    group_pred_vec_idxs = group_logits.max(dim=-1).indices
+                group_pred_dict_idxs = (
+                    group_vec_idxs[group_pred_vec_idxs] + offset
+                ) * group_mask[:, group_idx]
+                pred_attrs.append(group_pred_dict_idxs)
+            pred_attrs = torch.stack(pred_attrs).t()
+            nwords_tup = tuple(nwords.tolist())
+
+            # batch_cats.append(pred_cats.split(nwords_tup))
+            # batch_attrs.append(pred_attrs.split(nwords_tup))
+            batch_cats.append(pred_cats)
+            batch_attrs.append(pred_attrs)
+
+        predictions = list(
+            [
+                _clean_cats_attrs(
+                    self.task.label_dictionary,
+                    self.task.label_schema,
+                    seq_cats,
+                    seq_attrs,
+                )
+                for seq_cats, seq_attrs in zip(batch_cats, batch_attrs)
+            ]
+        )
+
+        return predictions
+
+
+def _clean_cats_attrs(ldict, schema, pred_cats, pred_attrs):
+    cats = ldict.string(pred_cats).split(" ")
+    attrs = []
+    for (_cat_idx, attr_idxs) in zip(pred_cats.tolist(), pred_attrs.split(1, dim=0)):
+        seq_attrs = [
+            lbl
+            for lbl in ldict.string((attr_idxs.squeeze())).split(
+                " "
+            )  # if "empty" not in lbl
+        ]
+        if not any(it for it in seq_attrs):
+            seq_attrs = []
+        attrs.append(seq_attrs)
+    return list(zip(cats, attrs))

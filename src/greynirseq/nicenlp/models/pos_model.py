@@ -14,7 +14,6 @@ from fairseq.models import register_model, register_model_architecture
 
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
     make_vec_idx_to_dict_idx,
-    make_bos_mask,
     make_mapped_group_masks,
     make_group_name_to_mapped_group_idxs,
 )
@@ -96,25 +95,22 @@ class IceBERTPOS(RobertaModel):
         _, _, inner_dim = x.shape
         word_mask = kwargs["word_mask"]
 
-        words = x.masked_select(
-            word_mask.unsqueeze(-1).bool()
-        ).reshape(-1, inner_dim)
+        words = x.masked_select(word_mask.unsqueeze(-1).bool()).reshape(-1, inner_dim)
         nwords_w_bos = word_mask.sum(-1)
 
         (cat_logits, attr_logits) = self.pos_head(words)
 
-        pcat_logits = pad_sequence(
-            cat_logits.split((nwords_w_bos).tolist()),
-            padding_value=0,
-            batch_first=True,
+        # (Batch * Time) x Depth -> Batch x Time x Depth
+        cat_logits = pad_sequence(
+            cat_logits.split((nwords_w_bos).tolist()), padding_value=0, batch_first=True
         )
-        pattr_logits = pad_sequence(
+        attr_logits = pad_sequence(
             attr_logits.split((nwords_w_bos).tolist()),
             padding_value=0,
             batch_first=True,
         )
 
-        return (pcat_logits, pattr_logits), _extra
+        return (cat_logits, attr_logits), _extra
 
     @classmethod
     def from_pretrained(
@@ -155,38 +151,12 @@ class IceBERTPOSHubInterface(RobertaHubInterface):
         net_input = sample["net_input"]
         tokens = net_input["src_tokens"]
 
-        word_mask_w_bos = sample["net_input"]["word_mask_w_bos"]
-        nwords_w_bos = sample["net_input"]["word_mask_w_bos"].sum(-1)
+        word_mask = sample["net_input"]["word_mask"]
+        nwords = sample["net_input"]["word_mask"].sum(-1)
 
-        x, _extra = self.model.decoder(
-            tokens, features_only=True, return_all_hiddens=False
-        )
+        (cat_logits, attr_logits), _extra = self.model(tokens, word_mask=word_mask)
 
-        term_cat_logits, term_attr_logits, _words_w_bos = self.model.classification_heads[
-            "pos_tagger"
-        ](
-            x, word_mask_w_bos=word_mask_w_bos
-        )
-        term_cats, term_attrs = _term_predictions_from_logits(
-            term_cat_logits,
-            term_attr_logits,
-            nwords_w_bos,
-            self.model.task.term_dictionary,
-            self.model.task.term_schema,
-        )
-
-        all_cats, all_attrs = zip(
-            *[
-                _clean_cats_attrs(
-                    self.task.term_dictionary,
-                    self.task.term_schema,
-                    seq_cats,
-                    seq_attrs,
-                )
-                for seq_cats, seq_attrs in zip(term_cats, term_attrs)
-            ]
-        )
-        return all_cats, all_attrs
+        return self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
 
     def predict(self, sentences, device="cuda"):
         device = torch.device(device)
@@ -196,61 +166,6 @@ class IceBERTPOSHubInterface(RobertaHubInterface):
         sample = dataset.collater([dataset[i] for i in range(num_sentences)])
 
         return self.predict_sample(sample)
-
-
-def _term_predictions_from_logits(cat_logits, attr_logits, nwords_w_bos, ldict, schema):
-    no_bos_mask = make_bos_mask(nwords_w_bos).bool().bitwise_not().unsqueeze(-1)
-    no_bos_mask = no_bos_mask.to(cat_logits.device)
-    # logits: (bsz * nwords) x labels
-    _, num_cats = cat_logits.shape
-    _, num_attrs = attr_logits.shape
-    assert num_attrs == len(schema.labels)
-    assert num_cats == len(schema.label_categories)
-
-    cat_logits = cat_logits.masked_select(no_bos_mask).reshape(-1, num_cats)
-    attr_logits = attr_logits.masked_select(no_bos_mask).reshape(-1, num_attrs)
-
-    cat_vec_idx_to_dict_idx = make_vec_idx_to_dict_idx(ldict, schema.label_categories)
-    pred_cats = cat_vec_idx_to_dict_idx[cat_logits.max(dim=-1)[1]]
-
-    group_name_to_mapped_group_idxs = make_group_name_to_mapped_group_idxs(
-        ldict, schema.group_name_to_labels
-    )
-
-    group_mask = make_mapped_group_masks(schema, ldict)[pred_cats]
-
-    pred_attrs = []
-    for group_idx, group_name in enumerate(schema.group_names):
-        mapped_group_idxs = group_name_to_mapped_group_idxs[group_name]
-        # logits: (bsz * nwords) x labels
-        group_logits = attr_logits[:, mapped_group_idxs]
-        if len(mapped_group_idxs) == 1:
-            group_preds = group_logits.sigmoid().ge(0.5).long()
-        else:
-            group_preds = group_logits.max(dim=-1)[1]
-        mapped_group_preds = (
-            mapped_group_idxs[group_preds] + ldict.nspecial
-        ) * group_mask[:, group_idx]
-        pred_attrs.append(mapped_group_preds)
-    pred_attrs = torch.stack(pred_attrs).t()
-    nwords_list = (nwords_w_bos - 1).tolist()
-    return pred_cats.split(nwords_list), pred_attrs.split(nwords_list)
-
-
-def _clean_cats_attrs(ldict, schema, pred_cats, pred_attrs):
-    cats = ldict.string(pred_cats).split(" ")
-    attrs = []
-    for (_cat_idx, attr_idxs) in zip(pred_cats.tolist(), pred_attrs.split(1, dim=0)):
-        seq_attrs = [
-            lbl
-            for lbl in ldict.string((attr_idxs.squeeze())).split(
-                " "
-            )  # if "empty" not in lbl
-        ]
-        if not any(it for it in seq_attrs):
-            seq_attrs = []
-        attrs.append(seq_attrs)
-    return cats, attrs
 
 
 @register_model_architecture("icebert_pos", "icebert_base_pos")

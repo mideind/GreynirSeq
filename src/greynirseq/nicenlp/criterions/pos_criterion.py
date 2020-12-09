@@ -9,8 +9,6 @@ from fairseq import utils
 import torch
 import torch.nn.functional as F
 
-from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
-
 
 @register_criterion("pos_ice")
 class POSCriterion(FairseqCriterion):
@@ -40,27 +38,10 @@ class POSCriterion(FairseqCriterion):
             **sample["net_input"], features_only=True
         )
 
-        label_shift = self.task.label_dictionary.nspecial
-        schema = self.task.label_schema
-        label_dict = model.task.label_dictionary
-        pad_idx = label_dict.pad()
-
-        group_names = schema.group_name_to_labels.keys()
-        group_name_to_mapped_vec_idxs = {
-            gname: torch.tensor(
-                [
-                    label_dict.index(gitem) - label_shift
-                    for gitem in schema.group_name_to_labels[gname]
-                ]
-            )
-            for gname in group_names
-        }
-
+        pad_idx = model.task.label_dictionary.pad()
         target_mask = target_cats.ne(pad_idx)
 
-        cat_dict_to_vec_idx = make_dict_idx_to_vec_idx(
-            label_dict, schema.label_categories, device=target_cats.device
-        )
+        cat_dict_to_vec_idx = model.task.cat_dict_idx_to_vec_idx
 
         # Batch x Time x Depth -> Batch x Depth x Time
         cat_loss = F.cross_entropy(
@@ -69,13 +50,15 @@ class POSCriterion(FairseqCriterion):
             reduction="sum",
         )
 
+        # each attribute group is one-hot, so Attr is multi-hot
         # attr_logits:  Batch x Time x Attr
         group_losses = []
-        name_to_group_attr_vec_idxs = group_name_to_mapped_vec_idxs
         correct_attrs = torch.ones_like(target_cats).bool()
+        group_name_to_group_attr_vec_idxs = model.task.group_name_to_group_attr_vec_idxs
+        group_names = group_name_to_group_attr_vec_idxs = model.task.label_schema.group_names
         # we want fixed iteration order of group names
-        for group_name in schema.group_names:
-            group_idxs = name_to_group_attr_vec_idxs[group_name]
+        for group_name in group_names:
+            group_idxs = group_name_to_group_attr_vec_idxs[group_name]
             group_loss_mask, group_targets = target_attrs[:, :, group_idxs].max(dim=-1)
             group_logits = attr_logits[:, :, group_idxs]
 
@@ -85,7 +68,9 @@ class POSCriterion(FairseqCriterion):
                 )
             else:
                 # Batch x Time x Depth -> Batch x Depth x Time
-                group_loss = F.cross_entropy(group_logits.transpose(2, 1), group_targets, reduction="none") * group_loss_mask.type_as(group_logits)
+                group_loss = F.cross_entropy(
+                    group_logits.transpose(2, 1), group_targets, reduction="none"
+                ) * group_loss_mask.type_as(group_logits)
 
             group_losses.append(group_loss)
             correct = (

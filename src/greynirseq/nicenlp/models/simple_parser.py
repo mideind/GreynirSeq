@@ -34,11 +34,7 @@ from greynirseq.nicenlp.data.datasets import (
 )
 
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    make_group_masks,
     make_vec_idx_to_dict_idx,
-    make_bos_mask,
-    make_map_cat_to_dict,
-    make_mapped_group_masks,
 )
 
 from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
@@ -232,8 +228,8 @@ class SimpleParserHubInterface(RobertaHubInterface):
             span_features.cpu().detach(), nwords.cpu()
         )
 
-        cat_vec_idx_to_dict_idx = make_map_cat_to_dict(
-            self.task.nterm_dictionary, self.task.nterm_schema
+        cat_vec_idx_to_dict_idx = make_vec_idx_to_dict_idx(
+            self.task.nterm_dictionary, self.task.nterm_schema.labels
         )
 
         span_labels = [

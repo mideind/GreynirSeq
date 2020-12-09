@@ -40,9 +40,6 @@ from greynirseq.nicenlp.utils.label_schema.label_schema import (
     label_schema_as_dictionary,
     make_group_masks,
     make_vec_idx_to_dict_idx,
-    make_bos_mask,
-    make_map_cat_to_dict,
-    make_mapped_group_masks,
 )
 
 
