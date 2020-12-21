@@ -50,7 +50,7 @@ import reynir_correct as gc
 from reynir import _Sentence
 from tokenizer import detokenize, Tok, TOK
 
-from error_definitions import OUT_OF_SCOPE, ERROR_NUMBERS
+from error_definitions import OUT_OF_SCOPE, ERROR_NUMBERS, to_simcategory, to_supercategory
 
 # The type of a single error descriptor, extracted from a TEI XML file
 ErrorDict = Dict[str, Union[str, int, bool]]
@@ -190,6 +190,8 @@ def parse_all(dataset_name: str, path: str) -> None:
     textfile = open(dataset_name + ".input0", "w")
     labelfile = open(dataset_name + ".label", "w")
     multilabelfile = open(dataset_name + ".multilabel", "w")
+    simcategorylabelfile = open(dataset_name + ".simcategory.multilabel", "w")
+    supercategorylabelfile = open(dataset_name + ".supercategory.multilabel", "w")
 
     for f in glob.iglob(path, recursive=True):
         res = parse_file(f)
@@ -203,6 +205,14 @@ def parse_all(dataset_name: str, path: str) -> None:
                         error_labels.append(e['xtype'])
                         label = 1
 
+            try:
+                simcats = to_simcategory(error_labels)
+                supercats = to_supercategory(error_labels)
+            except:
+                print(f"category not known: {error_labels}")
+                continue
+
+
             textfile.write(r["text"])
             textfile.write("\n")
 
@@ -212,10 +222,17 @@ def parse_all(dataset_name: str, path: str) -> None:
             multilabelfile.write(" ".join(error_labels))
             multilabelfile.write("\n")
 
+            simcategorylabelfile.write(" ".join(simcats))
+            simcategorylabelfile.write("\n")
+
+            supercategorylabelfile.write(" ".join(supercats))
+            supercategorylabelfile.write("\n")
 
     textfile.close()
     labelfile.close()
     multilabelfile.close()
+    simcategorylabelfile.close()
+    supercategorylabelfile.close()
 
 
 if __name__ == "__main__":
