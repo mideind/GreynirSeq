@@ -93,6 +93,14 @@ class MultiLabelClassificationHead(nn.Module):
 
 @register_model("icebert")
 class IcebertModel(RobertaModel):
+
+    @staticmethod
+    def pos_from_settings():
+        return IcebertModel.from_pretrained(
+            settings.IceBERT_POS_PATH,
+            **settings.IceBERT_POS_CONFIG
+        )
+
     def forward(
         self,
         src_tokens,
