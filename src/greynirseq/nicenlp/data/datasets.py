@@ -9,13 +9,6 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data.dataloader import default_collate
 from fairseq.data import data_utils
 
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
 
 class LabelledSpanDataset(BaseWrapperDataset):
     """
@@ -90,12 +83,6 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
             if self.return_spans:
                 return torch.tensor(new_seq_spans).view(-1)
             return torch.tensor(new_seq_labels)
-            # return torch.tensor(seq_spans), torch.tensor(seq_labels)
-
-    def set_epoch(self, epoch, **_unused):
-        self.epoch = epoch
-        if hasattr(self.dataset, "set_epoch"):
-            self.dataset.set_epoch(self.epoch)
 
 
 class WordSpanDataset(BaseWrapperDataset):

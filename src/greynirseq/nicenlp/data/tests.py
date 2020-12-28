@@ -1,9 +1,11 @@
 import unittest
 
 import torch
+from fairseq.data import ListDataset
 
 from greynirseq.nicenlp.data.lookup_dataset import LookupDataset
 from greynirseq.nicenlp.data.mutex_binary_dataset import MutexBinaryDataset
+from greynirseq.nicenlp.data.masked_byte_sequence import MaskedByteSequenceDataset
 
 
 class TestLookupDataset(unittest.TestCase):
@@ -86,6 +88,15 @@ class TestMutexBinaryDataset(unittest.TestCase):
             -1.0,
         ]
         assert dataset[0].tolist() == expected
+
+# class MaskedByteSequenceDataset(unittest.TestCase):
+#     def test_dataset(self):
+#         listdataset = ListDataset([
+#             "I am a byte sequence"
+#         ])
+#         byte_seq_masker = MaskedByteSequenceDataset(
+#             listdataset,
+#         )
 
 
 if __name__ == "__main__":
