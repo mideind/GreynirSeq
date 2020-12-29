@@ -1,8 +1,10 @@
+from typing import List
 import logging
 import os
 from pathlib import Path
 import json
 from collections import namedtuple, OrderedDict
+import argparse
 
 import numpy as np
 
@@ -21,8 +23,6 @@ from fairseq.data import (
 )
 from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
-from fairseq.tasks.sentence_prediction import SentencePredictionTask
-from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 
 from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
@@ -78,7 +78,12 @@ class ParserTask(FairseqTask):
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
     def __init__(
-        self, args, data_dictionary, nterm_dict, nterm_schema, is_word_initial
+        self,
+        args: argparse.Namespace,
+        data_dictionary: Dictionary,
+        nterm_dict: Dictionary,
+        nterm_schema,
+        is_word_initial,
     ):
         super().__init__(args)
         self.dictionary = data_dictionary
@@ -98,7 +103,7 @@ class ParserTask(FairseqTask):
         self.num_nterm_labels = len(self.nterm_schema.labels)
 
     @classmethod
-    def setup_task(cls, args, **kwargs):
+    def setup_task(cls, args: argparse.Namespace, **kwargs):
         data_dict = cls.load_dictionary(args, os.path.join(args.data, "dict.txt"))
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
 
@@ -119,7 +124,7 @@ class ParserTask(FairseqTask):
         )
 
     @classmethod
-    def load_label_dictionary(cls, args, filename, **kwargs):
+    def load_label_dictionary(cls, args: argparse.Namespace, filename: str, **kwargs):
         """Load the dictionary from the filename
         Args:
             filename (str): the filename
@@ -129,7 +134,9 @@ class ParserTask(FairseqTask):
         return label_schema_as_dictionary(label_schema), label_schema
 
     @classmethod
-    def load_dictionary(cls, args, filename, add_mask=True):
+    def load_dictionary(
+        cls, args: argparse.Namespace, filename: str, add_mask: bool = True
+    ):
         """Load the dictionary from the filename
 
         Args:
@@ -141,7 +148,7 @@ class ParserTask(FairseqTask):
         return dictionary
 
     @classmethod
-    def get_word_beginnings(cls, args, dictionary):
+    def get_word_beginnings(cls, args: argparse.Namespace, dictionary: Dictionary):
         bpe = encoders.build_bpe(args)
         if bpe is not None:
 
@@ -162,7 +169,7 @@ class ParserTask(FairseqTask):
             return is_word_initial
         return None
 
-    def load_dataset(self, split, combine=False, **kwargs):
+    def load_dataset(self, split: str, combine: bool = False, **kwargs):
         """Load a given dataset split (e.g., train, valid, test)."""
 
         inputs_path = Path(self.args.data) / "{split}".format(split=split)
@@ -231,14 +238,14 @@ class ParserTask(FairseqTask):
         self.datasets[split] = dataset
         return self.datasets[split]
 
-    def prepare_sentences(self, sentences):
+    def prepare_sentences(self, sentences: List[str]):
         tokens = [
             self.encode(token_utils.tokenize_to_string(sentence))
             for sentence in sentences
         ]
         return self.task.prepare_tokens(tokens)
 
-    def prepare_tokens(self, tokens):
+    def prepare_tokens(self, tokens: torch.Tensor):
         sizes = [len(seq) for seq in tokens]
         src_tokens = ListDataset(tokens, sizes=sizes)
         src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())

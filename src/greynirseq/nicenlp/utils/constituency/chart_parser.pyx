@@ -14,11 +14,6 @@ cimport numpy as np
 import torch
 
 from collections import namedtuple
-try:
-    from icecream import ic
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
 
 NP_BOOLTYPE = np.uint8
@@ -64,9 +59,7 @@ cpdef parse_many(
 
     if isinstance(scores, torch.Tensor) and scores.dtype == torch.float32:
         c_scores = scores.numpy()
-        # c_scores = np.ascontiguousarray(scores.float(), order='C')
     elif isinstance(scores, torch.Tensor):
-        # c_scores = np.array(scores.float(), order='C')
         c_scores = scores.float().numpy()
     else:
         c_scores = scores

@@ -63,32 +63,6 @@ def make_group_masks(dictionary, schema, device="cpu"):
     return ret_mask
 
 
-def make_mapped_group_masks(schema, ldict, device="cpu"):
-    # deprecated
-    num_groups = len(schema.group_names)
-    num_labels = len(ldict)
-    ret_mask = torch.zeros(num_labels, num_groups, dtype=torch.int64, device=device)
-    for cat, group_names in schema.category_to_group_names.items():
-        cat_lbl_idx = ldict.index(cat)
-        for group_name in group_names:
-            group_idx = schema.group_names.index(group_name)
-            ret_mask[cat_lbl_idx, group_idx] = 1
-    return ret_mask
-
-
-def make_group_name_to_mapped_group_idxs(dictionary, group_name_to_labels):
-    # deprecated
-    group_names = group_name_to_labels.keys()
-    offset = dictionary.nspecial
-    group_name_to_map_vec_idxs = {
-        gname: torch.tensor(
-            [dictionary.index(gitem) - offset for gitem in group_name_to_labels[gname]]
-        )
-        for gname in group_names
-    }
-    return group_name_to_map_vec_idxs
-
-
 def make_group_name_to_group_attr_vec_idxs(dict_, schema):
     offset = dict_.nspecial
     group_names = schema.group_name_to_labels.keys()

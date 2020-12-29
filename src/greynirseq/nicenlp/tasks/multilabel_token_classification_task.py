@@ -1,8 +1,8 @@
+from typing import List
 import logging
 import os
 from pathlib import Path
-import json
-from collections import namedtuple
+import argparse
 
 import numpy as np
 
@@ -44,8 +44,8 @@ from greynirseq.nicenlp.utils.constituency import token_utils
 logger = logging.getLogger(__name__)
 
 
-@register_task("pos_ice")
-class POSTask(FairseqTask):
+@register_task("multi_label_token_classification_task")
+class MultiLabelTokenClassificationTask(FairseqTask):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
@@ -59,7 +59,12 @@ class POSTask(FairseqTask):
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
     def __init__(
-        self, args, data_dictionary, label_dictionary, is_word_initial, label_schema
+        self,
+        args: argparse.Namespace,
+        data_dictionary: Dictionary,
+        label_dictionary: Dictionary,
+        is_word_initial: torch.Tensor,
+        label_schema,
     ):
         super().__init__(args)
         self.dictionary = data_dictionary
@@ -82,7 +87,7 @@ class POSTask(FairseqTask):
         self.num_labels = len(self.label_schema.labels)
 
     @classmethod
-    def setup_task(cls, args, **kwargs):
+    def setup_task(cls, args: argparse.Namespace, **kwargs):
         data_dict = cls.load_dictionary(args, os.path.join(args.data, "dict.txt"))
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
 
@@ -108,10 +113,12 @@ class POSTask(FairseqTask):
                 continue
             assert False, "Unexpected POS label item in label_schema {}".format(lbl)
 
-        return POSTask(args, data_dict, term_dict, is_word_initial, label_schema)
+        return MultiLabelTokenClassificationTask(
+            args, data_dict, term_dict, is_word_initial, label_schema
+        )
 
     @classmethod
-    def load_label_dictionary(cls, args, filename, **kwargs):
+    def load_label_dictionary(cls, args: argparse.Namespace, filename, **kwargs):
         """Load the dictionary from the filename
         Args:
             filename (str): the filename
@@ -121,7 +128,9 @@ class POSTask(FairseqTask):
         return label_schema_as_dictionary(label_schema), label_schema
 
     @classmethod
-    def load_dictionary(cls, args, filename, add_mask=True):
+    def load_dictionary(
+        cls, args: argparse.Namespace, filename: str, add_mask: bool = True
+    ):
         """Load the dictionary from the filename
 
         Args:
@@ -133,7 +142,7 @@ class POSTask(FairseqTask):
         return dictionary
 
     @classmethod
-    def get_word_beginnings(cls, args, dictionary):
+    def get_word_beginnings(cls, args: argparse.Namespace, dictionary: Dictionary):
         bpe = encoders.build_bpe(args)
         if bpe is not None:
 
@@ -154,7 +163,7 @@ class POSTask(FairseqTask):
             return is_word_initial
         return None
 
-    def load_dataset(self, split, combine=False, **kwargs):
+    def load_dataset(self, split: str, combine: bool = False, **kwargs):
         """Load a given dataset split (e.g., train, valid, test)."""
 
         inputs_path = Path(self.args.data) / "{split}".format(split=split)
@@ -220,7 +229,7 @@ class POSTask(FairseqTask):
         self.datasets[split] = dataset
         return self.datasets[split]
 
-    def prepare_tokens(self, tokens):
+    def prepare_tokens(self, tokens: torch.Tensor):
         sizes = [len(seq) for seq in tokens]
         src_tokens = ListDataset(tokens, sizes=sizes)
         src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
@@ -245,7 +254,7 @@ class POSTask(FairseqTask):
         dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
         return dataset
 
-    def prepare_sentences(self, sentences):
+    def prepare_sentences(self, sentences: List[str]):
         tokens = [
             self.encode(token_utils.tokenize_to_string(sentence))
             for sentence in sentences
@@ -286,7 +295,12 @@ class POSTask(FairseqTask):
     def group_mask(self):
         return make_group_masks(self.label_dictionary, self.label_schema)
 
-    def logits_to_labels(self, cat_logits, attr_logits, word_mask):
+    def logits_to_labels(
+        self,
+        cat_logits: torch.Tensor,
+        attr_logits: torch.Tensor,
+        word_mask: torch.Tensor,
+    ):
         # logits: Batch x Time x Labels
         bsz, _, num_cats = cat_logits.shape
         _, _, num_attrs = attr_logits.shape
@@ -320,8 +334,6 @@ class POSTask(FairseqTask):
             pred_attrs = torch.stack(pred_attrs).t()
             nwords_tup = tuple(nwords.tolist())
 
-            # batch_cats.append(pred_cats.split(nwords_tup))
-            # batch_attrs.append(pred_attrs.split(nwords_tup))
             batch_cats.append(pred_cats)
             batch_attrs.append(pred_attrs)
 
@@ -340,16 +352,13 @@ class POSTask(FairseqTask):
         return predictions
 
 
-def _clean_cats_attrs(ldict, schema, pred_cats, pred_attrs):
+def _clean_cats_attrs(
+    ldict: Dictionary, schema, pred_cats: torch.Tensor, pred_attrs: torch.Tensor
+):
     cats = ldict.string(pred_cats).split(" ")
     attrs = []
     for (_cat_idx, attr_idxs) in zip(pred_cats.tolist(), pred_attrs.split(1, dim=0)):
-        seq_attrs = [
-            lbl
-            for lbl in ldict.string((attr_idxs.squeeze())).split(
-                " "
-            )  # if "empty" not in lbl
-        ]
+        seq_attrs = [lbl for lbl in ldict.string((attr_idxs.squeeze())).split(" ")]
         if not any(it for it in seq_attrs):
             seq_attrs = []
         attrs.append(seq_attrs)

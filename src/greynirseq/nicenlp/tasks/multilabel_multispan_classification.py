@@ -27,11 +27,9 @@ from greynirseq.nicenlp.data.datasets import (
     DynamicLabelledSpanDataset,
     LabelledSpanDataset,
     WordSpanDataset,
-    SparseProductSpanDataset,
     ProductSpanDataset,
     NumSpanDataset,
     NestedDictionaryDatasetFix,
-    LossMaskDataset,
     NumWordsDataset,
 )
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
@@ -174,20 +172,12 @@ class MultiSpanPredictionTask(FairseqTask):
 
         raise NotImplementedError
 
-        target_spans = LabelledSpanDataset(
-            labelled_spans,
-            return_spans=True,
-        )
-        labels = LabelledSpanDataset(
-            labelled_spans,
-            return_spans=False,
-        )
+        target_spans = LabelledSpanDataset(labelled_spans, return_spans=True)
+        labels = LabelledSpanDataset(labelled_spans, return_spans=False)
 
         # all possible word spans in each sequence
         word_spans = WordSpanDataset(
-            src_tokens,
-            self.source_dictionary,
-            self.is_word_initial
+            src_tokens, self.source_dictionary, self.is_word_initial
         )
         all_spans = ProductSpanDataset(word_spans)
 
@@ -210,7 +200,9 @@ class MultiSpanPredictionTask(FairseqTask):
             "ntargets": NumelDataset(labels),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
+            "nwords": NumWordsDataset(
+                src_tokens, self.dictionary, self.is_word_initial
+            ),
             "word_spans": RightPadDataset(
                 word_spans, pad_idx=self.label_dictionary.pad()
             ),

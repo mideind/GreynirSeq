@@ -61,10 +61,6 @@ class LazyMMapIndexedTextDataset(FairseqDataset):
         self.check_index(idx)
 
         return self.encoded_lines[idx]
-        # item = self.memmap_buffer[self.offsets[idx] : self.offsets[idx + 1]].tostring().decode("utf8").strip("\n")
-        # item = self.memmap_buffer[self.offsets[idx] : self.offsets[idx + 1]].tostring().decode("utf8").strip("\n")
-        # item = self.string_encode(item)
-        # return item
 
     def __len__(self):
         if self.memmap_buffer is None:
@@ -73,9 +69,6 @@ class LazyMMapIndexedTextDataset(FairseqDataset):
 
     def size(self, index):
         return self.sizes[index]
-
-    # def ordered_indices(self):
-    #     return self.sizes.sort()[1]
 
     @property
     def sizes(self):

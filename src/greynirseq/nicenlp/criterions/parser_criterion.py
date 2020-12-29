@@ -1,3 +1,4 @@
+from typing import List, Union, Dict, Any
 import itertools
 import math
 import time
@@ -5,27 +6,21 @@ from collections import namedtuple
 
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq import utils
+from fairseq.data import Dictionary
+from fairseq.models import FairseqModel
 
 import torch
 import torch.nn.functional as F
+from torch import Tensor, LongTensor
 
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
-import pyximport
-
-pyximport.install()
-
-import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser
-import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
+import greynirseq.nicenlp.chart_parser as chart_parser
+import greynirseq.nicenlp.tree_dist as tree_dist
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
+from greynirseq.types import Numeric
+from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
 
 
-def gen_2d_diags(chart_width):
+def gen_2d_diags(chart_width: Union[int, LongTensor]):
     """Generator for all diagonal positions in a 2d matrix, starting with right of center diagonal from pos (0,1),
        then diagonal starting at (0,2), etc."""
     for span_length in range(1, chart_width):
@@ -40,10 +35,13 @@ ParseStats = namedtuple("ParseStats", ["ncorrect", "ncorrect_spans", "npred", "n
 
 
 def compute_parse_stats(
-        lmask, mapped_target_labels, target_spans, ntargets, ignore_idxs=(0, 1)
+    lmask: Tensor,
+    mapped_target_labels: LongTensor,
+    target_spans: LongTensor,
+    ntargets: LongTensor,
+    ignore_idxs: List[int] = [0, 1],
 ):
-    # assumes target_spans are (nseqs, 2, nspans) and not (nseqs, nspans * 2)
-    # and leaf_idx is shifted
+    # assumes target_spans are (nseqs, 2, nspans) and leaf_idx is shifted
     pad_val = -1
     npred, ngold = 0, 0
     ncorrect_lbls, ncorrect_spans = 0, 0
@@ -52,16 +50,18 @@ def compute_parse_stats(
         seq_ntargets = ntargets[idx]
         seq_targets = mapped_target_labels[idx, :seq_ntargets]
         seq_tgt_ii = target_spans[idx, 0, :seq_ntargets]
-        seq_tgt_jj  = target_spans[idx, 1, :seq_ntargets]
+        seq_tgt_jj = target_spans[idx, 1, :seq_ntargets]
         nrows, ncols = seq_tgt_ii.max() + 1, seq_tgt_jj.max() + 1
 
-        tgt_chart = seq_targets.new_full((nrows, ncols), fill_value=pad_val, dtype=torch.long)
+        tgt_chart = seq_targets.new_full(
+            (nrows, ncols), fill_value=pad_val, dtype=torch.long
+        )
         tgt_chart[seq_tgt_ii, seq_tgt_jj] = seq_targets
         lchart = lmask[idx, :nrows, :ncols, :].max(dim=-1)[1]
 
         tgt_mask = tgt_chart.ne(pad_val)
         pred_mask = lmask[idx, :nrows, :ncols, :].any(dim=-1).bool()
-        for ignore_idx in (ignore_idxs or []):
+        for ignore_idx in ignore_idxs or []:
             tgt_mask *= tgt_chart.ne(ignore_idx)
             pred_mask *= lchart.ne(ignore_idx)
 
@@ -75,33 +75,29 @@ def compute_parse_stats(
         ncorrect=ncorrect_lbls.item(),
         ncorrect_spans=ncorrect_spans.item(),
         npred=npred.item(),
-        ngold=ngold.item()
+        ngold=ngold.item(),
     )
 
 
-def make_dict_idx_to_vec_idx(ldict, cats, device="cpu"):
-    # NOTE: when target is not in label_categories, the error is silent
-    map_tgt = torch.full((len(ldict),), device=device, fill_value=len(cats) - 1, dtype=torch.long)
-    for vec_idx, lbl in enumerate(cats):
-        map_tgt[ldict.index(lbl)] = vec_idx
-    return map_tgt
-
-
-def safe_div(nom, denom):
+def safe_div(nom: Numeric, denom: Numeric):
     if not denom:
         return 0.0
     return float(nom / denom)
 
 
-def f1_score(precision, recall):
+def f1_score(precision: Numeric, recall: Numeric):
     return safe_div(2 * precision * recall, precision + recall)
 
 
-def make_gold_label_mask(sample, dict_to_vec, num_labels):
+def make_gold_label_mask(
+    sample: Dict[str, Any], dict_to_vec: LongTensor, num_labels: Union[int, LongTensor]
+):
     bsz = sample["nsentences"]
     ntarget_span_labels = sample["ntarget_span_labels"]
     target_span_labels = sample["target_span_labels"]
-    target_spans = sample["target_spans"].reshape(bsz, -1, 2).permute(0, 2, 1)  # (bsz, 2, max_ntargets)
+    target_spans = (
+        sample["target_spans"].reshape(bsz, -1, 2).permute(0, 2, 1)
+    )  # (bsz, 2, max_ntargets)
     mask_width = sample["nwords"].max() + 1
     mask_shape = (bsz, mask_width, mask_width, num_labels)
     gold_lmask = target_span_labels.new_zeros(mask_shape, dtype=torch.bool)
@@ -117,7 +113,7 @@ def make_gold_label_mask(sample, dict_to_vec, num_labels):
 
 @register_criterion("parser")
 class ParserCriterion(FairseqCriterion):
-    def forward(self, model, sample, reduce=True):
+    def forward(self, model: FairseqModel, sample: Dict[str, Any], reduce: bool = True):
         """Compute the loss for the given sample.
 
         Returns a tuple with three elements:
@@ -125,9 +121,9 @@ class ParserCriterion(FairseqCriterion):
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
-        assert (
-            hasattr(model, "parser_head")
-        ), "model must provide parser_head for --criterion=parser"
+        assert hasattr(
+            model, "task_head"
+        ), "model must provide task specific classification head"
 
         ntarget_span_labels = sample["ntarget_span_labels"]
         target_span_labels = sample["target_span_labels"]
@@ -137,10 +133,7 @@ class ParserCriterion(FairseqCriterion):
 
         bsz, _ = src_tokens.shape
 
-        span_logits = model(
-            **sample["net_input"],
-            features_only=True,
-        )
+        span_logits = model(**sample["net_input"], features_only=True)
 
         scores = span_logits
 
@@ -150,7 +143,7 @@ class ParserCriterion(FairseqCriterion):
         nterm_dict_idx_to_vec_idx = make_dict_idx_to_vec_idx(
             model.task.nterm_dictionary,
             model.task.nterm_schema.label_categories,
-            device=ntarget_span_labels.device
+            device=ntarget_span_labels.device,
         )
 
         # extract targets from padded inputs
@@ -160,15 +153,13 @@ class ParserCriterion(FairseqCriterion):
         null_leaf_dict_idx = model.task.nterm_dictionary.leaf()
 
         _, best_lspans, _best_mask, best_lmask = chart_parser.parse_many(
-            scores.cpu().detach(),
-            nwords.cpu()
+            scores.cpu().detach(), nwords.cpu()
         )
 
         # this augmentation forces max to select any label except the gold label, so that
         # parsing constructs a high scoring bad tree
         _aug_bad_tree_scores, bad_lspans, _, bad_lmask = chart_parser.parse_many(
-            (scores + (1 - gold_lmask)).cpu().detach(),
-            nwords.cpu()
+            (scores + (1 - gold_lmask)).cpu().detach(), nwords.cpu()
         )
 
         parse_stats = compute_parse_stats(
@@ -185,27 +176,31 @@ class ParserCriterion(FairseqCriterion):
         best_lbl_chart = best_lmask.long().max(-1)[1]
 
         ignore_leaves_mask = best_lmask.new_ones(*best_lbl_chart.shape)
-        ignore_leaves_mask[:, torch.arange(nwords.max()), torch.arange(1, 1 + nwords.max())] = 0
-        illegal_leaves_mask = (best_lbl_chart * ignore_leaves_mask) == null_leaf_dict_idx
-        illegal_leaves_loss = span_logits[:, :, :, null_leaf_dict_idx].masked_select(illegal_leaves_mask).sum()
+        ignore_leaves_mask[
+            :, torch.arange(nwords.max()), torch.arange(1, 1 + nwords.max())
+        ] = 0
+        illegal_leaves_mask = (
+            best_lbl_chart * ignore_leaves_mask
+        ) == null_leaf_dict_idx
+        illegal_leaves_loss = (
+            span_logits[:, :, :, null_leaf_dict_idx]
+            .masked_select(illegal_leaves_mask)
+            .sum()
+        )
 
         tree_scores_best = (best_lmask * scores).sum_to_size(bsz, 1, 1, 1).squeeze()
         tree_scores_bad = (bad_lmask * scores).sum_to_size(bsz, 1, 1, 1).squeeze()
         tree_scores_gold = (gold_lmask * scores).sum_to_size(bsz, 1, 1, 1).squeeze()
 
         # this is for margin loss, this is not optimized by itself
-        hamming_loss = (ntarget_span_labels.type_as(scores) - (bad_lmask * gold_lmask).sum_to_size(bsz, 1, 1, 1).squeeze())
+        hamming_loss = (
+            ntarget_span_labels.type_as(scores)
+            - (bad_lmask * gold_lmask).sum_to_size(bsz, 1, 1, 1).squeeze()
+        )
 
         # clamp for hinge loss
-        hinge_loss = (
-            (
-                hamming_loss
-                + tree_scores_bad - tree_scores_gold
-            )
-            .clamp(0)
-            .sum()
-        )
-        nterm_loss =  hinge_loss + illegal_leaves_loss
+        hinge_loss = (hamming_loss + tree_scores_bad - tree_scores_gold).clamp(0).sum()
+        nterm_loss = hinge_loss + illegal_leaves_loss
 
         loss = nterm_loss
         nwords_total = nwords.sum().data
@@ -227,7 +222,8 @@ class ParserCriterion(FairseqCriterion):
             "best_nlabels_roof": parse_stats.npred,
         }
 
-        if not model.training and False:
+        if not model.training:
+
             def parse_result_to_tree(lspans):
                 labels_str = [
                     model.task.nterm_dictionary.symbols[idx + label_shift]
@@ -241,8 +237,7 @@ class ParserCriterion(FairseqCriterion):
             trees_best = list(map(parse_result_to_tree, best_lspans))
 
             _, tgold_lspans, _, _ = chart_parser.parse_many(
-                gold_lmask.cpu().detach(),
-                nwords.cpu()
+                gold_lmask.cpu().detach(), nwords.cpu()
             )
             trees_gold = list(map(parse_result_to_tree, tgold_lspans))
             trees_bad = list(map(parse_result_to_tree, bad_lspans))
@@ -263,7 +258,7 @@ class ParserCriterion(FairseqCriterion):
         return loss, nwords_total, logging_output
 
     @staticmethod
-    def aggregate_logging_outputs(logging_outputs):
+    def aggregate_logging_outputs(logging_outputs: List[Dict[str, Numeric]]):
         """Aggregate logging outputs from data parallel training."""
         loss_sum = sum(log.get("loss", 0.0) for log in logging_outputs)
         hinge_loss = float(sum(log.get("hinge_loss", 0.0) for log in logging_outputs))
@@ -276,9 +271,6 @@ class ParserCriterion(FairseqCriterion):
         best_tree = float(sum(log.get("best_tree", 0.0) for log in logging_outputs))
         bad_tree = float(sum(log.get("bad_tree", 0.0) for log in logging_outputs))
 
-        gold_nlabels = float(
-            sum(log.get("gold_nlabels", float("inf")) for log in logging_outputs)
-        )
         gold_nlabels_roof = float(
             sum(log.get("gold_nlabels_roof", float("inf")) for log in logging_outputs)
         )
@@ -299,10 +291,7 @@ class ParserCriterion(FairseqCriterion):
         cat_loss = float(sum(log.get("cat_loss", 0.0) for log in logging_outputs))
         attr_loss = float(sum(log.get("attr_loss", 0.0) for log in logging_outputs))
 
-        # nterm_ce_loss = float(sum(log.get("nterm_ce_loss", 0.0) for log in logging_outputs))
-
         label_recall = float(ncorrect_labels) / float(gold_nlabels_roof)
-        # label_precision = float(ncorrect_labels) / float(best_nlabels_roof)
         label_precision = safe_div(ncorrect_labels, best_nlabels_roof)
         bracketing_precision = safe_div(ncorrect_spans, best_nlabels_roof)
         bracketing_recall = float(ncorrect_spans) / float(gold_nlabels_roof)
@@ -310,7 +299,6 @@ class ParserCriterion(FairseqCriterion):
         agg_output = {
             "loss": float(loss_sum / math.log(2)) / float(sample_size),
             "hinge_loss": float(hinge_loss / float(sample_size)),
-            # "nt_ppl": float(nterm_ce_loss / gold_nlabels / math.log(2)),
             "t_ppl": float(cat_loss) / float(sample_size) / math.log(2),
             "t_attr_ce": float(attr_loss) / float(sample_size) / math.log(2),
             "nt_label_precision": label_recall,
@@ -320,14 +308,14 @@ class ParserCriterion(FairseqCriterion):
             "bracketing_recall": bracketing_recall,
             "bracketing_f1": f1_score(bracketing_precision, bracketing_recall),
             "avg_bracketing_errors": bracketing_errors / (nsentences),
-            "delta_gold_bad": (gold_tree - bad_tree)/nsentences,
-            "delta_best_gold": (best_tree - gold_tree)/(nsentences),
+            "delta_gold_bad": (gold_tree - bad_tree) / nsentences,
+            "delta_best_gold": (best_tree - gold_tree) / (nsentences),
             "t_prec_cat": float(ncorrect_cat) / float(sample_size),
             "t_prec_exact": float(ncorrect_exact) / float(sample_size),
             "t_prec_attrs": float(ncorrect_attrs) / float(sample_size),
-            "gold_tree": gold_tree/nsentences,
-            "bad_tree": bad_tree/nsentences,
-            "best_tree": best_tree/nsentences,
+            "gold_tree": gold_tree / nsentences,
+            "bad_tree": bad_tree / nsentences,
+            "best_tree": best_tree / nsentences,
             "ntokens": ntokens,
             "nwords": nwords,
             "nsentences": nsentences,
@@ -339,16 +327,16 @@ class ParserCriterion(FairseqCriterion):
                 dist_diff = float(
                     sum(log.get("dist_gold_bad", 0) for log in logging_outputs)
                 )
-                agg_output.update(dist_best_gold=dist_diff/nsentences)
+                agg_output.update(dist_best_gold=dist_diff / nsentences)
             if "dist_best_gold" in logging_outputs[0]:
                 dist_diff = float(
                     sum(log.get("dist_best_gold", 0) for log in logging_outputs)
                 )
-                agg_output.update(dist_best_gold=dist_diff/nsentences)
+                agg_output.update(dist_best_gold=dist_diff / nsentences)
             if "dist_best_gold_unif" in logging_outputs[0]:
                 dist_diff = float(
                     sum(log.get("dist_best_gold_unif", 0) for log in logging_outputs)
                 )
-                agg_output.update(dist_dist_best_gold=dist_diff/nsentences)
+                agg_output.update(dist_dist_best_gold=dist_diff / nsentences)
 
         return agg_output

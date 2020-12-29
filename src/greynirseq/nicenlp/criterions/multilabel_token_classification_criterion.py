@@ -1,18 +1,22 @@
+from typing import List, Union, Dict, Any
 import itertools
 import math
 import time
 from collections import namedtuple
 
 from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.models import FairseqModel
 from fairseq import utils
 
 import torch
 import torch.nn.functional as F
 
+from greynirseq.types import Numeric
 
-@register_criterion("pos_ice")
-class POSCriterion(FairseqCriterion):
-    def forward(self, model, sample, reduce=True):
+
+@register_criterion("multilabel_token_classification")
+class MultiLabelTokenClassificationCriterion(FairseqCriterion):
+    def forward(self, model: FairseqModel, sample: Dict[str, Any], reduce: bool = True):
         """Compute the loss for the given sample.
 
         Returns a tuple with three elements:
@@ -21,8 +25,8 @@ class POSCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
         assert hasattr(
-            model, "pos_head"
-        ), "model must provide sentence classification head for pos_ice"
+            model, "task_head"
+        ), "model must provide task specific classification head"
 
         torch.autograd.set_detect_anomaly(True)
         torch.set_printoptions(precision=4, linewidth=160)
@@ -32,7 +36,7 @@ class POSCriterion(FairseqCriterion):
         nwords = sample["nwords"]
 
         bsz, _max_nwords = target_cats.shape
-        bsz, _max_nwords, num_attrs = target_attrs.shape
+        bsz, _max_nwords, _num_attrs = target_attrs.shape
 
         (cat_logits, attr_logits), _extra = model(
             **sample["net_input"], features_only=True
@@ -55,7 +59,9 @@ class POSCriterion(FairseqCriterion):
         group_losses = []
         correct_attrs = torch.ones_like(target_cats).bool()
         group_name_to_group_attr_vec_idxs = model.task.group_name_to_group_attr_vec_idxs
-        group_names = group_name_to_group_attr_vec_idxs = model.task.label_schema.group_names
+        group_names = (
+            group_name_to_group_attr_vec_idxs
+        ) = model.task.label_schema.group_names
         # we want fixed iteration order of group names
         for group_name in group_names:
             group_idxs = group_name_to_group_attr_vec_idxs[group_name]
@@ -108,7 +114,7 @@ class POSCriterion(FairseqCriterion):
         return loss, nwords_total, logging_output
 
     @staticmethod
-    def aggregate_logging_outputs(logging_outputs):
+    def aggregate_logging_outputs(logging_outputs: List[Dict[str, Numeric]]):
         """Aggregate logging outputs from data parallel training."""
         ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
         nsentences = sum(log.get("nsentences", 0) for log in logging_outputs)

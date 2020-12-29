@@ -11,10 +11,7 @@ import torch.nn.functional as F
 
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 
-import pyximport
-
-pyximport.install()
-import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
+import greynirseq.nicenlp.tree_dist as tree_dist
 
 
 def gen_2d_diags(chart_width):
@@ -377,11 +374,7 @@ class MultiSpanCriterion(FairseqCriterion):
                 gold = gold.roof()
                 dist = 0.0
                 if best is not None and gold is not None:
-                    dist = tree_dist.tree_dist(
-                        best.uniform(),
-                        gold.uniform(),
-                        None,
-                    )
+                    dist = tree_dist.tree_dist(best.uniform(), gold.uniform(), None)
                 dist_best_gold_unif += dist
             logging_output["dist_best_gold_unif"] = dist_best_gold_unif
         return loss, nwords_total, logging_output

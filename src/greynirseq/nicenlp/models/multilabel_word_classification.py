@@ -1,14 +1,7 @@
-import itertools
-
 import torch
 from torch import nn
-import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
 
 from fairseq import utils
-from fairseq.models.roberta.model import base_architecture, RobertaModel
-from fairseq.models.roberta.hub_interface import RobertaHubInterface
-from fairseq.models import register_model, register_model_architecture
 from fairseq.modules import LayerNorm
 
 

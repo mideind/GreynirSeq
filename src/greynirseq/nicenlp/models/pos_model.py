@@ -12,11 +12,7 @@ from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import RobertaEncoder
 from fairseq.models import register_model, register_model_architecture
 
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    make_vec_idx_to_dict_idx,
-    make_mapped_group_masks,
-    make_group_name_to_mapped_group_idxs,
-)
+from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
 
 from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.models.multilabel_word_classification import (
@@ -28,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 @register_model("icebert_pos")
-class IceBERTPOS(RobertaModel):
+class IceBERTPOSModel(RobertaModel):
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
 
@@ -48,7 +44,7 @@ class IceBERTPOS(RobertaModel):
             freeze_module_params(sentence_encoder.layers[layer])
 
         self.task = task
-        self.pos_head = MultiLabelTokenClassificationHead(
+        self.task_head = MultiLabelTokenClassificationHead(
             in_features=sentence_encoder.embedding_dim,
             out_features=self.task.num_labels,
             num_cats=self.task.num_cats,
@@ -58,7 +54,7 @@ class IceBERTPOS(RobertaModel):
     @staticmethod
     def add_args(parser):
         """Add model-specific arguments to the parser."""
-        super(IceBERTPOS, IceBERTPOS).add_args(parser)
+        super(IceBERTPOSModel, IceBERTPOSModel).add_args(parser)
         # fmt: off
         parser.add_argument('--freeze-embeddings', default=False,
                             help='Freeze transformer embeddings during fine-tuning')
@@ -98,7 +94,7 @@ class IceBERTPOS(RobertaModel):
         words = x.masked_select(word_mask.unsqueeze(-1).bool()).reshape(-1, inner_dim)
         nwords_w_bos = word_mask.sum(-1)
 
-        (cat_logits, attr_logits) = self.pos_head(words)
+        (cat_logits, attr_logits) = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
         cat_logits = pad_sequence(

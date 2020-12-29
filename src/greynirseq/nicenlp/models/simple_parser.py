@@ -16,34 +16,25 @@ from fairseq.data import (
     RightPadDataset,
     BaseWrapperDataset,
     NestedDictionaryDataset,
-    TokenBlockDataset,
     NumelDataset,
 )
 from fairseq.models.roberta.model import RobertaEncoder
-import nltk
 
 from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
     LabelledSpanDataset,
-    SparseProductSpanDataset,
     ProductSpanDataset,
     NumSpanDataset,
     NestedDictionaryDatasetFix,
     NestedDictionaryDatasetFix2,
-    LossMaskDataset,
 )
 
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    make_vec_idx_to_dict_idx,
-)
+from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
 
 from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 
-import pyximport
-
-pyximport.install()
-import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser
+import greynirseq.nicenlp.chart_parser as chart_parser
 
 
 logger = logging.getLogger(__name__)
@@ -102,17 +93,18 @@ class SimpleParserModel(RobertaModel):
                     p.requires_grad = False
 
         sentence_encoder = self.decoder.sentence_encoder
-        if args.freeze_embeddings:
-            freeze_module_params(sentence_encoder.embed_tokens)
-            freeze_module_params(sentence_encoder.segment_embeddings)
-            freeze_module_params(sentence_encoder.embed_positions)
-            freeze_module_params(sentence_encoder.emb_layer_norm)
+
+        # Not freezing embeddings degrades result according to multiple papers (e.g. Kitaev)
+        freeze_module_params(sentence_encoder.embed_tokens)
+        freeze_module_params(sentence_encoder.segment_embeddings)
+        freeze_module_params(sentence_encoder.embed_positions)
+        freeze_module_params(sentence_encoder.emb_layer_norm)
 
         for layer in range(args.n_trans_layers_to_freeze):
             freeze_module_params(sentence_encoder.layers[layer])
 
         self.task = task
-        self.parser_head = ChartParserHead(
+        self.task_head = ChartParserHead(
             sentence_encoder.embedding_dim,
             self.task.num_nterm_cats,
             self.args.pooler_dropout,
@@ -136,7 +128,7 @@ class SimpleParserModel(RobertaModel):
         # make sure all arguments are present
         base_architecture(args)
 
-        if not hasattr(args, 'max_positions'):
+        if not hasattr(args, "max_positions"):
             args.max_positions = args.tokens_per_sample
 
         encoder = RobertaEncoder(args, task.source_dictionary)
@@ -161,20 +153,18 @@ class SimpleParserModel(RobertaModel):
             batch_first=True,
         )
 
-        span_features = self.parser_head(
-            words_w_bos_padded
-        )
+        span_features = self.task_head(words_w_bos_padded)
 
         return span_features
 
     def upgrade_state_dict_named(self, state_dict, name):
         super().upgrade_state_dict_named(state_dict, name)
 
-        prefix = name + '.' if name != '' else ''
+        prefix = name + "." if name != "" else ""
 
-        for key, value in self.parser_head.state_dict().items():
-            path = prefix + "parser_head." + key
-            logger.info('Initializing parser_head.' + key)
+        for key, value in self.task_head.state_dict().items():
+            path = prefix + "task_head." + key
+            logger.info("Initializing task_head." + key)
             if path not in state_dict:
                 state_dict[path] = value
 

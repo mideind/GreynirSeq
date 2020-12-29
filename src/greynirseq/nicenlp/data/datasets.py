@@ -1,20 +1,18 @@
+from typing import List, Union, Dict, Any, Callable, Tuple
 from collections import OrderedDict
 from functools import lru_cache
 
 from fairseq.data import BaseWrapperDataset, NestedDictionaryDataset, LRUCacheDataset
 from fairseq.data.nested_dictionary_dataset import _unflatten
+from fairseq.data import data_utils, Dictionary
 
 import torch
+from torch import LongTensor, Tensor
+from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data.dataloader import default_collate
-from fairseq.data import data_utils
 
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
+from greynirseq.utils.types import Numeric
 
 
 class LabelledSpanDataset(BaseWrapperDataset):
@@ -22,12 +20,12 @@ class LabelledSpanDataset(BaseWrapperDataset):
     Read in a dataset of [word_start_i, word_end_i, word_label_i, ...]
     """
 
-    def __init__(self, dataset, return_spans=False):
+    def __init__(self, dataset: Dataset, return_spans: bool = False):
         super().__init__(dataset)
         self.return_spans = return_spans
 
     @lru_cache(maxsize=8)
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         item = self.dataset[index]
         assert len(item) % 3 == 0, "Illegal number of labelled_span elements"
         numel = len(item) // 3
@@ -42,7 +40,13 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
     """
 
     @classmethod
-    def make_both(cls, dataset, label_dictionary, rebinarize_fn=None, seed=1):
+    def make_both(
+        cls,
+        dataset: Dataset,
+        label_dictionary: Dictionary,
+        rebinarize_fn=None,
+        seed: int = 1,
+    ):
         dataset = LRUCacheDataset(dataset)
         return (
             DynamicLabelledSpanDataset(
@@ -62,7 +66,14 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
         )
 
     def __init__(
-        self, dataset, label_dictionary, rebinarize_fn=None, return_spans=None, seed=1
+        self,
+        dataset: Dataset,
+        label_dictionary: Dictionary,
+        rebinarize_fn: Callable[
+            [LongTensor, List[str]], Tuple[Tuple[int, int], str]
+        ] = None,
+        return_spans: bool = None,
+        seed: int = 1,
     ):
         assert rebinarize_fn is not None, "Rebinarization function must be provided"
         assert isinstance(return_spans, bool), "Must provide boolean for return_spans"
@@ -74,7 +85,7 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
         self.seed = seed
 
     @lru_cache(maxsize=8)
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             item = self.dataset[index]
             assert len(item) % 3 == 0, "Illegal number of labelled_span elements"
@@ -90,22 +101,18 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
             if self.return_spans:
                 return torch.tensor(new_seq_spans).view(-1)
             return torch.tensor(new_seq_labels)
-            # return torch.tensor(seq_spans), torch.tensor(seq_labels)
-
-    def set_epoch(self, epoch, **_unused):
-        self.epoch = epoch
-        if hasattr(self.dataset, "set_epoch"):
-            self.dataset.set_epoch(self.epoch)
 
 
 class WordSpanDataset(BaseWrapperDataset):
-    def __init__(self, dataset, dictionary, is_word_initial):
+    def __init__(
+        self, dataset: Dataset, dictionary: Dictionary, is_word_initial: Dict[int, int]
+    ):
         super().__init__(dataset)
         self.is_word_initial = is_word_initial
         self.dictionary = dictionary
 
     @lru_cache(maxsize=8)
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         item = self.dataset[index]
         offset = 1 if item[0] == self.dictionary.bos() else 0
         seq_end = len(item) - 1 if item[-1] == self.dictionary.eos() else len(item)
@@ -122,43 +129,19 @@ class WordSpanDataset(BaseWrapperDataset):
         ends = starts[1:]
         ends.append(len(idxs) + offset)
         spans = list(sum(zip(starts, ends), ()))
-        return torch.Tensor(spans).long()
-
-
-class SparseProductSpanDataset(BaseWrapperDataset):
-    def __init__(self, span_dataset, end_is_fence_post=True):
-        """Product span, a subset (starts x ends) where span direction is forward."""
-        super().__init__(span_dataset)
-        # whether we need to subtract 1 for position index
-        self.end_is_fence_post = end_is_fence_post
-
-    def __getitem__(self, index):
-        seq_spans = self.dataset[index].reshape(-1, 2)
-        span_start = seq_spans[:, 0]
-        offset = 0
-        if self.end_is_fence_post:
-            offset = 1
-        span_end = seq_spans[:, 1]
-        nwords = len(span_start)
-        out_spans = []
-        for ii in range(nwords):
-            for jj in range(nwords):
-                if ii > jj:
-                    continue
-                out_spans.extend((span_start[ii], span_end[jj]))
-        return torch.tensor(out_spans).long()
+        return LongTensor(spans)
 
 
 class ProductSpanDataset(BaseWrapperDataset):
     """Take in span starts and span ends as contiguous 1d tensor.
-    Return product spans, (starts x ends), as contiguous 1d tensor."""
+       Return product spans, (starts x ends), as contiguous 1d tensor."""
 
-    def __init__(self, span_dataset, end_is_fence_post=True):
+    def __init__(self, span_dataset: Dataset, end_is_fence_post: bool = True):
         super().__init__(span_dataset)
         # whether we need to subtract 1 for position index
         self.end_is_fence_post = end_is_fence_post
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         seq_spans = self.dataset[index].reshape(-1, 2)
         span_start = seq_spans[:, 0]
         offset = 0
@@ -175,7 +158,7 @@ class ProductSpanDataset(BaseWrapperDataset):
         return all_contig.reshape(-1)
 
 
-def split_tensor_on(tensor, sep_value):
+def split_tensor_on(tensor: Tensor, sep_value: int):
     assert len(tensor.shape) == 1
     start = 0
     numel = tensor.shape[0]
@@ -220,18 +203,25 @@ class RightPad2dDataset(BaseWrapperDataset):
 
 class POSDataset(BaseWrapperDataset):
     @classmethod
-    def make_both(cls, dataset, src_dictionary, label_dictionary):
+    def make_both(
+        cls, dataset: Dataset, src_dictionary: Dictionary, label_dictionary: Dictionary
+    ):
         dataset = LRUCacheDataset(dataset)
         return (
             POSDataset(
-                dataset, src_dictionary, label_dictionary, return_categories=True),
+                dataset, src_dictionary, label_dictionary, return_categories=True
+            ),
             POSDataset(
                 dataset, src_dictionary, label_dictionary, return_categories=False
             ),
         )
 
     def __init__(
-            self, dataset, src_dictionary, label_dictionary, return_categories=True
+        self,
+        dataset: Dataset,
+        src_dictionary: Dictionary,
+        label_dictionary: Dictionary,
+        return_categories: bool = True,
     ):
         super().__init__(dataset)
         self.label_dict = label_dictionary
@@ -239,11 +229,10 @@ class POSDataset(BaseWrapperDataset):
         self.return_categories = return_categories
         self.start_offset = 1 if dataset[0][0] == self.src_dict.bos() else 0
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         item = self.dataset[index]
         word_items = split_tensor_on(
-            item[self.start_offset:-1],
-            self.label_dict.sep()
+            item[self.start_offset : -1], self.label_dict.sep()
         )
         assert all(subseq.numel() > 0 for subseq in word_items)
         assert len(word_items) == (item.eq(self.label_dict.sep()).sum() + 1)
@@ -269,11 +258,11 @@ class POSDataset(BaseWrapperDataset):
 class WordEndMaskDataset(BaseWrapperDataset):
     def __init__(
         self,
-        dataset,
-        dictionary,
-        is_word_initial,
-        bos_value=1,
-        eos_value=0,
+        dataset: Dataset,
+        dictionary: Dictionary,
+        is_word_initial: Dict[int, int],
+        bos_value: int = 1,
+        eos_value: int = 0,
     ):
         super().__init__(dataset)
         self.is_word_initial = is_word_initial
@@ -285,68 +274,44 @@ class WordEndMaskDataset(BaseWrapperDataset):
     def __getitem__(self, index):
         item = self.dataset[index]
         mask = torch.tensor([self.is_word_initial.get(int(v), 1) for v in item])
-        mask[self.start_offset] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
-        mask[:self.start_offset] = self.bos_value
+        mask[
+            self.start_offset
+        ] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
+        mask[: self.start_offset] = self.bos_value
         mask[-1] = self.eos_value
         return mask
 
 
-class GroupMaskDataset(BaseWrapperDataset):
-    def __init__(self, dataset, group_masks):
-        super().__init__(dataset)
-        self.group_masks = group_masks
-
-    def __getitem__(self, index):
-        item = self.dataset[index]
-        assert all(lbl_idx in self.group_masks for lbl_idx in item.tolist())
-        masks = torch.stack([self.group_masks[lbl_idx] for lbl_idx in item.tolist()])
-        return masks
-
-
 class NumWordsDataset(BaseWrapperDataset):
     def __init__(
-        self,
-        dataset,
-        dictionary,
-        is_word_initial,
+        self, dataset: Dataset, dictionary: Dictionary, is_word_initial: Dict[int, int]
     ):
         super().__init__(dataset)
         self.is_word_initial = is_word_initial
         self.dictionary = dictionary
         self.start_offset = 1 if dataset[0][0] == self.dictionary.bos() else 0
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         word_starts = [
             self.is_word_initial.get(int(v), 1)
-            for v in self.dataset[index][self.start_offset:-1]  # ignore bos and eos
+            for v in self.dataset[index][self.start_offset : -1]  # ignore bos and eos
         ]
-        word_starts[self.start_offset] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
-        return torch.tensor(sum(word_starts)).long()
+        word_starts[
+            self.start_offset
+        ] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
+        # return torch.tensor(sum(word_starts)).long()
+        return LongTensor(sum(word_starts))
 
 
 class NumSpanDataset(BaseWrapperDataset):
-    def __init__(self, dataset):
+    def __init__(self, dataset: Dataset):
         super().__init__(dataset)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         item = self.dataset[index]
         assert len(item) % 2 == 0, "Illegal number of span elements"
         numel = len(item) // 2
-        return torch.tensor(numel).long()
-
-
-class LossMaskDataset(BaseWrapperDataset):
-    """Dataset for masking out specific label groups (mutually exclusive classes)"""
-
-    def __init__(self, dataset, label_idx_to_loss_mask):
-        super().__init__(dataset)
-        self.label_idx_to_loss_mask = label_idx_to_loss_mask
-
-    def __getitem__(self, index):
-        item = self.dataset[index]
-        return torch.stack([self.label_idx_to_loss_mask[idx] for idx in item]).reshape(
-            -1
-        )
+        return LongTensor(numel)
 
 
 class NestedDictionaryDatasetFix(NestedDictionaryDataset):
