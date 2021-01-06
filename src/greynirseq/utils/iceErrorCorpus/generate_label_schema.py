@@ -70,32 +70,6 @@ import error_definitions as ed
 import json
 
 
-SEPARATOR="<sep>"
-
-
-def generate_simple_simcategories_schema_v1():
-    return generate_simple_from_dict_v1(ed.SIMCATEGORIES)
-
-
-def generate_simple_supercategories_schema_v1():
-    return generate_simple_from_dict_v1(ed.SUPERCATEGORIES)
-
-
-def generate_simple_from_dict_v1(categories):
-    schema_dict = {
-        "null": None,
-        "null_leaf": None,
-        "separator": SEPARATOR,
-    }
-
-    schema_dict["label_categories"] = list(categories.keys())
-    schema_dict["category_to_group_names"] = {cat: [] for cat in categories.keys()}
-    schema_dict["group_names"] = []
-    schema_dict["group_name_to_labels"] = {}
-    schema_dict["labels"] = [schema_dict["separator"]] + schema_dict["label_categories"]
-
-    return schema_dict
-
 
 def generate_supercategories_schema_v1():
     return generate_from_categories_dict(ed.SUPERCATEGORIES)
@@ -109,14 +83,14 @@ def generate_from_categories_dict(categories):
     schema_dict = {
         "null": None,
         "null_leaf": None,
-        "separator": SEPARATOR,
+        "separator": "<sep>",
     }
 
     group_postfix = "-group"  # Need to fix names to fit the schema
-    schema_dict["label_categories"] = list(categories.keys())
-    schema_dict["category_to_group_names"] = {cat: [cat + group_postfix] for cat in categories.keys()}
+    schema_dict["label_categories"] = ["all"]
+    schema_dict["category_to_group_names"] = {"all": [cat + group_postfix for cat in categories.keys()]}
     schema_dict["group_names"] = [cat + group_postfix for cat in categories.keys()]
-    schema_dict["group_name_to_labels"] = {cat + group_postfix: labels for cat, labels in categories.items()}
+    schema_dict["group_name_to_labels"] = {cat + group_postfix: [cat+"-yes", cat+"-no"] for cat in categories.keys()}
 
     leaf_labels = []
     for group, labels in schema_dict["group_name_to_labels"].items():
@@ -142,10 +116,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     with open(args.output_file, "w") as f:
-        # schema = generate_supercategories_schema_v1()
-        # schema = generate_simcategories_schema_v1()
-        schema = generate_simple_supercategories_schema_v1()
-        # schema = generate_simple_simcategories_schema_v1()
+        #schema = generate_supercategories_schema_v1()
+        schema = generate_simcategories_schema_v1()
         f.write(json.dumps(schema, sort_keys=True, indent=4))
         f.write("\n")
 
