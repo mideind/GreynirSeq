@@ -104,11 +104,15 @@ class MultiprocessingEncoder(object):
 
     def encode(self, line):
         global bpe
+        if self.args.add_prefix_space:
+            line = " " + line
         ids = bpe.encode(line)
         return list(map(str, ids))
 
     def decode(self, tokens):
         global bpe
+        if self.args.add_prefix_space:
+            return bpe.decode(tokens)[1:]
         return bpe.decode(tokens)
 
     def encode_lines(self, lines):
@@ -120,8 +124,6 @@ class MultiprocessingEncoder(object):
             line = line.strip()
             if len(line) == 0 and not self.args.keep_empty:
                 return ["EMPTY", None]
-            if self.args.add_prefix_space:
-                line = " " + line
             tokens = self.encode(line)
             enc_lines.append(" ".join(tokens))
         return ["PASS", enc_lines]
@@ -130,11 +132,7 @@ class MultiprocessingEncoder(object):
         dec_lines = []
         for line in lines:
             tokens = map(int, line.strip().split())
-            if self.args.add_prefix_space:
-                decoded_line = self.decode(tokens)[1:]
-            else:
-                decoded_line = self.decode(tokens)
-            dec_lines.append(decoded_line)
+            dec_lines.append(self.decode(tokens))
         return ["PASS", dec_lines]
 
 
