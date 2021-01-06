@@ -50,7 +50,7 @@ def main():
         action="store_true",
         help="keep empty lines",
     )
-    parser.add_arguments(
+    parser.add_argument(
         "--add-prefix-space",
         action="store_true",
         help="adds empty space at front of line before tokenizing, you probably want this"
