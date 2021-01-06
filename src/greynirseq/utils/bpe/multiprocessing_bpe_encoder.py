@@ -53,7 +53,7 @@ def main():
     parser.add_argument(
         "--add-prefix-space",
         action="store_true",
-        help="adds empty space at front of line before tokenizing, you probably want this"
+        help="ensures empty space at front of line before tokenizing, you probably want this"
     )
     parser.add_argument("--workers", type=int, default=20)
     args = parser.parse_args()
@@ -104,7 +104,7 @@ class MultiprocessingEncoder(object):
 
     def encode(self, line):
         global bpe
-        if self.args.add_prefix_space:
+        if self.args.add_prefix_space and line and line[0] != " ":
             line = " " + line
         ids = bpe.encode(line)
         return list(map(str, ids))
