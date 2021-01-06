@@ -52,7 +52,7 @@ import reynir_correct as gc
 from reynir import _Sentence
 from tokenizer import detokenize, Tok, TOK
 
-from error_definitions import OUT_OF_SCOPE, ERROR_NUMBERS, to_simcategory, to_supercategory
+from error_definitions import OUT_OF_SCOPE, ERROR_NUMBERS, SIMCATEGORIES, SUPERCATEGORIES, to_simcategory, to_supercategory
 
 # The type of a single error descriptor, extracted from a TEI XML file
 ErrorDict = Dict[str, Union[str, int, bool]]
@@ -204,14 +204,10 @@ def parse_file(path: str) -> List[Dict[str, Any]]:
     return res
 
 
-def categorize(labels):
+def categorize(labels, category_func):
     """ Turn a list of lists of errors into a list of list of error categories.
         De-duplicate while we're at it.
     """
-    #category_func = lambda x: x # Use default error labels
-    category_func = lambda x: to_supercategory(x)
-    #category_func = lambda x: to_simcategory(x)
-    
     new_labels = []
     for single_token_errors in labels:
         transformed = map(category_func, single_token_errors)
@@ -220,11 +216,42 @@ def categorize(labels):
     return new_labels
 
 
-def parse_all_per_token(dataset_name: str, path: str) -> None:
+def generate_label_line(per_token_labels: List[Set[str]], all_labels: List[str]):
+    """ Generate label line that can be used to train a model. """
+    first = True
+
+    all_labels = set(all_labels)
+
+    line = ""
+    for this_token_labels in per_token_labels:
+        if first:
+            first = False
+        else:
+            line += " <sep> " # Must match the label schema!
+
+        not_this_token_labels = all_labels - this_token_labels
+        line += " ".join([l + "-yes" for l in this_token_labels]
+                         + [l + "-no" for l in not_this_token_labels])
+
+    return line
+
+
+def parse_all_per_token(dataset_name: str, path: str, category_mode: str) -> None:
     """ Parse all examples from the given path and save to `dataset_name`.
         Output error markings per token (per line) in the label files.
     """
-    separator = " <sep> " # Must match the label schema
+
+    if category_mode == "sim":
+        category_func = to_simcategory
+        all_labels = set(SIMCATEGORIES.keys())
+    elif category_mode == "super":
+        category_func = to_supercategory
+        all_labels = set(SUPERCATEGORIES.keys())
+    elif category_mode == "default":
+        category_func = lambda x: x
+        all_labels = set(ERROR_NUMBERS.keys())
+    else:
+        raise Exception("Unknown category mode", category_mode)
 
     textfile = open(dataset_name + ".input0", "w")
     labelfile = open(dataset_name + ".tokenlabel", "w")
@@ -252,18 +279,18 @@ def parse_all_per_token(dataset_name: str, path: str) -> None:
             textfile.write(r["text"])
             textfile.write("\n")
 
-            labels_categorized = categorize(labels)
-            label_line = separator.join([" ".join(token_errors) for token_errors in labels_categorized])
-            label_line = label_line.strip().replace("  ", " ")
+            labels_categorized = categorize(labels, category_func)
+            label_line = generate_label_line(labels_categorized, all_labels)
 
             """
             if len(r["errors"]) > 0:
                 print("------------------------")
                 for word, errors in zip(map(lambda x: x[1], r["tokens"]), labels):
-                    print(word, " "*(15-len(word)), errors)
+                    #print(word, " "*(15-len(word)), errors)
+                    print(word, " "*(15-len(word)), [to_simcategory(e) for e in errors])
                 print(label_line)
                 #break
-            """
+            #"""
 
             labelfile.write(label_line)
             labelfile.write("\n")
@@ -339,9 +366,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "mode", type=str, help="Labelling category mode: default, sim or super"
+    )
+
+    parser.add_argument(
         "path", type=str, help="Glob path of XML files to process.",
     )
 
     args = parser.parse_args()
 
-    parse_all_per_token(args.dataset_name, args.path)
+    parse_all_per_token(args.dataset_name, args.path, args.mode)
