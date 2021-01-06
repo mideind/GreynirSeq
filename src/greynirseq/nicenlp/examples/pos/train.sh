@@ -1,47 +1,64 @@
-TOTAL_NUM_UPDATES=5500  # 
+TOTAL_NUM_UPDATES=6000  # 
 WARMUP_UPDATES=200      #  percent of the number of updates
 LR=1e-05                # Peak LR for polynomial LR scheduler.
-NUM_CLASSES_MUTEX=35    # Number of classes for the classification task.
-NUM_CLASSES_BINARY=26   # Number of binary classes, non mutually exclusive.
-MAX_SENTENCES=8         # Batch size.
+MAX_SENTENCES=6         # Batch size.
 
 # Pretrained model
-ROBERTA_PATH=/home/vesteinn/icebert-base-36k/model.pt
-ENCODER_JSON_PATH='/home/vesteinn/icebert-base-36k/icebert-bpe-vocab.json'
-VOCAB_BPE_PATH='/home/vesteinn/icebert-base-36k/icebert-bpe-merges.txt'
-CRITERION=multi_label_idf
+ICEBERT_MODEL_DIR=/data/models/icebert/icebert-large-stable
+ICEBERT_MODEL=$ICEBERT_MODEL_DIR/checkpoints/checkpoint_48_33000_best.pt
+VOCAB_PATH=/data/models/icebert/bpe_vocab
+ENCODER_JSON=$VOCAB_PATH/vocab.json
+MERGES_TXT=$VOCAB_PATH/merges.txt
+DICT=$VOCAB_PATH/tokenized_dict.txt
+LAB_DICT=labdict.txt
 
-for ITERATION in 01 02 03 04 05 06 07 08 09 10
+DATA_PATH=/data/datasets/MIM-GOLD-1_0_SETS/for_training
+SAVE_DIR=/data/scratch/vesteinn/icebert-large-stab-pos/checkpoints
+GREYNIRSEQ_PATH=/home/vesteinn/work/GreynirSeq/src/greynirseq
+
+ARC=icebert_large_pos
+CRITERION=multilabel_token_classification
+TASK=multi_label_token_classification_task
+TERM_SCHEMA=terms.json
+UPDATE_FREQ=2
+
+mkdir -p ./checkpoints
+
+for ITERATION in $(seq -f "%02g" 1 10)
 do
     NAME=multilabel_split_$ITERATION
+    IT_DATA_PATH=${DATA_PATH}/$ITERATION/bin
     
-    CUDA_VISIBLE_DEVICES=0 fairseq-train /home/vesteinn/work/pytorch_study/data/MIM/MIM-GOLD-1_0_sets_for_training/$ITERATION/bin \
-    --save-dir ./checkpoints_$ITERATION\
-    --user-dir ../nicenlp \
-    --restore-file $ROBERTA_PATH \
+    CUDA_VISIBLE_DEVICES=0 fairseq-train $IT_DATA_PATH \
+    --save-dir ./checkpoints/checkpoints_$ITERATION\
+    --restore-file $ICEBERT_MODEL \
+    --user-dir $GREYNIRSEQ_PATH \
     --max-positions 512 \
-    --max-sentences $MAX_SENTENCES \
-    --max-tokens 4400 \
-    --task multi_label_word_classification \
+    --batch-size $MAX_SENTENCES \
+    --max-tokens 1000 \
+    --task $TASK \
+    --num-workers 8\
+    --term-schema $TERM_SCHEMA\
     --reset-optimizer --reset-dataloader --reset-meters \
     --required-batch-size-multiple 1 \
-    --separator-token 2 \
-    --arch icebert \
+    --arch $ARC \
     --criterion $CRITERION \
-    --num-classes-mutex $NUM_CLASSES_MUTEX \
-    --num-classes-binary $NUM_CLASSES_BINARY \
     --dropout 0.1 --attention-dropout 0.1 \
     --weight-decay 0.1 --optimizer adam --adam-betas "(0.9, 0.98)" --adam-eps 1e-06 \
     --clip-norm 0.0 \
     --lr-scheduler polynomial_decay --lr $LR --total-num-update $TOTAL_NUM_UPDATES --warmup-updates $WARMUP_UPDATES \
-    --best-checkpoint-metric accuracy --maximize-best-checkpoint-metric \
-    --truncate-sequence \
+    --best-checkpoint-metric acc_exact --maximize-best-checkpoint-metric \
     --find-unused-parameters \
     --bpe='gpt2' \
-    --gpt2-encoder-json $ENCODER_JSON_PATH \
-    --gpt2-vocab-bpe $VOCAB_BPE_PATH \
-    --update-freq 6 \
+    --gpt2-encoder-json $ENCODER_JSON \
+    --gpt2-vocab-bpe $MERGES_TXT \
+    --update-freq $UPDATE_FREQ \
     --tensorboard-logdir ./tensorboard_logdir/$NAME \
     --max-update $TOTAL_NUM_UPDATES\
-    --save-interval-updates 500
+    --save-dir $SAVE_DIR\
+    --save-interval-updates 2000\
+    --n-trans-layers-to-freeze 0\
+    --freeze-embeddings 1\
+    --no-progress-bar 
 done
+

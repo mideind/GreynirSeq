@@ -128,7 +128,7 @@ class DynamicNoisingDataset(NoisingDataset):
         src_tokens = self.src_dataset[index]
         has_bos = src_tokens[0] == self.src_dict.bos()
         has_eos = src_tokens[-1] == self.src_dict.eos()
-        src_lengths = torch.LongTensor([len(src_tokens)])
+        src_lengths = torch.tensor([len(src_tokens)]).long()
         src_tokens = src_tokens.unsqueeze(0)
 
         # Transpose src tokens to fit expected shape of x in noising function
@@ -307,13 +307,13 @@ class GPT2WordDropout(GPT2Noising):
             sentences.append(new_s)
             modified_lengths.append(len(new_s))
         # re-construct input
-        modified_lengths = torch.LongTensor(modified_lengths)
-        modified_x = torch.LongTensor(
+        modified_lengths = torch.tensor(modified_lengths).long()
+        modified_x = torch.tensor(
             modified_lengths.max(),
             modified_lengths.size(0)
-        ).fill_(self.dictionary.pad())
+        ).long().fill_(self.dictionary.pad())
         for i in range(modified_lengths.size(0)):
-            modified_x[:modified_lengths[i], i].copy_(torch.LongTensor(sentences[i]))
+            modified_x[:modified_lengths[i], i].copy_(torch.tensor(sentences[i]).long())
 
         return modified_x, modified_lengths
 

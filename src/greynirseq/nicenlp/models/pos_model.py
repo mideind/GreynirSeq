@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 
 from fairseq import utils
-from fairseq.models.roberta.model import base_architecture, RobertaModel
+from fairseq.models.roberta.model import base_architecture, roberta_base_architecture, roberta_large_architecture, RobertaModel
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import RobertaEncoder
 from fairseq.models import register_model, register_model_architecture
@@ -33,7 +33,7 @@ class IceBERTPOSModel(RobertaModel):
                 for p in m.parameters():
                     p.requires_grad = False
 
-        sentence_encoder = self.decoder.sentence_encoder
+        sentence_encoder = self.encoder.sentence_encoder
         if args.freeze_embeddings:
             freeze_module_params(sentence_encoder.embed_tokens)
             freeze_module_params(sentence_encoder.segment_embeddings)
@@ -80,7 +80,7 @@ class IceBERTPOSModel(RobertaModel):
     def forward(
         self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs
     ):
-        _x, _extra = self.decoder(
+        _x, _extra = self.encoder(
             src_tokens, features_only, return_all_hiddens=True, **kwargs
         )
 
@@ -165,5 +165,12 @@ class IceBERTPOSHubInterface(RobertaHubInterface):
 
 
 @register_model_architecture("icebert_pos", "icebert_base_pos")
-def roberta_base_architecture(args):
-    base_architecture(args)
+def icebert_base_pos_architecture(args):
+    roberta_base_architecture(args)
+
+
+@register_model_architecture("icebert_pos", "icebert_large_pos")
+def icebert_large_pos_architecture(args):
+    roberta_large_architecture(args)
+
+

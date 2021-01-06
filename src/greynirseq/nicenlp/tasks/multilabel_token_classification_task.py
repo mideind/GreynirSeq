@@ -227,6 +227,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         logger.info("Loaded {0} with #samples: {1}".format(split, len(dataset)))
 
         self.datasets[split] = dataset
+        
         return self.datasets[split]
 
     def prepare_tokens(self, tokens: torch.Tensor):

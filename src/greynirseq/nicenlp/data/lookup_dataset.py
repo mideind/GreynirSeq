@@ -16,4 +16,4 @@ class LookupDataset(BaseWrapperDataset):
         ]
         if self.label_first:
             indexes[0] = self.default
-        return torch.Tensor(indexes).int()
+        return torch.tensor(indexes).int()

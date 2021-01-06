@@ -28,9 +28,6 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
             model, "task_head"
         ), "model must provide task specific classification head"
 
-        torch.autograd.set_detect_anomaly(True)
-        torch.set_printoptions(precision=4, linewidth=160)
-
         target_cats = sample["target_cats"]
         target_attrs = sample["target_attrs"]
         nwords = sample["nwords"]
@@ -45,9 +42,10 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         pad_idx = model.task.label_dictionary.pad()
         target_mask = target_cats.ne(pad_idx)
 
-        cat_dict_to_vec_idx = model.task.cat_dict_idx_to_vec_idx
+        cat_dict_to_vec_idx = model.task.cat_dict_idx_to_vec_idx.clone().to(cat_logits.device)
 
         # Batch x Time x Depth -> Batch x Depth x Time
+
         cat_loss = F.cross_entropy(
             cat_logits.transpose(2, 1),
             cat_dict_to_vec_idx[target_cats],
@@ -59,9 +57,7 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         group_losses = []
         correct_attrs = torch.ones_like(target_cats).bool()
         group_name_to_group_attr_vec_idxs = model.task.group_name_to_group_attr_vec_idxs
-        group_names = (
-            group_name_to_group_attr_vec_idxs
-        ) = model.task.label_schema.group_names
+        group_names = model.task.label_schema.group_names
         # we want fixed iteration order of group names
         for group_name in group_names:
             group_idxs = group_name_to_group_attr_vec_idxs[group_name]
@@ -70,13 +66,19 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
 
             if len(group_idxs) == 1:
                 group_loss = F.binary_cross_entropy_with_logits(
-                    group_logits, group_targets.type_as(attr_logits), reduction="mean"
+                    group_logits.squeeze(), group_targets.type_as(attr_logits).squeeze(), reduction="none"
                 )
             else:
+                # Not at validation?
                 # Batch x Time x Depth -> Batch x Depth x Time
-                group_loss = F.cross_entropy(
-                    group_logits.transpose(2, 1), group_targets, reduction="none"
-                ) * group_loss_mask.type_as(group_logits)
+                if group_logits.shape[0] != 1:
+                    group_loss = F.cross_entropy(
+                        group_logits.transpose(2, 1).squeeze(), group_targets.squeeze(), reduction="none"
+                    ) * group_loss_mask.type_as(group_logits).squeeze()
+                else:
+                    group_loss = F.cross_entropy(
+                        group_logits.squeeze(), group_targets.squeeze(), reduction="none"
+                    ) * group_loss_mask.type_as(group_logits).squeeze()
 
             group_losses.append(group_loss)
             correct = (
@@ -89,7 +91,8 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         attrs_divisor = target_attrs.sum(-1)
         attrs_divisor[attrs_divisor == 0] = 1
         # average attributes per word, sum across sequence&batch
-        attr_loss = (torch.stack(group_losses, dim=2).sum(-1) / attrs_divisor).sum()
+        # VS: dim modified from 2 to -1 for validation.
+        attr_loss = (torch.stack(group_losses, dim=-1).sum(-1) / attrs_divisor).sum()
 
         loss = cat_loss + attr_loss
 

@@ -36,7 +36,7 @@ class MutexBinaryDataset(BaseWrapperDataset):
                 res.append(t)
             res.append(self.separator)
 
-        return torch.Tensor(res).int()
+        return torch.tensor(res).int()
 
 
 class NestedDictionaryDatasetFix(NestedDictionaryDataset):

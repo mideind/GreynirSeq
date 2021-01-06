@@ -332,7 +332,7 @@ def make_parse_labelled_spans(label_dictionary, label_schema):
     def parse_labelled_spans(line):
         items = line.strip().split()
         assert len(items) % 3 == 0, "Expected labelled span items to be multiple of 3"
-        parsed_spans = torch.IntTensor(len(items))
+        parsed_spans = torch.tensor(len(items)).int()
         for span_idx in range(len(items) // 3):
             span_start, span_end, span_label = items[3 * span_idx : 3 * span_idx + 3]
             parsed_spans[3 * span_idx + 0] = int(span_start)

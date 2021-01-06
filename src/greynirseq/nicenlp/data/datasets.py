@@ -129,7 +129,7 @@ class WordSpanDataset(BaseWrapperDataset):
         ends = starts[1:]
         ends.append(len(idxs) + offset)
         spans = list(sum(zip(starts, ends), ()))
-        return LongTensor(spans)
+        return torch.tensor(spans).long()
 
 
 class ProductSpanDataset(BaseWrapperDataset):
@@ -296,11 +296,14 @@ class NumWordsDataset(BaseWrapperDataset):
             self.is_word_initial.get(int(v), 1)
             for v in self.dataset[index][self.start_offset : -1]  # ignore bos and eos
         ]
-        word_starts[
-            self.start_offset
-        ] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
-        # return torch.tensor(sum(word_starts)).long()
-        return LongTensor(sum(word_starts))
+        try:
+            word_starts[0] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
+        except:
+            print("WORDS_STARTS", word_starts)
+            print("OFFSET", self.start_offset)
+            print("INDEX", index)
+            raise
+        return torch.tensor(sum(word_starts)).long()
 
 
 class NumSpanDataset(BaseWrapperDataset):
@@ -311,7 +314,7 @@ class NumSpanDataset(BaseWrapperDataset):
         item = self.dataset[index]
         assert len(item) % 2 == 0, "Illegal number of span elements"
         numel = len(item) // 2
-        return LongTensor(numel)
+        return torch.tensor(numel).long()
 
 
 class NestedDictionaryDatasetFix(NestedDictionaryDataset):

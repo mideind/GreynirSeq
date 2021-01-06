@@ -1,6 +1,6 @@
 # POS tagging with IceBERT
 
-This example shows how to train an Icelandic POS tagger with ~97% accuracy on the [Tagged Icelandic Corpus](http://www.malfong.is/index.php?lang=en&pg=mim) (MIM) dataset, training is not efficient as is due to some heavy lifting in the wrong places. This will be mittigated with a move to the more general span tagger, similar to the NER one.
+This example shows how to train an Icelandic POS tagger with ~97% accuracy on the [Tagged Icelandic Corpus](http://www.malfong.is/index.php?lang=en&pg=mim) (MIM) dataset.
 
 ### Preprocessing
 See `./prep_mim_pos.sh` which is setup to process all data from the MIM pos set and prepare for crossvalidation.
