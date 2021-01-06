@@ -24,6 +24,8 @@
         SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
+from pprint import pprint
+
 from typing import (
     Dict,
     List,
@@ -91,14 +93,15 @@ def parse_file(path: str) -> List[Dict[str, Any]]:
     res = []
     root = tree.getroot()
     # Iterate through the sentences in the file
+
+    # A dictionary of errors by their index (idx field)
+    error_indexes: Dict[str, ErrorDict] = {}
+    dependencies: List[Tuple[str, ErrorDict]] = []
     for sent in root.findall("ns:text/ns:body/ns:p/ns:s", ns):
         # Sentence identifier (index)
         index = sent.attrib.get("n", "")
         tokens: List[Tuple[str, str]] = []
         errors: List[ErrorDict] = []
-        # A dictionary of errors by their index (idx field)
-        error_indexes: Dict[str, ErrorDict] = {}
-        dependencies: List[Tuple[str, ErrorDict]] = []
         # Error corpora annotations for sentences marked as unparsable
         # Enumerate through the tokens in the sentence
         for el in sent:
@@ -164,6 +167,7 @@ def parse_file(path: str) -> List[Dict[str, Any]]:
                             )
             else:
                 tokens.append((tag, element_text(el)))
+        """
         # Fix up the dependencies, if any
         for dep_id, error in dependencies:
             if dep_id not in error_indexes:
@@ -172,6 +176,9 @@ def parse_file(path: str) -> List[Dict[str, Any]]:
             else:
                 # Copy the in_scope attribute from the original error
                 error["in_scope"] = error_indexes[dep_id]["in_scope"]
+                # Find the true type of the error
+                error["dep_type"] = error_indexes[dep_id]["xtype"]
+        """
 
         # Reconstruct the original sentence
         # TODO switch for sentence from original text file
@@ -180,13 +187,98 @@ def parse_file(path: str) -> List[Dict[str, Any]]:
             # Nothing to do: drop this and go to the next sentence
             continue
 
-        res.append({"text": text, "errors": errors})
+        res.append({"text": text, "errors": errors, "tokens": tokens})
+
+    # Fix up the dependencies, if any
+    # This must happen outside the sentence loop since there are error dependencies that cross sentences
+    for dep_id, error in dependencies:
+        if dep_id not in error_indexes:
+            print(f"In file {path}:")
+            print(f"\n{index}: *** No error has idx='{dep_id}' ***")
+        else:
+            # Copy the in_scope attribute from the original error
+            error["in_scope"] = error_indexes[dep_id]["in_scope"]
+            # Find the true type of the error
+            error["dep_type"] = error_indexes[dep_id]["xtype"]
 
     return res
 
 
-def parse_all(dataset_name: str, path: str) -> None:
-    """ Parse all examples from the given path and save to `dataset_name`. """
+def categorize(labels):
+    """ Turn a list of lists of errors into a list of list of error categories.
+        De-duplicate while we're at it.
+    """
+    #category_func = lambda x: x # Use default error labels
+    category_func = lambda x: to_supercategory(x)
+    #category_func = lambda x: to_simcategory(x)
+    
+    new_labels = []
+    for single_token_errors in labels:
+        transformed = map(category_func, single_token_errors)
+        new_labels.append(set(transformed))
+
+    return new_labels
+
+
+def parse_all_per_token(dataset_name: str, path: str) -> None:
+    """ Parse all examples from the given path and save to `dataset_name`.
+        Output error markings per token (per line) in the label files.
+    """
+    separator = " <sep> " # Must match the label schema
+
+    textfile = open(dataset_name + ".input0", "w")
+    labelfile = open(dataset_name + ".tokenlabel", "w")
+
+    for f in glob.iglob(path, recursive=True):
+        for r in parse_file(f):
+            labels = [[] for i in range(len(r["tokens"]))] # List of error labels for each token
+            for e in r["errors"]:
+                for i in range(e["start"], e["end"]+1):
+                    # Use the type of the error depended on instead of "dep" which is not useful
+                    if e["xtype"] == "dep":
+                        errtype = e["dep_type"]
+                    else:
+                        errtype = e["xtype"]
+
+                    # Errors that indicate something is missing, like "missing-comma",
+                    # should appear on the word before the missing part, not the word after
+                    if e["original"] == "":
+                        errindex = i-1 if i > 0 else 0
+                    else:
+                        errindex = i
+
+                    labels[errindex].append(errtype)
+
+            textfile.write(r["text"])
+            textfile.write("\n")
+
+            labels_categorized = categorize(labels)
+            label_line = separator.join([" ".join(token_errors) for token_errors in labels_categorized])
+            label_line = label_line.strip().replace("  ", " ")
+
+            """
+            if len(r["errors"]) > 0:
+                print("------------------------")
+                for word, errors in zip(map(lambda x: x[1], r["tokens"]), labels):
+                    print(word, " "*(15-len(word)), errors)
+                print(label_line)
+                #break
+            """
+
+            labelfile.write(label_line)
+            labelfile.write("\n")
+
+    textfile.close()
+    labelfile.close()
+
+
+def parse_all_per_line(dataset_name: str, path: str) -> None:
+    """ Parse all examples from the given path and save to `dataset_name`.
+        Output error markings per line in the label files.
+        (This method was used for initial experimentation but then succeeded
+        by doing token-based marking.)
+    """
+
     textfile = open(dataset_name + ".input0", "w")
     labelfile = open(dataset_name + ".label", "w")
     multilabelfile = open(dataset_name + ".multilabel", "w")
@@ -206,12 +298,11 @@ def parse_all(dataset_name: str, path: str) -> None:
                         label = 1
 
             try:
-                simcats = to_simcategory(error_labels)
-                supercats = to_supercategory(error_labels)
+                simcats = [to_simcategory(label) for label in error_labels]
+                supercats = [to_supercategory(label) for label in error_labels]
             except:
                 print(f"category not known: {error_labels}")
                 continue
-
 
             textfile.write(r["text"])
             textfile.write("\n")
@@ -253,4 +344,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    parse_all(args.dataset_name, args.path)
+    parse_all_per_token(args.dataset_name, args.path)

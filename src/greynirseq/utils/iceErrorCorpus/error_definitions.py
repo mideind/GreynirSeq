@@ -7,6 +7,7 @@ TODO: Make some tool that figures out what is missing and helps you fix it.
 """
 
 from typing import Dict, List
+import sys
 
 # Error codes in iceErrorCorpus that are considered out of scope
 # for GreynirCorrect, at this stage at least
@@ -857,12 +858,18 @@ def _create_reverse_dicts():
                 _simcategory_reverse[cat] = sim
 
 
-def to_supercategory(categories: List[str]) -> str:
+def to_supercategory(category: str) -> str:
     _create_reverse_dicts()
-    return [_supercategory_reverse[cat] for cat in categories]
+    if not category in _supercategory_reverse:
+        sys.stderr.write(f"Uknown category in to_supercategory: {category}\n")
+        return "unknown"
+    return _supercategory_reverse[category]
 
 
-def to_simcategory(categories: List[str]) -> str:
+def to_simcategory(category: str) -> str:
     _create_reverse_dicts()
-    return [_simcategory_reverse[cat] for cat in categories]
+    if not category in _simcategory_reverse:
+        sys.stderr.write(f"Uknown category in to_simcategory: {category}\n")
+        return "unknown"
+    return _simcategory_reverse[category]
 
