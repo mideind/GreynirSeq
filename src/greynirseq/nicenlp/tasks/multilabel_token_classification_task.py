@@ -104,7 +104,12 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         for idx, lbl in enumerate(term_dict.symbols):
             exists = lbl in label_schema.labels
             seen.add(lbl)
-            if not exists and idx > term_dict.nspecial and lbl != "<mask>":
+            if (
+                (not exists)
+                and (idx > term_dict.nspecial)  # ignore bos, eos, etc
+                and (lbl != "<mask>")
+                and (lbl.startswith("madeupword"))  # ignore vocabulary padding
+            ):
                 assert False, "Unexpected POS label item in term_dict.txt: {}".format(
                     lbl
                 )
@@ -227,7 +232,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         logger.info("Loaded {0} with #samples: {1}".format(split, len(dataset)))
 
         self.datasets[split] = dataset
-        
+
         return self.datasets[split]
 
     def prepare_tokens(self, tokens: torch.Tensor):
