@@ -167,22 +167,10 @@ def parse_file(path: str) -> List[Dict[str, Any]]:
                             )
             else:
                 tokens.append((tag, element_text(el)))
-        """
-        # Fix up the dependencies, if any
-        for dep_id, error in dependencies:
-            if dep_id not in error_indexes:
-                print(f"In file {path}:")
-                print(f"\n{index}: *** No error has idx='{dep_id}' ***")
-            else:
-                # Copy the in_scope attribute from the original error
-                error["in_scope"] = error_indexes[dep_id]["in_scope"]
-                # Find the true type of the error
-                error["dep_type"] = error_indexes[dep_id]["xtype"]
-        """
 
         # Reconstruct the original sentence
         # TODO switch for sentence from original text file
-        text = correct_spaces(tokens)
+        text = " ".join([txt for _, txt in tokens])
         if not text:
             # Nothing to do: drop this and go to the next sentence
             continue
@@ -222,12 +210,13 @@ def generate_label_line(per_token_labels: List[Set[str]], all_labels: List[str])
 
     all_labels = set(all_labels)
 
-    line = ""
+    # Note: Due to label schema quirks "all" is a required label for every token
+    line = "all "
     for this_token_labels in per_token_labels:
         if first:
             first = False
         else:
-            line += " <sep> " # Must match the label schema!
+            line += " <sep> all " # Must match the label schema!
 
         not_this_token_labels = all_labels - this_token_labels
         line += " ".join([l + "-yes" for l in this_token_labels]
@@ -253,6 +242,8 @@ def parse_all_per_token(dataset_name: str, path: str, category_mode: str) -> Non
     else:
         raise Exception("Unknown category mode", category_mode)
 
+    all_labels.add("unknown")
+
     textfile = open(dataset_name + ".input0", "w")
     labelfile = open(dataset_name + ".tokenlabel", "w")
 
@@ -276,10 +267,21 @@ def parse_all_per_token(dataset_name: str, path: str, category_mode: str) -> Non
 
                     labels[errindex].append(errtype)
 
-            textfile.write(r["text"])
+            token_texts = [txt for _, txt in r["tokens"]]
+            # token_texts and labels match up here.
+            # Some strings in token_texts contain spaces - a terrible thing
+            # We want to split them up and fix labels up to match
+            fixed_txt = []
+            fixed_labels = []
+            for t, l in zip(token_texts, labels):
+                new_toks = t.split()
+                fixed_txt.extend(new_toks)
+                fixed_labels.extend([l]*len(new_toks))
+
+            textfile.write(" ".join(fixed_txt))
             textfile.write("\n")
 
-            labels_categorized = categorize(labels, category_func)
+            labels_categorized = categorize(fixed_labels, category_func)
             label_line = generate_label_line(labels_categorized, all_labels)
 
             """
