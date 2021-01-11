@@ -72,14 +72,16 @@ import json
 
 
 def generate_supercategories_schema_v1():
-    return generate_from_categories_dict(ed.SUPERCATEGORIES)
+    return generate_from_categories_dict(ed.SUPERCATEGORIES.keys())
 
 
 def generate_simcategories_schema_v1():
-    return generate_from_categories_dict(ed.SIMCATEGORIES)
+    return generate_from_categories_dict(ed.SIMCATEGORIES.keys())
 
 
 def generate_from_categories_dict(categories):
+    categories = list(categories) + ["unknown"]
+
     schema_dict = {
         "null": None,
         "null_leaf": None,
@@ -88,9 +90,9 @@ def generate_from_categories_dict(categories):
 
     group_postfix = "-group"  # Need to fix names to fit the schema
     schema_dict["label_categories"] = ["all"]
-    schema_dict["category_to_group_names"] = {"all": [cat + group_postfix for cat in categories.keys()]}
-    schema_dict["group_names"] = [cat + group_postfix for cat in categories.keys()]
-    schema_dict["group_name_to_labels"] = {cat + group_postfix: [cat+"-yes", cat+"-no"] for cat in categories.keys()}
+    schema_dict["category_to_group_names"] = {"all": [cat + group_postfix for cat in categories]}
+    schema_dict["group_names"] = [cat + group_postfix for cat in categories]
+    schema_dict["group_name_to_labels"] = {cat + group_postfix: [cat+"-yes", cat+"-no"] for cat in categories}
 
     leaf_labels = []
     for group, labels in schema_dict["group_name_to_labels"].items():
