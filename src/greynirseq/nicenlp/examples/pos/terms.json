@@ -81,14 +81,12 @@
             "case"
         ],
         "fo": [
-            "gender",
-            "person",
+            "gender_or_person",
             "number",
             "case"
         ],
         "fp": [
-            "gender",
-            "person",
+            "gender_or_person",
             "number",
             "case"
         ],
@@ -155,7 +153,8 @@
     "group_names": [
         "gender",
         "number",
-        "case",
+        "gender_or_person",
+	"case",
         "def",
         "proper",
         "adj_c",
@@ -176,6 +175,13 @@
             "sing",
             "plur"
         ],
+	"gender_or_person": ["masc",
+	"fem",
+	"neut",
+	"gender_x",
+	"1",
+	"2",
+	"3"],
         "person": [
             "1",
             "2",
@@ -276,5 +282,8 @@
 "mid" ],
    "null": null,
    "null_leaf": null,
-   "separator": "<SEP>"
+   "separator": "<SEP>",
+"ignore_categories": ["x", "e"]
+
+
 }

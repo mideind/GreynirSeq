@@ -274,12 +274,25 @@ class WordEndMaskDataset(BaseWrapperDataset):
     def __getitem__(self, index):
         item = self.dataset[index]
         mask = torch.tensor([self.is_word_initial.get(int(v), 1) for v in item])
-        mask[
-            self.start_offset
-        ] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
+        #mask[
+        #    self.start_offset
+        #] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
         mask[: self.start_offset] = self.bos_value
         mask[-1] = self.eos_value
         return mask
+
+
+class IgnoreLabelsDataset(BaseWrapperDataset):
+    def __init__(self, label_dataset, ignore_labels):
+        super().__init__(label_dataset)
+        self.labels = label_dataset
+        self.ignore_labels = ignore_labels
+
+    def __getitem__(self, index):
+        item = self.dataset[index]
+        labels = self.labels[index]
+        mask = [int(label not in self.ignore_labels) for label in labels]
+        return torch.tensor(mask)
 
 
 class NumWordsDataset(BaseWrapperDataset):
@@ -296,13 +309,13 @@ class NumWordsDataset(BaseWrapperDataset):
             self.is_word_initial.get(int(v), 1)
             for v in self.dataset[index][self.start_offset : -1]  # ignore bos and eos
         ]
-        try:
-            word_starts[0] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
-        except:
-            print("WORDS_STARTS", word_starts)
-            print("OFFSET", self.start_offset)
-            print("INDEX", index)
-            raise
+        #try:
+        #    word_starts[0] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
+        #except:
+        #    print("WORDS_STARTS", word_starts)
+        #    print("OFFSET", self.start_offset)
+        #    print("INDEX", index)
+        #    raise
         return torch.tensor(sum(word_starts)).long()
 
 

@@ -18,6 +18,7 @@ def parse_label_schema(path):
             "group_names",
             "null",
             "null_leaf",
+            "ignore_categories"
         ],
     )
     with open(path, "r") as fp:

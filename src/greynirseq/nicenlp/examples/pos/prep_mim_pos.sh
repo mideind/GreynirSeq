@@ -50,6 +50,7 @@ do
             --inputs $SPLIT_PATH/$SPLIT.input0 \
             --outputs $SPLIT_PATH/$SPLIT.input0.bpe \
             --workers 60 \
+	    --add-prefix-space \
             --keep-empty
     done
     

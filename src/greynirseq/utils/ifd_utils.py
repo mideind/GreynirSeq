@@ -276,8 +276,14 @@ def ifd2labels(tag):
 
     if tagset_key not in TAGSET:
         return labels
+
+    if tagset_key == "a" and not rest:
+        label = "pos"
+        labels.append(label)
+
     for feature, code in zip(TAGSET[tagset_key], rest):
         label = feature[code]
+       
         if not label:
             continue
         labels.append(label)

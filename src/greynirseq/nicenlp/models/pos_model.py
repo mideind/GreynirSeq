@@ -135,8 +135,8 @@ class IceBERTPOSModel(RobertaModel):
 
         prefix = name + "." if name != "" else ""
 
-        for key, value in self.pos_head.state_dict().items():
-            path = prefix + "pos_head." + key
+        for key, value in self.task_head.state_dict().items():
+            path = prefix + "task_head." + key
             logger.info("Initializing pos_head." + key)
             if path not in state_dict:
                 state_dict[path] = value
@@ -158,7 +158,7 @@ class IceBERTPOSHubInterface(RobertaHubInterface):
         device = torch.device(device)
         num_sentences = len(sentences)
 
-        dataset = self.prepare_sentences(sentences)
+        dataset = self.task.prepare_sentences(sentences)
         sample = dataset.collater([dataset[i] for i in range(num_sentences)])
 
         return self.predict_sample(sample)

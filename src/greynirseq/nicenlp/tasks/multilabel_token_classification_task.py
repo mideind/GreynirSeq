@@ -25,6 +25,7 @@ from fairseq.tasks import FairseqTask, register_task
 from greynirseq.nicenlp.data.datasets import (
     POSDataset,
     WordEndMaskDataset,
+    IgnoreLabelsDataset,
     RightPad2dDataset,
     NestedDictionaryDatasetFix,
     NumWordsDataset,
@@ -67,6 +68,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         label_schema,
     ):
         super().__init__(args)
+        torch.autograd.set_detect_anomaly(True)
         self.dictionary = data_dictionary
         self._label_dictionary = label_dictionary
         self._label_dictionary.sep = lambda: self._label_dictionary.index(
@@ -85,6 +87,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         self.num_cats = len(self.label_schema.label_categories)
         self.num_groups = len(self.label_schema.group_name_to_labels.keys())
         self.num_labels = len(self.label_schema.labels)
+        self.ignore_cats = [self._label_dictionary.index(c) for c in self.label_schema.ignore_categories]
 
     @classmethod
     def setup_task(cls, args: argparse.Namespace, **kwargs):
@@ -202,6 +205,10 @@ class MultiLabelTokenClassificationTask(FairseqTask):
             src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0
         )
 
+        exclude_cats_mask = IgnoreLabelsDataset(
+            term_cats, self.ignore_cats
+        )
+
         dataset = {
             "id": IdDataset(),
             "net_input": {
@@ -211,6 +218,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
                 "nsrc_tokens": NumelDataset(src_tokens),
                 "word_mask": RightPadDataset(word_mask, pad_idx=0),
             },
+            "exclude_cats_mask": RightPadDataset(exclude_cats_mask, pad_idx=1),
             "target_cats": RightPadDataset(
                 term_cats, pad_idx=self.label_dictionary.pad()
             ),
@@ -232,7 +240,6 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         logger.info("Loaded {0} with #samples: {1}".format(split, len(dataset)))
 
         self.datasets[split] = dataset
-
         return self.datasets[split]
 
     def prepare_tokens(self, tokens: torch.Tensor):
@@ -260,12 +267,20 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
         return dataset
 
+    def encode(self, sentence: str):
+        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
+        from argparse import Namespace
+        enc = MultiprocessingEncoder(Namespace(encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True))
+        enc.initializer()
+        bpe_ids = enc.encode(sentence)
+        return [int(self.dictionary[int(t)]) for t in bpe_ids]
+
     def prepare_sentences(self, sentences: List[str]):
         tokens = [
             self.encode(token_utils.tokenize_to_string(sentence))
             for sentence in sentences
         ]
-        return self.task.prepare_tokens(tokens)
+        return self.prepare_tokens(torch.tensor(tokens))
 
     @property
     def source_dictionary(self):
@@ -318,11 +333,10 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         batch_attrs = []
         for seq_idx in range(bsz):
             seq_nwords = nwords[seq_idx]
-            pred_cats = self.cat_vec_idx_to_dict_idx[
-                cat_logits[seq_idx, :seq_nwords].max(dim=-1).indices
-            ]
+            pred_cat_vec_idxs = cat_logits[seq_idx, :seq_nwords].max(dim=-1).indices
+            pred_cats = self.cat_vec_idx_to_dict_idx[pred_cat_vec_idxs]
 
-            group_mask = self.group_mask[pred_cats]
+            group_mask = self.group_mask[pred_cat_vec_idxs]
             offset = self.label_dictionary.nspecial
             pred_attrs = []
             for group_idx, group_name in enumerate(self.label_schema.group_names):
@@ -330,14 +344,14 @@ class MultiLabelTokenClassificationTask(FairseqTask):
                 # logits: (bsz * nwords) x labels
                 group_logits = attr_logits[seq_idx, :seq_nwords, group_vec_idxs]
                 if len(group_vec_idxs) == 1:
-                    group_pred_vec_idxs = group_logits.sigmoid().ge(0.5).long()
+                    group_pred = group_logits.sigmoid().ge(0.5).long()
+                    group_pred_dict_idxs = (group_pred.squeeze() * (group_vec_idxs.item() + offset)).T.to('cpu') * group_mask[:, group_idx]
                 else:
                     group_pred_vec_idxs = group_logits.max(dim=-1).indices
-                group_pred_dict_idxs = (
-                    group_vec_idxs[group_pred_vec_idxs] + offset
-                ) * group_mask[:, group_idx]
+                    group_pred_dict_idxs = (group_vec_idxs[group_pred_vec_idxs] + offset) * group_mask[:, group_idx]
                 pred_attrs.append(group_pred_dict_idxs)
-            pred_attrs = torch.stack(pred_attrs).t()
+                
+            pred_attrs = torch.stack([p.squeeze() for p in pred_attrs]).t()
             nwords_tup = tuple(nwords.tolist())
 
             batch_cats.append(pred_cats)
@@ -346,8 +360,8 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         predictions = list(
             [
                 _clean_cats_attrs(
-                    self.task.label_dictionary,
-                    self.task.label_schema,
+                    self.label_dictionary,
+                    self.label_schema,
                     seq_cats,
                     seq_attrs,
                 )
@@ -363,8 +377,17 @@ def _clean_cats_attrs(
 ):
     cats = ldict.string(pred_cats).split(" ")
     attrs = []
-    for (_cat_idx, attr_idxs) in zip(pred_cats.tolist(), pred_attrs.split(1, dim=0)):
-        seq_attrs = [lbl for lbl in ldict.string((attr_idxs.squeeze())).split(" ")]
+   
+    
+    if len(pred_attrs.shape) == 1:
+        split_pred_attrs = [pred_attrs]
+    else:
+        split_pred_attrs = pred_attrs.split(1, dim=0)
+    for (_cat_idx, attr_idxs) in zip(pred_cats.tolist(), split_pred_attrs):
+        try:
+            seq_attrs = [lbl for lbl in ldict.string((attr_idxs.squeeze())).split(" ")]
+        except:
+            import pdb; pdb.set_trace()
         if not any(it for it in seq_attrs):
             seq_attrs = []
         attrs.append(seq_attrs)
