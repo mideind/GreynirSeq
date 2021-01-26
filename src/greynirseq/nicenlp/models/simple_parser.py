@@ -39,10 +39,6 @@ from greynirseq.nicenlp.utils.label_schema.label_schema import (
 
 from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
-
-import pyximport
-
-pyximport.install()
 import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser
 
 
