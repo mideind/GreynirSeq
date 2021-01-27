@@ -29,6 +29,6 @@ class MultiLabelTokenClassificationHead(nn.Module):
 
         cat_logits = self.cat_proj(x)
         cat_probits = torch.softmax(cat_logits, dim=-1)
-        attr_logits = self.out_proj(torch.cat((x, cat_probits), -1))
+        attr_logits = self.out_proj(torch.cat((cat_probits, x), -1))
 
         return cat_logits, attr_logits

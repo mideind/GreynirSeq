@@ -120,7 +120,7 @@ class WordSpanDataset(BaseWrapperDataset):
             self.is_word_initial.get(int(v), 0)
             for v in item[offset:seq_end]  # ignore bos and eos
         ]
-        idxs[0] = 1
+        idxs[0] = 1 # Why? 
         starts = [
             idx + offset
             for (idx, is_word_initial) in enumerate(idxs)
@@ -218,21 +218,23 @@ class POSDataset(BaseWrapperDataset):
 
     def __init__(
         self,
-        dataset: Dataset,
+        pos_labels_dataset: Dataset,
         src_dictionary: Dictionary,
         label_dictionary: Dictionary,
         return_categories: bool = True,
     ):
-        super().__init__(dataset)
+        super().__init__(pos_labels_dataset)
         self.label_dict = label_dictionary
         self.src_dict = src_dictionary
         self.return_categories = return_categories
-        self.start_offset = 1 if dataset[0][0] == self.src_dict.bos() else 0
+        self.start_offset = True if pos_labels_dataset[0][0] == self.label_dict.bos() else False
+        self.has_eos = True if pos_labels_dataset[0][-1] == self.label_dict.eos() else False
 
     def __getitem__(self, index: int):
         item = self.dataset[index]
+        end = item.numel() - 1 if self.has_eos else item.numel()
         word_items = split_tensor_on(
-            item[self.start_offset : -1], self.label_dict.sep()
+            item[self.start_offset : end], self.label_dict.sep()
         )
         assert all(subseq.numel() > 0 for subseq in word_items)
         assert len(word_items) == (item.eq(self.label_dict.sep()).sum() + 1)
@@ -249,7 +251,6 @@ class POSDataset(BaseWrapperDataset):
             for attr_lbl_idx in word_attrs:
                 attr_vec_index = attr_lbl_idx - label_shift
                 attrs[word_idx, attr_vec_index] = 1
-
         if self.return_categories:
             return cats
         return attrs
@@ -261,7 +262,7 @@ class WordEndMaskDataset(BaseWrapperDataset):
         dataset: Dataset,
         dictionary: Dictionary,
         is_word_initial: Dict[int, int],
-        bos_value: int = 1,
+        bos_value: int = 0,
         eos_value: int = 0,
     ):
         super().__init__(dataset)
@@ -274,6 +275,7 @@ class WordEndMaskDataset(BaseWrapperDataset):
     def __getitem__(self, index):
         item = self.dataset[index]
         mask = torch.tensor([self.is_word_initial.get(int(v), 1) for v in item])
+        # HACK
         #mask[
         #    self.start_offset
         #] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
@@ -309,13 +311,15 @@ class NumWordsDataset(BaseWrapperDataset):
             self.is_word_initial.get(int(v), 1)
             for v in self.dataset[index][self.start_offset : -1]  # ignore bos and eos
         ]
+        
+        # LEGACY hack
         #try:
-        #    word_starts[0] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
+        #     word_starts[0] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
         #except:
-        #    print("WORDS_STARTS", word_starts)
-        #    print("OFFSET", self.start_offset)
-        #    print("INDEX", index)
-        #    raise
+        #     print("WORDS_STARTS", word_starts)
+        #     print("OFFSET", self.start_offset)
+        #     print("INDEX", index)
+        #     raise
         return torch.tensor(sum(word_starts)).long()
 
 

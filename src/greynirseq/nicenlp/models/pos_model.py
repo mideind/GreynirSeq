@@ -60,8 +60,6 @@ class IceBERTPOSModel(RobertaModel):
                             help='Freeze transformer embeddings during fine-tuning')
         parser.add_argument('--n-trans-layers-to-freeze', default=0, type=int,
                             help='Number of transformer layers to freeze during fine-tuning')
-        parser.add_argument('--tag-layer', default=12, type=int,
-                            help='Which layer-activations to use to compute POS tags (note: 1-indexed)')
         # fmt: on
 
     @classmethod
@@ -80,32 +78,36 @@ class IceBERTPOSModel(RobertaModel):
     def forward(
         self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs
     ):
-        _x, _extra = self.encoder(
+        x, _extra = self.encoder(
             src_tokens, features_only, return_all_hiddens=True, **kwargs
-        )
-
-        x_tag = _extra["inner_states"][self.args.tag_layer - 1]
-        x_tag = x_tag.transpose(0, 1)
-        x = x_tag
+        ) 
 
         _, _, inner_dim = x.shape
         word_mask = kwargs["word_mask"]
 
-        words = x.masked_select(word_mask.unsqueeze(-1).bool()).reshape(-1, inner_dim)
-        nwords_w_bos = word_mask.sum(-1)
+        # use first bpe token of word as representation
+        x = x[:,1:-1]
+        starts = word_mask[:,1:-1]  # remove bos, eos
+        ends = starts.roll(-1,dims=[-1]).nonzero()[:,-1] + 1
+        starts = starts.nonzero().tolist()
+        mean_words = []
+        for (seq_idx, token_idx), end in zip(starts, ends):
+            mean_words.append(x[seq_idx, token_idx:end].mean(dim=0))
+        mean_words = torch.stack(mean_words)
+        words = mean_words
 
+        nwords = word_mask.sum(-1)
         (cat_logits, attr_logits) = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
         cat_logits = pad_sequence(
-            cat_logits.split((nwords_w_bos).tolist()), padding_value=0, batch_first=True
+            cat_logits.split((nwords).tolist()), padding_value=0, batch_first=True
         )
         attr_logits = pad_sequence(
-            attr_logits.split((nwords_w_bos).tolist()),
+            attr_logits.split((nwords).tolist()),
             padding_value=0,
             batch_first=True,
         )
-
         return (cat_logits, attr_logits), _extra
 
     @classmethod

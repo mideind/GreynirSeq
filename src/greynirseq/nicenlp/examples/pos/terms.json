@@ -152,8 +152,8 @@
     },
     "group_names": [
         "gender",
-        "number",
         "gender_or_person",
+	"number",
 	"case",
         "def",
         "proper",
@@ -175,19 +175,21 @@
             "sing",
             "plur"
         ],
-	"gender_or_person": ["masc",
-	"fem",
-	"neut",
-	"gender_x",
-	"1",
-	"2",
-	"3"],
         "person": [
             "1",
             "2",
             "3"
         ],
-        "case": [
+        "gender_or_person": [
+	   "masc",
+	   "fem",
+	   "neut",
+	   "gender_x",
+	   "1",
+	   "2",
+	   "3"
+	],
+	"case": [
             "nom",
             "acc",
             "dat",

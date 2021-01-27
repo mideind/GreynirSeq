@@ -185,7 +185,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
         with data_utils.numpy_seed(self.args.seed):
             shuffle = np.random.permutation(len(src_tokens))
-
+       
         src_tokens = PrependTokenDataset(src_tokens, self.source_dictionary.bos())
 
         targets_path = Path(self.args.data) / "{}.term".format(split)
@@ -201,6 +201,18 @@ class MultiLabelTokenClassificationTask(FairseqTask):
             term_labels, self.dictionary, self.label_dictionary
         )
 
+        def print_terms(term_cats, term_attrs):
+            # Debug function
+            cat_labels = [self.label_dictionary[t] for t in term_cats]
+            attr_data = [t.nonzero().T for t in term_attrs if t.numel()]
+            attr_labels = []
+            for word_attr in attr_data:
+                if not word_attr.numel():
+                    attr_labels.append([])
+                    continue
+                attr_labels.append([self.label_dictionary[t+self.label_dictionary.nspecial] for t in word_attr[0]])
+            return cat_labels, attr_labels
+
         word_mask = WordEndMaskDataset(
             src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0
         )
@@ -208,7 +220,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         exclude_cats_mask = IgnoreLabelsDataset(
             term_cats, self.ignore_cats
         )
-
+        
         dataset = {
             "id": IdDataset(),
             "net_input": {
@@ -238,7 +250,6 @@ class MultiLabelTokenClassificationTask(FairseqTask):
             dataset = SortDataset(nested_dataset, sort_order=[shuffle])
 
         logger.info("Loaded {0} with #samples: {1}".format(split, len(dataset)))
-
         self.datasets[split] = dataset
         return self.datasets[split]
 
@@ -268,12 +279,22 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         return dataset
 
     def encode(self, sentence: str):
+        # TODO remove or refactor
         from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
         from argparse import Namespace
         enc = MultiprocessingEncoder(Namespace(encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True))
         enc.initializer()
         bpe_ids = enc.encode(sentence)
         return [int(self.dictionary[int(t)]) for t in bpe_ids]
+
+    def decode(self, src_tokens):
+        # TODO remove or refactor
+        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
+        from argparse import Namespace
+        enc = MultiprocessingEncoder(Namespace(encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True))
+        enc.initializer()
+        bpe_ids = [self.dictionary.symbols[t] for t in src_tokens]
+        return enc.decode([int(i) for i in bpe_ids if i.isnumeric()])
 
     def prepare_sentences(self, sentences: List[str]):
         tokens = [
