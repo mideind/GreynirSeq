@@ -19,15 +19,15 @@ class ByteSequence:
     target_mask: Optional[torch.Tensor] = None
 
     def clone(self):
-        """Naive shallow clone"""
+        """Deep clone"""
         new_dict = {}
         for key, value in asdict(self).items():
             if torch.is_tensor(value):
                 new_dict[key] = value.clone()
-            elif isinstance(value, list):
-                new_dict[key] = list(value)
-            else:
+            elif isinstance(value, str):
                 new_dict[key] = value
+            else:
+                raise ValueError("Cannot deep clone contained type")
 
         return ByteSequence(**(new_dict))
 
