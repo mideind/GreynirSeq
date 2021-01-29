@@ -104,5 +104,5 @@ class MaskedByteSequenceDataset(BaseWrapperDataset):
             targets, mask = self.masking_strategy(seq)
 
         seq.targets = targets
-        seq.target_mask = targets
+        seq.target_mask = mask
         return seq
