@@ -21,28 +21,28 @@ class MmappedTextDataset(FairseqDataset):
         self._len = None
 
     def read_data(self, path):
-        self.memmap_buffer = np.memmap(path, mode='r', order='C')
+        self.memmap_buffer = np.memmap(path, mode="r", order="C")
         self.offsets = [0]
         self._sizes = []
-        fp = self.memmap_buffer._mmap
-        fp.seek(0)
+        mmap = self.memmap_buffer._mmap
+        mmap.seek(0)
         while True:
-            line = fp.readline()
-            offset = fp.tell()
+            line = mmap.readline()
+            offset = mmap.tell()
             if not line:
                 break
             self.offsets.append(offset)
             self._sizes.append(len(line))
-        fp.seek(0)
+        mmap.seek(0)
         self._len = len(self._sizes)
         self._sizes = torch.tensor(self.sizes)
 
     def check_index(self, i):
         if i < 0 or i >= self._len:
-            raise IndexError('index out of range')
+            raise IndexError("index out of range")
 
     def __del__(self):
-        if self.memmap_buffer is not None:
+        if hasattr(self, "memmap_buffer") and self.memmap_buffer is not None:
             del self.memmap_buffer
             self.memmap_buffer = None
 
@@ -79,5 +79,3 @@ class MmappedTextDataset(FairseqDataset):
     @property
     def supports_prefetch(self):
         return False
-
-

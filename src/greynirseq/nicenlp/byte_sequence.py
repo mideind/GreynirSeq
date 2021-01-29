@@ -32,9 +32,8 @@ class ByteSequence:
         return ByteSequence(**(new_dict))
 
     def add_prefix(self, byte_prefix, string_prefix=None):
-        if self.targets is not None or self.target_mask is None:
-            # XXX: is this necessary?
-            raise ValueError("Cannot add prefix when targets are null")
+        if self.targets is not None or self.target_mask is not None:
+            raise NotImplementedError("Cannot add prefix when sequence has targets")
         new_string = self.str_seq
         if string_prefix is not None and string_prefix:
             new_string = string_prefix + self.str_seq
@@ -46,14 +45,27 @@ class ByteSequence:
         if self.bpe_ids is not None:
             new_seq.bpe_ids = self.bpe_ids.clone()
         if self.bpe_lens is not None:
-            new_seq.bpe_lens = torch.cat([torch.tensor([len(byte_prefix)]), self.bpe_lens])
+            new_seq.bpe_lens = torch.cat(
+                [torch.tensor([len(byte_prefix)]), self.bpe_lens]
+            )
         if self.bpe_mask is not None:
-            new_seq.bpe_mask = torch.cat([torch.zeros(len(byte_prefix), dtype=self.bpe_mask.type()), self.bpe_mask])
+            new_seq.bpe_mask = torch.cat(
+                [
+                    torch.zeros(len(byte_prefix), dtype=self.bpe_mask.type()),
+                    self.bpe_mask,
+                ]
+            )
             new_seq.bpe_mask[0] = 1
         if self.word_mask is not None:
-             = self.word_mask.clone()
-            new_seq.word_mask = torch.cat([torch.zeros(len(byte_prefix), dtype=self.word_mask.type()), self.word_mask])
+            new_seq.word_mask = torch.cat(
+                [
+                    torch.zeros(len(byte_prefix), dtype=self.word_mask.type()),
+                    self.word_mask,
+                ]
+            )
             new_seq.word_mask[0] = 1
         if self.word_lens is not None:
-            new_seq.word_lens = torch.cat([torch.tensor([len(byte_prefix)]), self.word_lens])
+            new_seq.word_lens = torch.cat(
+                [torch.tensor([len(byte_prefix)]), self.word_lens]
+            )
         return new_seq

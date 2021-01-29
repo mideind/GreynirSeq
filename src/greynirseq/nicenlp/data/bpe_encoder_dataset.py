@@ -52,6 +52,7 @@ class BPEEncoderDataset(BaseWrapperDataset):
             add_prefix_space=True,
             dropout=self.dropout,
         )
+        self._sizes = self.dataset._sizes
 
     @lru_cache(maxsize=8)
     def __getitem__(self, index: int) -> ByteSequence:
@@ -79,10 +80,7 @@ class BPEEncoderDataset(BaseWrapperDataset):
                 ]
             )
             bpe_lens.extend(
-                [
-                    bpe_end - bpe_start
-                    for (bpe_start, bpe_end) in hf_encoding.offsets
-                ]
+                [bpe_end - bpe_start for (bpe_start, bpe_end) in hf_encoding.offsets]
             )
             seq_hf_bpe_ids.extend([str(hf_bpe_id) for hf_bpe_id in hf_encoding.ids])
         fairseq_bpe_ids = self.dictionary.encode_line(" ".join(seq_hf_bpe_ids))

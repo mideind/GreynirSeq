@@ -1,13 +1,14 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-#
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+from typing import List, Tuple, Optional, Callable
 
+import argparse
 import logging
 import os
 from pathlib import Path
 
 import numpy as np
+
+import torch
+
 from fairseq import utils
 from fairseq.data import (
     Dictionary,
@@ -29,7 +30,10 @@ from greynirseq.nicenlp.data.bpe_encoder_dataset import BPEEncoderDataset
 from greynirseq.nicenlp.data.token_offsets_dataset import TokenOffsetsDataset
 from greynirseq.nicenlp.data.map_dataset import MapDataset
 from greynirseq.nicenlp.data.byte_noising import ByteNoising
-from greynirseq.nicenlp.data.icelandic_character_noising import IcelandicCharacterNoising
+from greynirseq.nicenlp.data.byte_dictionary import ByteDictionary
+from greynirseq.nicenlp.data.icelandic_character_noising import (
+    IcelandicCharacterNoising
+)
 from greynirseq.nicenlp.data.masked_byte_sequence import MaskedByteSequenceDataset
 from greynirseq.nicenlp.data.mmapped_text import MmappedTextDataset
 
@@ -43,19 +47,17 @@ class ByteMaskedLMTask(FairseqTask):
 
     @staticmethod
     def add_args(parser):
+        parser.add_argument("data")
         parser.add_argument(
-            "data",
+            "--sample-break-mode",
+            default="complete",
+            choices=["none", "complete", "complete_doc", "eos"],
+            help='If omitted or "none", fills each sample with tokens-per-sample '
+            'tokens. If set to "complete", splits samples only at the end '
+            "of sentence, but may include multiple sentences per sample. "
+            '"complete_doc" is similar but respects doc boundaries. '
+            'If set to "eos", includes only one sentence per sample.',
         )
-        # parser.add_argument(
-        #     "--sample-break-mode",
-        #     default="complete",
-        #     choices=["none", "complete", "complete_doc", "eos"],
-        #     help='If omitted or "none", fills each sample with tokens-per-sample '
-        #     'tokens. If set to "complete", splits samples only at the end '
-        #     "of sentence, but may include multiple sentences per sample. "
-        #     '"complete_doc" is similar but respects doc boundaries. '
-        #     'If set to "eos", includes only one sentence per sample.',
-        # )
         parser.add_argument(
             "--tokens-per-sample",
             default=512,
@@ -63,18 +65,18 @@ class ByteMaskedLMTask(FairseqTask):
             help="max number of total tokens over all segments "
             "per sample for ByteBERT dataset",
         )
-        # parser.add_argument(
-        #     "--shorten-method",
-        #     default="none",
-        #     choices=["none", "truncate", "random_crop"],
-        #     help="if not none, shorten sequences that exceed --tokens-per-sample",
-        # )
-        # parser.add_argument(
-        #     "--shorten-data-split-list",
-        #     default="",
-        #     help="comma-separated list of dataset splits to apply shortening to, "
-        #     'e.g., "train,valid" (default: all dataset splits)',
-        # )
+        parser.add_argument(
+            "--shorten-method",
+            default="none",
+            choices=["none", "truncate", "random_crop"],
+            help="if not none, shorten sequences that exceed --tokens-per-sample",
+        )
+        parser.add_argument(
+            "--shorten-data-split-list",
+            default="",
+            help="comma-separated list of dataset splits to apply shortening to, "
+            'e.g., "train,valid" (default: all dataset splits)',
+        )
         parser.add_argument(
             "--bpe-dropout",
             default=0.1,
@@ -82,7 +84,7 @@ class ByteMaskedLMTask(FairseqTask):
             help="word segmentation sampling parameter (higher means more fragmentation)",
         )
         parser.add_argument(
-            "--byte-mask-prob",
+            "--mask-byte-prob",
             default=0.02,
             type=float,
             help="probability of replacing a byte with mask",
@@ -129,21 +131,34 @@ class ByteMaskedLMTask(FairseqTask):
             help="use targets at the word level instead of bpe level (requires precomputed dict_words.txt)",
         )
 
-    def __init__(self, args: argparse.Namespace, byte_dictionary: ByteDictionary, bpe_dictionary: Optional[Dictionary]=None, word_dictionary: Optional[Dictionary]=None):
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        byte_dictionary: ByteDictionary,
+        bpe_dictionary: Optional[Dictionary] = None,
+        word_dictionary: Optional[Dictionary] = None,
+        use_word_level: bool = False,
+    ):
         super().__init__(args)
-        if (bpe_mask_prob is None or bpe_mask_prob <= 0) and (word_mask_prob is None or word_mask_prob <= 0):
-            raise ValueError("bpe_dictionary and word_dictionary cannot both be None")
+        # if bpe_dictionary is None and bpe_dictionary is None:
+        #     raise ValueError("bpe_dictionary and word_dictionary cannot both be None")
         self.byte_dictionary = byte_dictionary
-        self.bpe_dictionary = bpe_dictionary
-        self.word_dictionary = word_dictionary
+        self._bpe_dictionary = bpe_dictionary
+        self._word_dictionary = word_dictionary
         self.seed = args.seed
         self.bpe_dropout = args.bpe_dropout
+        self.use_word_level = use_word_level
 
     @classmethod
     def setup_task(cls, args, **kwargs):
-        logger.info("byte_dictionary: {} types".format(len(self.byte_dictionary)))
-        logger.info("byte_masked_lm: using targets at {} level".format("word" if self.args.use_word_level else "bpe"))
-        if self.args.use_word_level:
+        byte_dictionary = ByteDictionary()
+        logger.info(f"byte_dictionary: {len(byte_dictionary)} types")
+        logger.info(
+            "byte_masked_lm: using targets at {} level".format(
+                "word" if args.use_word_level else "bpe"
+            )
+        )
+        if args.use_word_level:
             """
             we want to load dict_words.txt and look up each token (according to offsets)
                 in the dictionary.
@@ -151,28 +166,30 @@ class ByteMaskedLMTask(FairseqTask):
                 denoting that they cannot be targets
             """
             raise NotImplementedError("use_word_level unimplemented")
-        logger.info("Using tokens_per_sample: {args.tokens_per_sample}")
-        logger.info("Using shortening method: {args.shorten_method}")
+        logger.info(f"Using tokens_per_sample: {args.tokens_per_sample}")
+        logger.info(f"Using shortening method: {args.shorten_method}")
+        bpe_dictionary = Dictionary()
+
+        # TODO: bpe and word_dictionary
+        return cls(args, byte_dictionary, bpe_dictionary)
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
-        inputs_path = Path(self.args.data) / f"{split}"
-        if offsets_path.is_file():
+        inputs_path = Path(self.args.data) / f"{split}.txt"
+        if not inputs_path.is_file():
             raise FileNotFoundError(f"Dataset not found: {split} ({inputs_path})")
 
-        src_text = MmappedTextDataset(
-            str(inputs_path),
-        )
+        src_text = MmappedTextDataset(str(inputs_path))
 
-        offsets_path = Path(self.args.data) / f"{split}.offsets.txt"
-        if offsets_path.is_file():
+        offsets_path = Path(self.args.data) / f"{split}.offsets.byte"
+        if not offsets_path.is_file():
             raise FileNotFoundError(f"Dataset not found: {split} ({offsets_path})")
         offsets = TokenOffsetsDataset(offsets_path)
 
-        dataset = BPEEncoderDataset(
+        seq_dataset = BPEEncoderDataset(
             self.args,
-            src_tokens,
+            src_text,
             offsets,
-            self.dictionary
+            self.bpe_dictionary,
             seed=self.seed,
             dropout=self.bpe_dropout,
         )  # appends eos, but not bos
@@ -182,43 +199,39 @@ class ByteMaskedLMTask(FairseqTask):
         # logger.info("loaded {} blocks from: {}".format(len(dataset), split_path))
 
         # prepend beginning-of-sentence token (<s>, equiv. to [CLS] in BERT)
-        dataset = MapDataset(
-            src_tokens,
-            fn=lambda x: x.add_prefix(self.byte_dictionary.bos_idx),
+        bos_tensor = torch.tensor([self.byte_dictionary.bos()], dtype=torch.long)
+        seq_dataset = MapDataset(seq_dataset, fn=lambda x: x.add_prefix(bos_tensor))
+
+        seq_dataset = IcelandicCharacterNoising(
+            seq_dataset, case_prob=self.args.case_switch_prob
         )
 
-        dataset = IcelandicCharacterNoising(
-            dataset,
-            case_prob=self.args.case_switch_prob,
+        seq_dataset = ByteNoising(
+            seq_dataset,
+            mask_prob=self.args.mask_byte_prob,
+            delete_prob=self.args.delete_byte_prob,
+            insert_prob=self.args.insert_byte_prob,
+            replace_prob=self.args.random_byte_prob,
+            transpose_prob=self.args.transpose_bytes_prob,
         )
 
-        dataset = ByteNoising(
-            dataset,
-            mask_prob = self.args.mask_prob,
-            delete_prob = self.args.delete_prob,
-            insert_prob = self.args.insert_prob,
-            replace_prob = self.args.replace_prob,
-            transpose_prob = self.args.transpose_prob,
-        )
-
-        dataset = MaskedByteSequenceDataset(
-            dataset,
+        seq_dataset = MaskedByteSequenceDataset(
+            seq_dataset,
             bpe_dictionary=self.bpe_dictionary,
             word_dictionary=self.word_dictionary,
-            bpe_mask_prob=self.args.bpe_mask_prob,
-            word_mask_prob=self.args.word_mask_prob,
+            mask_prob=self.args.mask_prob,
         )
 
         with data_utils.numpy_seed(self.seed + epoch):
-            shuffle = np.random.permutation(len(dataset))
+            shuffle = np.random.permutation(len(seq_dataset))
 
-        src_tokens = MapDataset(dataset, fn=lambda x: x.byte_seq)
-        targets = MapDataset(dataset, fn=lambda x: x.targets)
-        target_mask = MapDataset(dataset, fn=lambda x: x.target_mask)
+        byteseq_dataset = MapDataset(seq_dataset, fn=lambda x: x.byte_seq)
+        target_dataset = MapDataset(seq_dataset, fn=lambda x: x.targets)
+        target_mask_dataset = MapDataset(seq_dataset, fn=lambda x: x.target_mask)
 
-        contraction_lengths = MapDataset(dataset, fn=lambda x: x.bpe_mask)
+        contraction_lengths = MapDataset(seq_dataset, fn=lambda x: x.bpe_lens)
         if self.args.use_word_level:
-            contraction_lengths = MapDataset(dataset, fn=lambda x: x.word_mask)
+            contraction_lengths = MapDataset(seq_dataset, fn=lambda x: x.word_lens)
 
         self.datasets[split] = SortDataset(
             NestedDictionaryDataset(
@@ -226,32 +239,24 @@ class ByteMaskedLMTask(FairseqTask):
                     "id": IdDataset(),
                     "net_input": {
                         "src_tokens": RightPadDataset(
-                            src_tokens,
-                            pad_idx=self.byte_dictionary.pad(),
+                            byteseq_dataset, pad_idx=self.byte_dictionary.pad()
                         ),
-                        "src_lengths": NumelDataset(byte_seq, reduce=False),
+                        "src_lengths": NumelDataset(byteseq_dataset, reduce=False),
                         "contraction_lengths": RightPadDataset(
-                            contraction_lengths,
-                            pad_idx=0,
+                            contraction_lengths, pad_idx=0
                         ),
                     },
                     "target": RightPadDataset(
-                        tgt_dataset,
-                        pad_idx=self.source_dictionary.pad(),
+                        target_dataset, pad_idx=self.target_dictionary.pad()
                     ),
+                    "target_mask": RightPadDataset(target_mask_dataset, pad_idx=0),
                     "nsentences": NumSamplesDataset(),
-                    "ntokens": NumelDataset(src_dataset, reduce=True),
+                    "ntokens": NumelDataset(byteseq_dataset, reduce=True),
                 },
-                sizes=[src_dataset.sizes],
+                sizes=[byteseq_dataset.sizes],
             ),
-            sort_order=[
-                shuffle,
-                src_dataset.sizes,
-            ],
+            sort_order=[shuffle, byteseq_dataset.sizes],
         )
-        if sort:
-            src_dataset = SortDataset(src_dataset, sort_order=[src_lengths])
-        return src_dataset
 
     # def build_dataset_for_inference(self, src_tokens, src_lengths, sort=True):
     #     pass
@@ -268,11 +273,10 @@ class ByteMaskedLMTask(FairseqTask):
     @property
     def source_dictionary(self):
         # relevance/applicability?
-        # return self.dictionary
-        pass
+        if self.bpe_dictionary is None:
+            return self.word_dictionary
+        return self.bpe_dictionary
 
     @property
     def target_dictionary(self):
-        # relevance/applicability?
-        # return self.dictionary
-        pass
+        return self.source_dictionary

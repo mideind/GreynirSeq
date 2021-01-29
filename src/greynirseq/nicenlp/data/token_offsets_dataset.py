@@ -4,7 +4,7 @@ import torch
 from fairseq.data import BaseWrapperDataset
 
 
-class TokenOffsetsDataset(BaseWrapperDataset):
+class TokenOffsetsDataset(torch.utils.data.Dataset):
     """ Dataset for ByteBert
         Takes in a token span file.
         Returns token offsets.
@@ -42,23 +42,26 @@ class TokenOffsetsDataset(BaseWrapperDataset):
     def __getitem__(self, i):
         assert i >= 0 and i < len(self.span_indexes) - 1
 
-        string_nums = self.span_file_buffer[self.span_indexes[i]:self.span_indexes[i+1]].decode()
+        string_nums = self.span_file_buffer[
+            self.span_indexes[i] : self.span_indexes[i + 1]
+        ].decode()
         return torch.tensor([int(num) for num in string_nums.split()], dtype=torch.long)
 
     def __len__(self):
         return len(self.span_indexes) - 1
 
     def __del__(self):
-        if self.span_file_buffer is not None:
+        if hasattr(self, "span_file_buffer") and self.span_file_buffer is not None:
             self.span_file_buffer.close()
             self.span_file_buffer = None
-        if self.span_fd is not None:
+        if hasattr(self, "span_fd") and self.span_fd is not None:
             self.span_fd.close()
             self.span_fd = None
 
 
 if __name__ == "__main__":
     import sys
+
     dataset = TokenOffsetsDataset(sys.argv[1])
 
     d = dataset[9]
