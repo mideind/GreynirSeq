@@ -102,8 +102,8 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
                 group_targets = target_attrs[:, :, group_idxs].max(dim=-1).indices
                 bsz, num_words, num_members = group_logits.shape
                 group_loss = F.cross_entropy(
-                    group_logits.transpose(2,1).squeeze(), group_targets.squeeze(), reduction="none"
-                )
+                   group_logits.transpose(2,1), group_targets, reduction="none"
+                )               
                 group_loss *= group_loss_mask.type_as(group_logits)
                 group_loss *= target_exclude_mask * padding_mask
                 group_losses.append(group_loss) 
