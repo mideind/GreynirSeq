@@ -168,9 +168,15 @@ class ByteMaskedLMTask(FairseqTask):
             raise NotImplementedError("use_word_level unimplemented")
         logger.info(f"Using tokens_per_sample: {args.tokens_per_sample}")
         logger.info(f"Using shortening method: {args.shorten_method}")
-        bpe_dictionary = Dictionary()
 
-        # TODO: bpe and word_dictionary
+        bpe_path = Path(args.data) / f"bpe_dict.txt"
+        if not bpe_path.is_file():
+            raise FileNotFoundError(f"bpe_dict.txt file not found: {bpe_path}")
+        # add mask or not?
+        bpe_dictionary = Dictionary.load(str(bpe_path))
+        assert bpe_dictionary is not None
+
+        # TODO: word_dictionary (for ablation)
         return cls(args, byte_dictionary, bpe_dictionary)
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
@@ -195,12 +201,11 @@ class ByteMaskedLMTask(FairseqTask):
         )  # appends eos, but not bos
 
         # TODO: should probably implement maybe_shorten_dataset for ByteSequence (see masked_lm)
-        # TODO: token_block_dataset of tokens
-        # logger.info("loaded {} blocks from: {}".format(len(dataset), split_path))
+        # XXX: token_block_dataset of tokens
 
         # prepend beginning-of-sentence token (<s>, equiv. to [CLS] in BERT)
         bos_tensor = torch.tensor([self.byte_dictionary.bos()], dtype=torch.long)
-        seq_dataset = MapDataset(seq_dataset, fn=lambda x: x.add_prefix(bos_tensor))
+        seq_dataset = MapDataset(seq_dataset, fn=lambda x: x.add_byte_prefix(bos_tensor))
 
         seq_dataset = IcelandicCharacterNoising(
             seq_dataset, case_prob=self.args.case_switch_prob
@@ -220,6 +225,7 @@ class ByteMaskedLMTask(FairseqTask):
             bpe_dictionary=self.bpe_dictionary,
             word_dictionary=self.word_dictionary,
             mask_prob=self.args.mask_prob,
+            byte_mask_index=self.byte_dictionary.byte_mask(),
         )
 
         with data_utils.numpy_seed(self.seed + epoch):
@@ -228,28 +234,42 @@ class ByteMaskedLMTask(FairseqTask):
         byteseq_dataset = MapDataset(seq_dataset, fn=lambda x: x.byte_seq)
         target_dataset = MapDataset(seq_dataset, fn=lambda x: x.targets)
         target_mask_dataset = MapDataset(seq_dataset, fn=lambda x: x.target_mask)
+        bpe_mask_dataset = MapDataset(seq_dataset, fn=lambda x: x.bpe_mask)
+        word_mask_dataset = MapDataset(seq_dataset, fn=lambda x: x.word_mask)
 
-        contraction_lengths = MapDataset(seq_dataset, fn=lambda x: x.bpe_lens)
+        pool_lengths = MapDataset(seq_dataset, fn=lambda x: x.bpe_lens)
         if self.args.use_word_level:
-            contraction_lengths = MapDataset(seq_dataset, fn=lambda x: x.word_lens)
+            pool_lengths = MapDataset(seq_dataset, fn=lambda x: x.word_lens)
+
+        net_input = {
+            "src_tokens": RightPadDataset(
+                byteseq_dataset, pad_idx=self.byte_dictionary.pad()
+            ),
+            "src_lengths": NumelDataset(byteseq_dataset, reduce=False),
+            "pool_lengths": RightPadDataset(
+                pool_lengths, pad_idx=0
+            ),
+        }
+
+        # temporary hack
+        if self.args.use_word_level:
+            net_input["word_mask"] =  RightPadDataset(word_mask_dataset, pad_idx=0)
+        else:
+            net_input["bpe_mask"] = RightPadDataset(bpe_mask_dataset, pad_idx=0)
+
+        if self.bpe_dictionary.index("<mask>") == self.bpe_dictionary.unk():
+            logger.error("BPE dictionary is missing <mask>")
+
 
         self.datasets[split] = SortDataset(
             NestedDictionaryDataset(
                 {
                     "id": IdDataset(),
-                    "net_input": {
-                        "src_tokens": RightPadDataset(
-                            byteseq_dataset, pad_idx=self.byte_dictionary.pad()
-                        ),
-                        "src_lengths": NumelDataset(byteseq_dataset, reduce=False),
-                        "contraction_lengths": RightPadDataset(
-                            contraction_lengths, pad_idx=0
-                        ),
-                    },
+                    "net_input": net_input,
                     "target": RightPadDataset(
                         target_dataset, pad_idx=self.target_dictionary.pad()
                     ),
-                    "target_mask": RightPadDataset(target_mask_dataset, pad_idx=0),
+                    "masked_tokens": RightPadDataset(target_mask_dataset, pad_idx=0),
                     "nsentences": NumSamplesDataset(),
                     "ntokens": NumelDataset(byteseq_dataset, reduce=True),
                 },
@@ -258,13 +278,12 @@ class ByteMaskedLMTask(FairseqTask):
             sort_order=[shuffle, byteseq_dataset.sizes],
         )
 
-    # def build_dataset_for_inference(self, src_tokens, src_lengths, sort=True):
-    #     pass
+    def build_dataset_for_inference(self, src_tokens, src_lengths, sort=True):
+        raise NotImplementedError
 
     @property
     def bpe_dictionary(self):
         return self._bpe_dictionary
-        pass
 
     @property
     def word_dictionary(self):

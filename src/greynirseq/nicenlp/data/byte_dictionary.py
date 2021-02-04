@@ -46,10 +46,10 @@ class ByteDictionary(Dictionary):
         return self.bos_idx
 
     def eos(self):
-        return self.bos_idx
+        return self.eos_idx
 
     def pad(self):
-        return self.bos_idx
+        return self.pad_idx
 
     def byte_mask(self):
         return self.bos_idx
@@ -57,8 +57,5 @@ class ByteDictionary(Dictionary):
     def bpe_marker(self):
         return self.bos_idx
 
-    def bpe_marker(self):
-        return self.bos_idx
-
     def __len__(self):
-        return 261
+        return 262

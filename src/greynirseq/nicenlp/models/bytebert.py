@@ -21,7 +21,6 @@ from fairseq.modules import (
     PositionalEmbedding,
     TransformerSentenceEncoder,
     TransformerSentenceEncoderLayer,
-    TransformerSentenceEncoderLayer,
 )
 from fairseq.data import (
     RightPadDataset,
@@ -190,7 +189,6 @@ class ByteBertModel(RobertaModel):
         if not hasattr(args, "max_positions"):
             args.max_positions = args.tokens_per_sample
 
-        # import pdb; pdb.set_trace()
         encoder = ByteBertEncoder(args, task.source_dictionary)
         return cls(args, encoder)
 
@@ -202,11 +200,11 @@ class ByteBertModel(RobertaModel):
         return x, extra
 
 
-class ByteBertEncoder(FairseqEncoder):
+class ByteBertEncoder(RobertaEncoder):
     """ByteBERT Encoder. This class encapsulates the transformer-module implementation"""
 
     def __init__(self, args, dictionary):
-        super().__init__(dictionary)
+        super(RobertaEncoder, self).__init__(dictionary)  # dont use Roberta constructor
         self.args = args
 
         if args.encoder_layers_to_keep:
@@ -240,10 +238,64 @@ class ByteBertEncoder(FairseqEncoder):
             activation_fn=args.activation_fn,
         )
 
+    def forward(
+        self,
+        src_tokens: Tensor,
+        src_lengths: Tensor,
+        nbpe: Optional[Tensor] = None,
+        segment_labels: Tensor = None,
+        last_state_only: bool = False,
+        positions: Optional[Tensor] = None,
+        word_mask: Optional[Tensor] = None,
+        bpe_mask: Optional[Tensor] = None,
+        pool_lengths: Optional[Tensor] = None,
+        features_only=False,
+        return_all_hiddens=None,
+        masked_tokens: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        x, extra = self.extract_features(
+            src_tokens=src_tokens,
+            src_lengths=src_lengths,
+            nbpe=nbpe,
+            segment_labels=segment_labels,
+            last_state_only=last_state_only,
+            positions=positions,
+            word_mask=word_mask,
+            bpe_mask=bpe_mask,
+            pool_lengths=pool_lengths,
+        )
+        if not features_only:
+            x = self.output_layer(x, masked_tokens=masked_tokens)
+        return x, extra
 
-# class ConvGLURobertaEncoder(TransformerSentenceEncoder):
-#     def __init__(self, args, dictionary):
-#         self.roberta_encoder = RobertaEncoder(args, dictionary)
+    def extract_features(
+        self,
+        src_tokens: Tensor,
+        src_lengths: Tensor,
+        nbpe: Optional[Tensor] = None,
+        segment_labels: Tensor = None,
+        last_state_only: bool = False,
+        positions: Optional[Tensor] = None,
+        word_mask: Optional[Tensor] = None,
+        bpe_mask: Optional[Tensor] = None,
+        pool_lengths: Optional[Tensor] = None,
+        return_all_hiddens=None,
+    ):
+
+        inner_states, _ = self.sentence_encoder(
+            src_tokens=src_tokens,
+            src_lengths=src_lengths,
+            nbpe=nbpe,
+            segment_labels=segment_labels,
+            last_state_only=last_state_only,
+            positions=positions,
+            word_mask=word_mask,
+            bpe_mask=bpe_mask,
+            pool_lengths=pool_lengths,
+        )
+        features = inner_states[-1].transpose(0, 1)  # T x B x C -> B x T x C
+        return features, {"inner_states": inner_states if return_all_hiddens else None}
+
 
 # based on fairseq.modules.transformer_sentence_encoder
 class ConvGLUSentenceEncoder(TransformerSentenceEncoder):
@@ -329,17 +381,18 @@ class ConvGLUSentenceEncoder(TransformerSentenceEncoder):
 
     def forward(
         self,
-        tokens: Tensor,
+        src_tokens: Tensor,
+        src_lengths: Tensor,
         nbpe: Optional[Tensor] = None,
-        bpe_lens: Optional[Tensor] = None,
         segment_labels: Tensor = None,
         last_state_only: bool = False,
         positions: Optional[Tensor] = None,
         word_mask: Optional[Tensor] = None,
         bpe_mask: Optional[Tensor] = None,
+        pool_lengths: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor]:
         # compute padding mask. This is needed for multi-head attention
-        padding_mask: Optional[Tensor] = tokens.eq(self.padding_idx)
+        padding_mask: Optional[Tensor] = src_tokens.eq(self.padding_idx)
         if (
             not self.traceable
             and not self.tpu
@@ -348,22 +401,21 @@ class ConvGLUSentenceEncoder(TransformerSentenceEncoder):
         ):
             padding_mask = None
 
-        x = self.embed_tokens(tokens)
+        assert bpe_mask is not None or word_mask is not None
+
+        x = self.byte_seq_embedder(
+            src_tokens, bpe_mask=bpe_mask, word_mask=word_mask, pool_lengths=pool_lengths,
+        )
 
         if self.embed_scale is not None:
             x *= self.embed_scale
 
-        x = self.byte_seq_embedder(
-            tokens, nbpe, bpe_lens, bpe_mask=bpe_mask, word_mask=word_mask
-        )
-        word_positions = lengths_to_mask(nbpe).long()
-        padding_mask = 1 - word_positions
-        word_positions[word_positions.eq(1)] = self.padding_idx + 1
-        word_positions[padding_mask] = self.padding_idx
+        post_max_pool_mask = src_tokens.new_zeros(pool_lengths.shape).fill_(self.padding_idx)
+        post_max_pool_mask[pool_lengths.ne(0)] = self.padding_idx + 1
 
         if self.embed_positions is not None:
             # x += self.embed_positions(tokens, positions=positions)
-            x += self.embed_positions(word_positions, positions=positions)
+            x += self.embed_positions(post_max_pool_mask, positions=positions)
 
         if self.segment_embeddings is not None and segment_labels is not None:
             x += self.segment_embeddings(segment_labels)

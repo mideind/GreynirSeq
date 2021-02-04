@@ -21,6 +21,7 @@ from torch.utils.data.dataloader import default_collate
 from fairseq.data import data_utils
 
 from greynirseq.nicenlp.byte_sequence import ByteSequence
+from greynirseq.nicenlp.utils.data_utils import lengths_to_offsets, lengths_to_begin_mask
 
 
 class BPEEncoderDataset(BaseWrapperDataset):
@@ -64,7 +65,7 @@ class BPEEncoderDataset(BaseWrapperDataset):
         seq_bpe_offsets = []
         bpe_lens = []
         for (word_start, word_end) in zip(
-            word_byte_offsets, word_byte_offsets[1:].tolist() + [len(str_seq)]
+            word_byte_offsets, word_byte_offsets[1:].tolist() + [len(byte_seq)]
         ):
             # NOTE: word_byte_offsets have whitespace on the left side of words
             #       while Huggingface expects it on the right side.
@@ -79,22 +80,31 @@ class BPEEncoderDataset(BaseWrapperDataset):
                     for (bpe_start, _bpe_end) in hf_encoding.offsets
                 ]
             )
-            bpe_lens.extend(
-                [bpe_end - bpe_start for (bpe_start, bpe_end) in hf_encoding.offsets]
-            )
             seq_hf_bpe_ids.extend([str(hf_bpe_id) for hf_bpe_id in hf_encoding.ids])
-        fairseq_bpe_ids = self.dictionary.encode_line(" ".join(seq_hf_bpe_ids))
+        fairseq_bpe_ids = self.dictionary.encode_line(" ".join(seq_hf_bpe_ids)).long()
 
-        # starting offsets, these are for temporal contraction, so they include the whitespace
+        byte_seq = torch.tensor(list(byte_seq), dtype=torch.long)
+        # starting offsets, these are for temporal pooling (contraction), so they include the whitespace
+        seq_bpe_offsets.append(len(byte_seq))
         seq_bpe_offsets = torch.tensor(seq_bpe_offsets, dtype=torch.long)
-        bpe_lens = torch.tensor(bpe_lens, dtype=torch.long)
+        bpe_lens = seq_bpe_offsets[1:] - seq_bpe_offsets[:-1]
 
+        bpe_mask = torch.zeros_like(byte_seq, dtype=torch.bool)
+        bpe_mask[lengths_to_offsets(bpe_lens)] = 1
+        word_lens = torch.tensor(word_lens, dtype=torch.long)
+        word_mask = torch.zeros_like(byte_seq, dtype=torch.bool)
+        word_mask[lengths_to_offsets(word_lens)] = 1
+
+        assert bpe_lens.sum() == len(byte_seq)
+        assert sum(word_lens) == len(byte_seq)
         seq = ByteSequence(
             str_seq=str_seq,
-            byte_seq=torch.tensor(list(byte_seq), dtype=torch.long),
+            byte_seq=byte_seq,
             bpe_ids=fairseq_bpe_ids,
             bpe_lens=bpe_lens,
-            word_lens=torch.tensor(word_lens, dtype=torch.long),
+            word_lens=word_lens,
+            word_mask=word_mask,
+            bpe_mask=word_mask,
         )
 
         return seq

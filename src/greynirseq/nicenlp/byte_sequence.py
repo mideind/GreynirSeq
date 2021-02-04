@@ -24,23 +24,18 @@ class ByteSequence:
         for key, value in asdict(self).items():
             if torch.is_tensor(value):
                 new_dict[key] = value.clone()
-            elif isinstance(value, str):
+            elif isinstance(value, str) or value is None:
                 new_dict[key] = value
             else:
-                raise ValueError("Cannot deep clone contained type")
+                raise ValueError(f"Cannot deep clone contained type {value}")
 
         return ByteSequence(**(new_dict))
 
-    def add_prefix(self, byte_prefix, string_prefix=None):
+    def add_byte_prefix(self, byte_prefix):
         if self.targets is not None or self.target_mask is not None:
             raise NotImplementedError("Cannot add prefix when sequence has targets")
-        new_string = self.str_seq
-        if string_prefix is not None and string_prefix:
-            new_string = string_prefix + self.str_seq
         new_byte_seq = torch.cat([byte_prefix, self.byte_seq])
-        new_seq = ByteSequence(new_string, new_byte_seq)
-        if string_prefix is not None and string_prefix:
-            new_seq.bpe_lens = self.word_lens.clone()
+        new_seq = ByteSequence(self.str_seq, new_byte_seq)
 
         if self.bpe_ids is not None:
             new_seq.bpe_ids = self.bpe_ids.clone()
@@ -51,7 +46,7 @@ class ByteSequence:
         if self.bpe_mask is not None:
             new_seq.bpe_mask = torch.cat(
                 [
-                    torch.zeros(len(byte_prefix), dtype=self.bpe_mask.type()),
+                    torch.zeros(len(byte_prefix), dtype=self.bpe_mask.dtype),
                     self.bpe_mask,
                 ]
             )
@@ -59,7 +54,7 @@ class ByteSequence:
         if self.word_mask is not None:
             new_seq.word_mask = torch.cat(
                 [
-                    torch.zeros(len(byte_prefix), dtype=self.word_mask.type()),
+                    torch.zeros(len(byte_prefix), dtype=self.word_mask.dtype),
                     self.word_mask,
                 ]
             )

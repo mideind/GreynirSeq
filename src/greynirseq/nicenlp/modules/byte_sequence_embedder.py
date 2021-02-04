@@ -67,26 +67,33 @@ class ByteSequenceEmbedder(nn.Module):
         word_markers = self.token_embeddings(word_markers)
         return word_markers
 
-    def forward(self, byte_tokens: LongTensor, nbpe, bpe_lens, bpe_mask=None, word_mask=None):
+    def forward(self, byte_tokens: torch.Tensor, bpe_mask=None, word_mask=None, pool_lengths=None):
+        src_lengths = pool_lengths.sum(dim=-1)  # number of byte-level tokens in input
+        npools = pool_lengths.ne(0).sum(dim=-1)  # number of word/bpe level tokens in seq
         # (Batch x Time)
         x = self.token_embeddings(byte_tokens)  # BxTxC
-        x += self.embed_bpe_markers(bpe_mask)
-        x += self.embed_word_markers(word_mask)
+        assert not (bpe_mask is None and word_mask is None)
+        if bpe_mask is not None:
+            x += self.embed_bpe_markers(bpe_mask.long())
+        if word_mask is not None:
+            x += self.embed_word_markers(word_mask.long())
         # (Batch x Time x Features)
         for layer_idx, conv_highway_layer in enumerate(self.layers):
             x = conv_highway_layer(x)
             if layer_idx == 0:
                 continue
             x = self.dropout(x)
+        bsz, *_ = byte_tokens.shape
         # (Batch x Time x Features)
-        contracted = []
+        padded_max_pool = x.new_zeros(bsz, npools.max(), self.word_embed_dim)
         for seq_idx, seq in enumerate(x.split(1, dim=0)):
-            word_features = [
-                bpes_in_word.max(dim=1).values
-                for bpes_in_word in seq.split(bpe_lens[seq_idx][:nbpe[seq_idx]].tolist(), dim=1)
-            ]
-            contracted.append(torch.stack(word_features, dim=1))
-        x = torch.cat(contracted, dim=0)
+            seq_npools = npools[seq_idx]
+            seq_src_length = src_lengths[seq_idx]
+            seq_pool_lengths_list = pool_lengths[seq_idx, :seq_npools].tolist()
+            seq = seq[0, :seq_src_length]
+            for token_index, vectors_in_bpe in enumerate(seq.split(seq_pool_lengths_list, dim=0)):
+                padded_max_pool[seq_idx, token_index] = vectors_in_bpe.max(dim=0).values
+        x = padded_max_pool
         x = self.projection(x)
         return x
 

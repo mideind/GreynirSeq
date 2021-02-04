@@ -21,6 +21,10 @@ from torch.utils.data.dataloader import default_collate
 from fairseq.data import data_utils
 
 
+from greynirseq.nicenlp.byte_sequence import ByteSequence
+from greynirseq.nicenlp.utils.data_utils import lengths_to_begin_mask
+
+
 class ByteNoising(BaseWrapperDataset):
     """Typical character noise applied at byte level:
             - transposition
@@ -100,6 +104,8 @@ class ByteNoising(BaseWrapperDataset):
         random_bytes = np.random.choice(256, size=num_bytes)
         new_byte_seq = []
 
+        assert bpe_lens.sum() == len(seq.byte_seq)
+        assert word_lens.sum() == len(seq.byte_seq)
         byte_index_to_bpe_list_index = torch.repeat_interleave(
             torch.arange(bpe_lens.numel()), bpe_lens
         )
@@ -130,10 +136,23 @@ class ByteNoising(BaseWrapperDataset):
             else:
                 assert False, "unreachable"
 
-        new_seq = seq.clone()
-        new_seq.byte_seq = torch.tensor(new_byte_seq, dtype=torch.long)
-        new_seq.word_lens = torch.tensor(new_word_lens, dtype=torch.long)
-        new_seq.bpe_lens = torch.tensor(new_bpe_lens, dtype=torch.long)
-        # TODO: we might have a word id that should be removed (it has no bytes left)
-        assert all(new_seq.bpe_lens.ge(0)), "Unexpected bpe token with length 0"
+        new_bpe_ids = seq.bpe_ids.clone()
+        if min(new_bpe_lens) <= 0:
+            new_bpe_ids, new_bpe_lens = zip(*list(item for item in zip(seq.bpe_ids, new_bpe_lens) if item[1] > 0))
+            new_bpe_ids = torch.tensor(new_bpe_ids)
+
+        assert seq.word_ids is None, "Not implemented"
+        new_word_lens = torch.tensor(new_word_lens, dtype=torch.long)
+        new_bpe_lens = torch.tensor(new_bpe_lens, dtype=torch.long)
+        new_seq = ByteSequence(
+            str_seq=seq.str_seq,
+            byte_seq=torch.tensor(new_byte_seq, dtype=torch.long),
+            word_lens=new_word_lens,
+            bpe_lens=new_bpe_lens,
+            bpe_mask=lengths_to_begin_mask(new_bpe_lens),
+            word_mask=lengths_to_begin_mask(new_word_lens),
+            bpe_ids=new_bpe_ids,
+        )
+
+        assert all(new_seq.bpe_lens.gt(0)), "Unexpected bpe token with length 0"
         return new_seq
