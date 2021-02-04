@@ -130,7 +130,7 @@ class IceBERTPOSModel(RobertaModel):
             load_checkpoint_heads=True,
             **kwargs,
         )
-        return IceBERTPOSHubInterface(x["args"], x["task"], x["models"][0])
+        return IceBERTHubInterface(x["args"], x["task"], x["models"][0])
 
     def upgrade_state_dict_named(self, state_dict, name):
         super().upgrade_state_dict_named(state_dict, name)
@@ -144,7 +144,7 @@ class IceBERTPOSModel(RobertaModel):
                 state_dict[path] = value
 
 
-class IceBERTPOSHubInterface(RobertaHubInterface):
+class IceBERTHubInterface(RobertaHubInterface):
     def predict_sample(self, sample):
         net_input = sample["net_input"]
         tokens = net_input["src_tokens"]
@@ -164,6 +164,27 @@ class IceBERTPOSHubInterface(RobertaHubInterface):
         sample = dataset.collater([dataset[i] for i in range(num_sentences)])
 
         return self.predict_sample(sample)
+
+    def predict_labels(self, sentence):
+        # assert task is set
+      
+        if sentence[0] is not " ":
+            sentence = " " + sentence
+
+        word_start_dict = self.task.get_word_beginnings(self.args, self.task.dictionary)
+
+        tokens = self.encode(sentence)
+        word_mask = torch.tensor([word_start_dict[t.item()] for t in tokens])
+        word_mask[0] = 0
+        word_mask[-1] = 0
+        word_mask = word_mask.unsqueeze(0)
+        tokens = tokens.unsqueeze(0)
+        (cat_logits, attr_logits), _extra = self.model(tokens, features_only=True, word_mask=word_mask)
+    
+        labels = self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
+        
+        return labels
+
 
 
 @register_model_architecture("icebert_pos", "icebert_base_pos")
