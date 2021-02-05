@@ -93,8 +93,10 @@ class IceBERTPOSModel(RobertaModel):
         mean_words = []
         for (seq_idx, token_idx), end in zip(starts, ends):
             mean_words.append(x[seq_idx, token_idx:end].mean(dim=0))
-        mean_words = torch.stack(mean_words)
-        words = mean_words
+        if len(mean_words) == 0:
+            raise Exception("Words list was empty")
+
+        words = torch.stack(mean_words)
 
         nwords = word_mask.sum(-1)
         (cat_logits, attr_logits) = self.task_head(words)
@@ -139,7 +141,7 @@ class IceBERTPOSModel(RobertaModel):
 
         for key, value in self.task_head.state_dict().items():
             path = prefix + "task_head." + key
-            logger.info("Initializing pos_head." + key)
+            logger.info("Initializing task_head." + key)
             if path not in state_dict:
                 state_dict[path] = value
 
@@ -166,10 +168,21 @@ class IceBERTHubInterface(RobertaHubInterface):
         return self.predict_sample(sample)
 
     def predict_labels(self, sentence):
-        # assert task is set
-      
-        if sentence[0] is not " ":
+        # TODO: assert task is set
+
+        # Don't try to evaluate empty lines.
+        if len(sentence.strip()) == 0:
+            return []
+
+        # The model is trained with data where sentences start with a space
+        # TODO: Check for an option about this and coordinate through the entire stack.
+        if sentence[0] != " ":
             sentence = " " + sentence
+
+        # Use the same device for inference as the model is set to use.
+        # Do this by picking a random-ish layer tensor from the model and reading its current device.
+        # (Yes, this feels a little hacky.)
+        device = next(self.model.parameters()).device
 
         word_start_dict = self.task.get_word_beginnings(self.args, self.task.dictionary)
 
@@ -177,8 +190,8 @@ class IceBERTHubInterface(RobertaHubInterface):
         word_mask = torch.tensor([word_start_dict[t.item()] for t in tokens])
         word_mask[0] = 0
         word_mask[-1] = 0
-        word_mask = word_mask.unsqueeze(0)
-        tokens = tokens.unsqueeze(0)
+        word_mask = word_mask.unsqueeze(0).to(device)
+        tokens = tokens.unsqueeze(0).to(device)
         (cat_logits, attr_logits), _extra = self.model(tokens, features_only=True, word_mask=word_mask)
     
         labels = self.task.logits_to_labels(cat_logits, attr_logits, word_mask)

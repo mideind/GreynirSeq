@@ -111,7 +111,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
                 (not exists)
                 and (idx > term_dict.nspecial)  # ignore bos, eos, etc
                 and (lbl != "<mask>")
-                and (lbl.startswith("madeupword"))  # ignore vocabulary padding
+                and (not lbl.startswith("madeupword"))  # ignore vocabulary padding
             ):
                 assert False, "Unexpected POS label item in term_dict.txt: {}".format(
                     lbl
