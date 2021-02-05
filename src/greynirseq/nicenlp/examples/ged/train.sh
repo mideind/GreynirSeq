@@ -15,7 +15,7 @@ SCRIPT_NAME=$0
 usage() {
     echo "$1"
     echo "Usage:"
-    echo "$SCRIPT_NAME <run-name> <model-file> <data-dir> <greynirseq-path> <term-schema>"
+    echo "$SCRIPT_NAME <run-name> <model-file> <data-dir> <greynirseq-path> <term-schema> <encoder-json> <vocab-bpe>"
     exit 1
 }
 
