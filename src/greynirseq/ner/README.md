@@ -4,7 +4,7 @@ In training data for NMT (neural machine translation) systems it is of benefit t
 
 ### Name Tagging
 
-For Icelandic NER the included IceBERT-NER model is used. For english a NER model fine tuned on BERT large from huggingface is used with spacy as fallback if sentence length is too long for the model to process. Note that this results in downloading of data beyond 1Gb.
+For Icelandic NER the included IceBERT-NER model is used. For english a NER model fine tuned on BERT large from huggingface is used with spacy as fallback (`python -m spacy download en_core_web_lg`) if sentence length is too long for the model to process. Note that this results in downloading of data beyond 1Gb.
 
 The script accepts a tab separated English to Icelandic file, e.g.
 
