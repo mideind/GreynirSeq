@@ -5,6 +5,7 @@ line-length = 120
 name = "greynirseq"
 version = "0.0.1"
 description = "Natural language processing for Icelandic, using fairseq"
+authors = []
 readme = "README.md"
 repository = "https://github.com/mideind/GreynirSeq"
 packages = [
@@ -19,6 +20,8 @@ nltk = "^3.5"
 reynir = "^2.10.1"
 transformers = "^4.3.2"
 spacy = "^2"
+pyjarowinkler = "^1.8"
+scipy = "^1.5"
 
 [tool.poetry.dev-dependencies]
 pydocstyle = "^5.0.2"
