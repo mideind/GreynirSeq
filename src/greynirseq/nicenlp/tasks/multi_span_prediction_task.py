@@ -40,7 +40,8 @@ from greynirseq.nicenlp.data.datasets import (
     LossMaskDataset,
     NumWordsDataset,
 )
-import greynirseq.nicenlp.utils.greynir.greynir_utils as greynir_utils
+
+from greynirseq.nicenlp.utils.greynir import greynir_utils
 
 logger = logging.getLogger(__name__)
 

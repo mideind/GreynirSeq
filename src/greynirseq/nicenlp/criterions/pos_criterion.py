@@ -17,12 +17,8 @@ except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
 from greynirseq.ner.ner_f1_stats import EvalNER
-import greynirseq.nicenlp.utils.greynir.greynir_utils as greynir_utils
-
-import pyximport
-
-pyximport.install()
-import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
+from greynirseq.nicenlp.utils.greynir import greynir_utils
+from greynirseq.nicenlp.utils.greynir import tree_dist
 
 
 def targets_to_flat_mask_no_bos(targets, pad_idx):

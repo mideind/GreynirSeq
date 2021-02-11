@@ -44,8 +44,8 @@ try:
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
-import greynirseq.nicenlp.utils.greynir.greynir_utils as greynir_utils
-import greynirseq.nicenlp.utils.greynir.tree_distance as tree_distance
+from . import greynir_utils
+from . import tree_dist as tree_distance
 
 
 def reformat_annotrees():

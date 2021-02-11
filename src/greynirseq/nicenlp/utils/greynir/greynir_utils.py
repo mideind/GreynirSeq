@@ -16,7 +16,7 @@ import numpy as np
 from nltk.tree import Tree as NltkTree
 import nltk
 
-import greynirseq.nicenlp.utils.greynir.unary_branch_labels as unary_branch_labels
+from . import unary_branch_labels
 
 HTML_LPAREN = "&#40;"
 HTML_RPAREN = "&#41;"
