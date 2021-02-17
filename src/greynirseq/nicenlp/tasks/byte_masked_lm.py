@@ -198,6 +198,7 @@ class ByteMaskedLMTask(FairseqTask):
             self.bpe_dictionary,
             seed=self.seed,
             dropout=self.bpe_dropout,
+            byte_dictionary=self.byte_dictionary,
         )  # appends eos, but not bos
 
         # TODO: should probably implement maybe_shorten_dataset for ByteSequence (see masked_lm)
@@ -206,6 +207,9 @@ class ByteMaskedLMTask(FairseqTask):
         # prepend beginning-of-sentence token (<s>, equiv. to [CLS] in BERT)
         bos_tensor = torch.tensor([self.byte_dictionary.bos()], dtype=torch.long)
         seq_dataset = MapDataset(seq_dataset, fn=lambda x: x.add_byte_prefix(bos_tensor))
+        byte_bos_tensor = torch.tensor([self.byte_dictionary.bos()], dtype=torch.long)
+        bpe_bos_tensor = torch.tensor([self.bpe_dictionary.bos()], dtype=torch.long)
+        seq_dataset = MapDataset(seq_dataset, fn=lambda x: x.add_byte_prefix(byte_bos_tensor, bpe_bos_tensor))
 
         seq_dataset = IcelandicCharacterNoising(
             seq_dataset, case_prob=self.args.case_switch_prob

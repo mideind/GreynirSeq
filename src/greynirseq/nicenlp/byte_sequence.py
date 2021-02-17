@@ -31,14 +31,15 @@ class ByteSequence:
 
         return ByteSequence(**(new_dict))
 
-    def add_byte_prefix(self, byte_prefix):
+    def add_byte_prefix(self, byte_prefix, bpe_prefix):
         if self.targets is not None or self.target_mask is not None:
             raise NotImplementedError("Cannot add prefix when sequence has targets")
         new_byte_seq = torch.cat([byte_prefix, self.byte_seq])
         new_seq = ByteSequence(self.str_seq, new_byte_seq)
 
         if self.bpe_ids is not None:
-            new_seq.bpe_ids = self.bpe_ids.clone()
+            assert len(bpe_prefix) == 1, "BPE prefixing of length >1 not supported"
+            new_seq.bpe_ids = torch.cat([bpe_prefix, self.bpe_ids.clone()])
         if self.bpe_lens is not None:
             new_seq.bpe_lens = torch.cat(
                 [torch.tensor([len(byte_prefix)]), self.bpe_lens]

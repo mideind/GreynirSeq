@@ -99,8 +99,16 @@ class ByteNoising(BaseWrapperDataset):
         byte_seq = byte_seq[perm]
 
         NUM_ACTIONS = 5
-        NOOP, DELETE, MASK, INSERT, REPLACE = range(NUM_ACTIONS)
+        from enum import IntEnum
+        class Actions(IntEnum):
+            NOOP = 0
+            DELETE = 1
+            MASK = 2
+            INSERT = 3
+            REPLACE = 4
+
         actions = np.random.choice(NUM_ACTIONS, size=num_bytes, p=self.probs)
+        actions[-1] = Actions.NOOP  # do not disturb eos
         random_bytes = np.random.choice(256, size=num_bytes)
         new_byte_seq = []
 
@@ -119,19 +127,19 @@ class ByteNoising(BaseWrapperDataset):
         ):
             bpe_list_index = byte_index_to_bpe_list_index[byte_index]
             word_list_index = byte_index_to_word_list_index[byte_index]
-            if action == NOOP:
+            if action == Actions.NOOP:
                 new_byte_seq.append(byte)
-            elif action == DELETE:
+            elif action == Actions.DELETE:
                 new_bpe_lens[bpe_list_index] -= 1
                 new_word_lens[word_list_index] -= 1
-            elif action == MASK:
+            elif action == Actions.MASK:
                 new_byte_seq.append(self.mask_idx)
-            elif action == INSERT:
+            elif action == Actions.INSERT:
                 new_byte_seq.append(random_byte)
                 new_byte_seq.append(byte)
                 new_bpe_lens[bpe_list_index] += 1
                 new_word_lens[word_list_index] += 1
-            elif action == REPLACE:
+            elif action == Actions.REPLACE:
                 new_byte_seq.append(random_byte)
             else:
                 assert False, "unreachable"
@@ -142,6 +150,11 @@ class ByteNoising(BaseWrapperDataset):
             new_bpe_ids = torch.tensor(new_bpe_ids)
 
         assert seq.word_ids is None, "Not implemented"
+        assert sum(new_bpe_lens) == len(new_byte_seq)
+        assert len(new_bpe_lens) == len(new_bpe_ids)
+        assert sum(new_bpe_lens) == sum(new_word_lens)
+        assert 0 not in new_bpe_lens
+
         new_word_lens = torch.tensor(new_word_lens, dtype=torch.long)
         new_bpe_lens = torch.tensor(new_bpe_lens, dtype=torch.long)
         new_seq = ByteSequence(
