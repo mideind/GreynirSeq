@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
 
 import enum
 import numpy as np
