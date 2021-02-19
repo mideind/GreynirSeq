@@ -5,6 +5,6 @@ from greynirseq.nicenlp.criterions import (
     multilabel_token_classification_criterion,
 )
 from greynirseq.nicenlp.models import (
-    pos_model,
+    multilabel,
 )
 from greynirseq.nicenlp.data import datasets

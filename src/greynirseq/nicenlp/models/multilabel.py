@@ -85,7 +85,7 @@ class MutliLabelRobertaModel(RobertaModel):
     @staticmethod
     def add_args(parser):
         """Add model-specific arguments to the parser."""
-        super().add_args(parser)
+        RobertaModel.add_args(parser)
         # fmt: off
         parser.add_argument('--freeze-embeddings', default=False,
                             help='Freeze transformer embeddings during fine-tuning')
@@ -174,6 +174,9 @@ class MutliLabelRobertaModel(RobertaModel):
             if path not in state_dict:
                 state_dict[path] = value
 
+    #def max_decoder_positions(self):
+    #    return 512
+
 
 class MultiLabelRobertaHubInterface(RobertaHubInterface):
     def predict_sample(self, sample):
@@ -196,12 +199,19 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
 
         return self.predict_sample(sample)
 
+    def encode(self, sentence):
+        if sentence[0] != " ":
+            sentence = " " + sentence
+        return super().encode(sentence)
+
+    def decode(self, tokens, no_cut_space=False):
+        if no_cut_space:
+            return super().decode(tokens)
+        return super().decode(tokens)[1:]
+
     def predict_labels(self, sentence):
         # assert task is set
       
-        if sentence[0] is not " ":
-            sentence = " " + sentence
-
         word_start_dict = self.task.get_word_beginnings(self.args, self.task.dictionary)
 
         tokens = self.encode(sentence)
