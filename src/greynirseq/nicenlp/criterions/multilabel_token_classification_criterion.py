@@ -11,7 +11,7 @@ from fairseq import utils
 import torch
 import torch.nn.functional as F
 
-from greynirseq.types import Numeric
+from greynirseq.utils.types import Numeric
 
 
 @register_criterion("multilabel_token_classification")

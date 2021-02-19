@@ -13,8 +13,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, LongTensor
 
-import greynirseq.nicenlp.chart_parser as chart_parser
-import greynirseq.nicenlp.tree_dist as tree_dist
+import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser
+import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.types import Numeric
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx

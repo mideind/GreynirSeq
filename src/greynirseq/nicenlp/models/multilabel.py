@@ -11,20 +11,47 @@ from fairseq.models.roberta.model import base_architecture, roberta_base_archite
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import RobertaEncoder
 from fairseq.models import register_model, register_model_architecture
+from fairseq.modules import LayerNorm
 
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
 
 from greynirseq.nicenlp.utils.constituency import token_utils
-from greynirseq.nicenlp.models.multilabel_word_classification import (
-    MultiLabelTokenClassificationHead
-)
 
 
 logger = logging.getLogger(__name__)
 
 
-@register_model("icebert_pos")
-class IceBERTPOSModel(RobertaModel):
+class MultiLabelTokenClassificationHead(nn.Module):
+    """Head for word-level classification tasks."""
+
+    def __init__(self, in_features, out_features, num_cats, pooler_dropout):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features  # num_labels
+        self.num_cats = num_cats
+
+        self.dense = nn.Linear(self.in_features, self.in_features)
+        self.activation_fn = utils.get_activation_fn("relu")
+        self.dropout = nn.Dropout(p=pooler_dropout)
+        self.layer_norm = LayerNorm(self.in_features)
+        self.cat_proj = nn.Linear(self.in_features, self.num_cats)
+        self.out_proj = nn.Linear(self.in_features + self.num_cats, self.out_features)
+
+    def forward(self, x, **kwargs):
+        x = self.dropout(x)
+        x = self.dense(x)
+        x = self.layer_norm(x)
+        x = self.activation_fn(x)
+
+        cat_logits = self.cat_proj(x)
+        cat_probits = torch.softmax(cat_logits, dim=-1)
+        attr_logits = self.out_proj(torch.cat((cat_probits, x), -1))
+
+        return cat_logits, attr_logits
+
+
+@register_model("multilabel_roberta")
+class MutliLabelRobertaModel(RobertaModel):
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
 
@@ -54,7 +81,7 @@ class IceBERTPOSModel(RobertaModel):
     @staticmethod
     def add_args(parser):
         """Add model-specific arguments to the parser."""
-        super(IceBERTPOSModel, IceBERTPOSModel).add_args(parser)
+        super().add_args(parser)
         # fmt: off
         parser.add_argument('--freeze-embeddings', default=False,
                             help='Freeze transformer embeddings during fine-tuning')
@@ -130,7 +157,7 @@ class IceBERTPOSModel(RobertaModel):
             load_checkpoint_heads=True,
             **kwargs,
         )
-        return IceBERTHubInterface(x["args"], x["task"], x["models"][0])
+        return MultiLabelRobertaHubInterface(x["args"], x["task"], x["models"][0])
 
     def upgrade_state_dict_named(self, state_dict, name):
         super().upgrade_state_dict_named(state_dict, name)
@@ -144,7 +171,7 @@ class IceBERTPOSModel(RobertaModel):
                 state_dict[path] = value
 
 
-class IceBERTHubInterface(RobertaHubInterface):
+class MultiLabelRobertaHubInterface(RobertaHubInterface):
     def predict_sample(self, sample):
         net_input = sample["net_input"]
         tokens = net_input["src_tokens"]
@@ -187,13 +214,13 @@ class IceBERTHubInterface(RobertaHubInterface):
 
 
 
-@register_model_architecture("icebert_pos", "icebert_base_pos")
-def icebert_base_pos_architecture(args):
+@register_model_architecture("multilabel_roberta", "multilabel_roberta_base")
+def multilabel_roberta_base_architecture(args):
     roberta_base_architecture(args)
 
 
-@register_model_architecture("icebert_pos", "icebert_large_pos")
-def icebert_large_pos_architecture(args):
+@register_model_architecture("multilabel_roberta", "multilabel_roberta_large")
+def multilabel_roberta_large_architecture(args):
     roberta_large_architecture(args)
 
 
