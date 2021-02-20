@@ -1,47 +1,51 @@
 import argparse
 import os
 import re
+from typing import Dict, List
 
-from greynirseq.ner.aligner import ParallelNER
+from greynirseq.ner.aligner import NERMarkerIdx, NERParser, NERSentenceParse, PairInfo, NERAnalyser
 from greynirseq.nicenlp.models.icebert import IcebertModel
 from greynirseq.settings import IceBERT_POS_PATH, IceBERT_POS_CONFIG
 
 from reynir import NounPhrase
 
 
+def add_marker(ner_marker: NERMarkerIdx, tokens: List[str], idx: int, tag: str):
+    """Add a complex marker around NEs.
+
+    HAS SIDE-EFFECTS!
+    """
+    tokens[ner_marker.start_idx] = f"<e:{idx}:{tag}:>{tokens[ner_marker.start_idx]}"
+    if ner_marker.end_idx - ner_marker.start_idx != 1:
+        tokens[ner_marker.end_idx - 1] = f"{tokens[ner_marker.end_idx - 1]}</e{idx}>"
+    else:
+        tokens[ner_marker.start_idx] += f"</e{idx}>"
+
+
 # TODO accept string literal etc.
-def tag_ner_pair(pos_model, p1, p2, pair_info, max_distance=1):
+def tag_ner_pair(pos_model, p1: NERSentenceParse, p2: NERSentenceParse, pair_info: PairInfo, max_distance=1):
     hit = False
-    en_sent = p1[0].split()
-    is_sent = p2[0].split()
+    en_tokens = p1.sent.split()
+    is_tokens = p2.sent.split()
 
     # Assume p2 is Icelandic
-    pos_tags = pos_model.predict_to_idf(p2[0], device="cuda")
-    for idx, pair in enumerate(pair_info["pair_map"]):
-        is_loc = pair[1][:2]
-        en_loc = pair[0][:2]
-        tags = pos_tags[is_loc[0] : is_loc[1]]
+    pos_tags = pos_model.predict_to_idf(p2.sent, device="cuda")
+    for idx, alignment in enumerate(pair_info.pair_map):
+        en_ner_marker, is_ner_marker, distance = alignment.marker_1, alignment.marker_2, alignment.cost
+        tags = pos_tags[is_ner_marker.start_idx : is_ner_marker.end_idx]
         if "e" in tags:
             # Since IDF for some reason uses "e" for foreign names, we ignore those
             continue
-        if pair[2] > max_distance:
+        if distance > max_distance:
             continue
 
         hit = True
-        en_sent[en_loc[0]] = "<e:{}:{}:>{}".format(idx, tags[0], en_sent[en_loc[0]])
-        if en_loc[1] - en_loc[0] != 1:
-            en_sent[en_loc[1] - 1] = "{}</e{}>".format(en_sent[en_loc[1] - 1], idx)
-        else:
-            en_sent[en_loc[0]] += "</e{}>".format(idx)
-
-        is_sent[is_loc[0]] = "<e:{}:{}:>{}".format(idx, tags[0], is_sent[is_loc[0]])
-        if is_loc[1] - is_loc[0] != 1:
-            is_sent[is_loc[1] - 1] = "{}</e{}>".format(is_sent[is_loc[1] - 1], idx)
-        else:
-            is_sent[is_loc[0]] += "</e{}>".format(idx)
+        # Add a complex tag in front of the NE
+        add_marker(en_ner_marker, en_tokens, idx, tags[0])
+        add_marker(is_ner_marker, is_tokens, idx, tags[0])
 
     if hit:
-        return en_sent, is_sent
+        return en_tokens, is_tokens
     return None, None
 
 
@@ -56,17 +60,15 @@ def main():
     pos_model.to("cuda")
     pos_model.eval()
 
-    eval_ner = ParallelNER(args.en_ent, args.is_ent)
+    eval_ner = NERParser(open(args.en_ent), open(args.is_ent))
     with open(args.output, "w") as ofile:
-        for p1, p2, pair_info in eval_ner.parse_files_gen():
-            if pair_info["pair_map"]:
-                en_sent, is_sent = tag_ner_pair(
-                    pos_model, p1, p2, pair_info, max_distance=0.9
-                )
-                if en_sent is not None:
-                    ofile.writelines(
-                        "{}\t{}\n".format(" ".join(en_sent), " ".join(is_sent))
-                    )
+        provenance = NERAnalyser()
+        provenance.load_provenance()
+        for p1, p2, pair_info in eval_ner.parse_files_gen(analyser=provenance):
+            if pair_info.pair_map:
+                en_sent, is_sent = tag_ner_pair(pos_model, p1, p2, pair_info, max_distance=0.9)
+                if en_sent is not None and is_sent is not None:
+                    ofile.writelines("{}\t{}\n".format(" ".join(en_sent), " ".join(is_sent)))
 
 
 if __name__ == "__main__":
