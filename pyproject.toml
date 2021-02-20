@@ -1,6 +1,13 @@
 [tool.black]
 line-length = 120
 
+[tool.pytest.ini_options]
+testpaths = [
+    "tests"
+]
+# addopts = "--electra_model electra-small-pytorch --tagger /home/haukur/Resources/Models/POS/tagger-v2.0.0.pt"
+
+
 [tool.poetry]
 name = "greynirseq"
 version = "0.0.1"
@@ -14,7 +21,7 @@ packages = [
 [tool.poetry.scripts]
 
 [tool.poetry.dependencies]
-python = "^3.6.2"
+python = "^3.7.2"
 fairseq = {git = "https://github.com/pytorch/fairseq.git", rev = "7f4c7481a54a9d1da0a3c65084cb79c70196ddd2"}
 nltk = "^3.5"
 reynir = "^2.10.1"
