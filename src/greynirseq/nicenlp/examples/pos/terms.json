@@ -1,0 +1,291 @@
+{
+    "label_categories": [
+        "n",
+        "g",
+        "x",
+        "e",
+        "v",
+        "l",
+        "fa",
+        "fb",
+        "fe",
+        "fo",
+        "fp",
+        "fs",
+        "ft",
+        "tf",
+        "ta",
+        "tp",
+        "to",
+        "sn",
+        "sb",
+        "sf",
+        "sv",
+        "ss",
+        "sl",
+        "sþ",
+        "cn",
+        "ct",
+        "c",
+        "aa",
+        "au",
+        "ao",
+        "aþ",
+        "ae",
+        "as",
+        "p"
+    ],
+    "category_to_group_names": {
+        "n": [
+            "gender",
+            "number",
+            "case",
+            "def",
+            "proper"
+        ],
+        "g": [
+            "gender",
+            "number",
+            "case"
+        ],
+        "l": [
+            "gender",
+            "number",
+            "case",
+            "adj_c",
+            "deg"
+        ],
+        "fa": [
+            "gender",
+            "number",
+            "case"
+        ],
+        "fb": [
+            "gender",
+            "number",
+            "case"
+        ],
+        "fe": [
+            "gender",
+            "number",
+            "case"
+        ],
+        "fs": [
+            "gender",
+            "number",
+            "case"
+        ],
+        "ft": [
+            "gender",
+            "number",
+            "case"
+        ],
+        "fo": [
+            "gender_or_person",
+            "number",
+            "case"
+        ],
+        "fp": [
+            "gender_or_person",
+            "number",
+            "case"
+        ],
+        "tf": [
+            "gender",
+            "number",
+            "case"
+        ],
+        "sn": [
+            "voice"
+        ],
+        "sb": [
+            "voice",
+            "person",
+            "number",
+            "tense"
+        ],
+        "sf": [
+            "voice",
+            "person",
+            "number",
+            "tense"
+        ],
+        "sv": [
+            "voice",
+            "person",
+            "number",
+            "tense"
+        ],
+        "ss": [
+            "voice"
+        ],
+        "sl": [
+            "voice",
+            "person",
+            "number",
+            "tense"
+        ],
+        "sþ": [
+            "voice",
+            "gender",
+            "number",
+            "case"
+        ],
+        "aa": [
+            "deg"
+        ],
+        "au": [
+            "deg"
+        ],
+        "ao": [
+            "deg"
+        ],
+        "aþ": [
+            "deg"
+        ],
+        "ae": [
+            "deg"
+        ],
+        "as": [
+            "deg"
+        ]
+    },
+    "group_names": [
+        "gender",
+        "gender_or_person",
+	"number",
+	"case",
+        "def",
+        "proper",
+        "adj_c",
+        "deg",
+        "voice",
+        "person",
+        "number",
+        "tense"
+    ],
+    "group_name_to_labels": {
+        "gender": [
+            "masc",
+            "fem",
+            "neut",
+            "gender_x"
+        ],
+        "number": [
+            "sing",
+            "plur"
+        ],
+        "person": [
+            "1",
+            "2",
+            "3"
+        ],
+        "gender_or_person": [
+	   "masc",
+	   "fem",
+	   "neut",
+	   "gender_x",
+	   "1",
+	   "2",
+	   "3"
+	],
+	"case": [
+            "nom",
+            "acc",
+            "dat",
+            "gen"
+        ],
+        "deg": [
+            "pos",
+            "cmp",
+            "superl"
+        ],
+        "voice": [
+            "act",
+            "mid"
+        ],
+        "tense": [
+            "pres",
+            "past"
+        ],
+        "def": [
+            "definite"
+        ],
+        "proper": [
+            "proper"
+        ],
+	"adj_c": [
+	    "strong",
+	    "weak",
+	    "equiinflected"
+	]
+    },
+    "labels": [
+      "<SEP>",
+"n",
+"g",
+"x",
+"e",
+"v",
+"l",
+"fa",
+"fb",
+"fe",
+"fo",
+"fp",
+"fs",
+"ft",
+"tf",
+"ta",
+"tp",
+"to",
+"sn",
+"sb",
+"sf",
+"sv",
+"ss",
+"sl",
+"sþ",
+"cn",
+"ct",
+"c",
+"aa",
+"au",
+"ao",
+"aþ",
+"ae",
+"as",
+"p",
+"masc",
+"fem",
+"neut",
+"gender_x",
+"1",
+"2",
+"3",
+"sing",
+"plur",
+"nom",
+"acc",
+"dat",
+"gen",
+"definite",
+"proper",
+"strong",
+"weak",
+"equiinflected",
+"pos",
+"cmp",
+"superl",
+"past",
+"pres",
+"pass",
+"act",
+"mid" ],
+   "null": null,
+   "null_leaf": null,
+   "separator": "<SEP>",
+"ignore_categories": ["x", "e"]
+
+
+}

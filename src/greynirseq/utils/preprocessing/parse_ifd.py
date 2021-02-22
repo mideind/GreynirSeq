@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
+
 import argparse
 
-from greynirseq.nicenlp.utils.ifd_utils import ifd2labels
+from greynirseq.utils.ifd_utils import ifd2labels
 
 
 def load_file(

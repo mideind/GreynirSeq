@@ -1,3 +1,7 @@
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
 from collections import OrderedDict
 
 from fairseq.data import BaseWrapperDataset, NestedDictionaryDataset
@@ -36,7 +40,7 @@ class MutexBinaryDataset(BaseWrapperDataset):
                 res.append(t)
             res.append(self.separator)
 
-        return torch.Tensor(res).int()
+        return torch.tensor(res).int()
 
 
 class NestedDictionaryDatasetFix(NestedDictionaryDataset):

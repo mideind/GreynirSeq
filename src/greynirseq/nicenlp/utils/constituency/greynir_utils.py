@@ -1,4 +1,4 @@
-from collections import Counter, namedtuple
+from collections import Counter, namedtuple, OrderedDict
 import json
 from operator import itemgetter
 import time
@@ -16,16 +16,64 @@ import numpy as np
 from nltk.tree import Tree as NltkTree
 import nltk
 
-import greynirseq.nicenlp.utils.greynir.unary_branch_labels as unary_branch_labels
+import greynirseq.nicenlp.utils.constituency.unary_branch_labels as unary_branch_labels
 
 HTML_LPAREN = "&#40;"
 HTML_RPAREN = "&#41;"
-ESCAPED_LPAREN = "\("
+LPAREN = "("
+RPAREN = ")"
 ESCAPED_RPAREN = "\)"
 # ESCAPED_LPAREN_PAT = re.compile("([^\\\\])\\\\\(")
 # ESCAPED_RPAREN_PAT = re.compile("([^\\\\])\\\\\)")
 ESCAPED_LPAREN_PAT = re.compile("\\\\\(")
 ESCAPED_RPAREN_PAT = re.compile("\\\\\)")
+
+
+def iterfind_tree_texts(stream):
+    if not stream:
+        return None
+    BUFFER_MAX_LEN = 100000
+    ctr, buffer = 0, []
+    char, last_char = None, None
+    while stream and len(buffer) < BUFFER_MAX_LEN:
+        char = stream.read(1)
+        if char == "":
+            break
+        buffer.append(char)
+        if char == LPAREN and (last_char is None or last_char != "\\"):
+            ctr += 1
+        elif char == RPAREN and (last_char is None or last_char != "\\"):
+            ctr -= 1
+
+        if buffer and ctr == 0:
+            enclosed_text = "".join(buffer).strip()
+            if enclosed_text and any(not line.strip(" ") for line in enclosed_text.split("\n")):
+                import pdb; pdb.set_trace()
+                raise ValueError("found delimiter inside enclosed region")
+            elif enclosed_text:
+                yield enclosed_text
+            ctr = 0
+            buffer = []
+        last_char = char
+
+    if len(buffer) == BUFFER_MAX_LEN:
+        print("Exceeded buffer max length")
+        import pdb; pdb.set_trace()
+        raise ValueError("Text has mismatching parens: " + str(ctr))
+    elif ctr != 0:
+        print("Balance is not zero at end of string")
+        import pdb; pdb.set_trace()
+        raise ValueError("Text has mismatching parens: " + str(ctr))
+
+
+def _simplify_nonterminal(nonterminal):
+    if ">" not in nonterminal:
+        return nonterminal.split("-")[0]
+    labels = [
+        subnonterminal.split("-")[0]
+        for subnonterminal in nonterminal.split(">")
+    ]
+    return ">".join(labels)
 
 
 class Node:
@@ -83,6 +131,10 @@ class Node:
     def tag(self):
         pass
 
+    @property
+    def simple_tag(self):
+        pass
+
     @classmethod
     def from_anno_dict(cls, obj):
         if obj.get("tree") is not None:
@@ -128,43 +180,69 @@ class Node:
             text = ESCAPED_LPAREN_PAT.sub(HTML_LPAREN, text)
             text = ESCAPED_RPAREN_PAT.sub(HTML_RPAREN, text)
             return text
-
         def parse_nltk_tree(text):
+            """
+            Parse bracketed tree from text using NLTK's parser
+            returns (
+                NLTK tree,
+                remaining text,
+            )
+            """
             try:
                 nktree = nltk.Tree.fromstring(escape_parens(text))
-                return nktree
+                return nktree, None
             except ValueError as exc:
-                skip1 = "Tree.read(): expected 'end-of-string' but got ')'"
-                skip2 = "Tree.read(): expected 'end-of-string' but got '("
-                if exc.args and skip1 in exc.args[0] or skip2 in exc.args[0]:
-                    # ic(skip1)
-                    ic("skipping bad delimiter")
-                    return None
-                ic(exc.args)
-                import pdb
+                extra_rparen = "Tree.read(): expected 'end-of-string' but got ')'"
+                no_delim = "Tree.read(): expected 'end-of-string' but got '("
+                missing_rparen = "Tree.read(): expected ')' but got 'end-of-string"
 
-                pdb.set_trace()
+                exc_text = exc.args[0]
+                should_skip = False
+                if extra_rparen in exc_text:
+                    ic("found extra )")
+                    should_skip = True
+                elif no_delim in exc_text:
+                    # ic("expected empty line delimiter")
+                    ic("handling empty line delimiter")
+                    should_skip = True
+                    at_index_str = "at index "
+                    start_of_idx = exc_text.index(at_index_str) + len(at_index_str)
+                    end = int(exc_text[start_of_idx:].split(" ")[0].replace(".", ""))
+                    if end == 1308:
+                        import pdb; pdb.set_trace()
+                    tree_text = text[:end]
+                    nktree, _ = parse_nltk_tree(tree_text)
+                    remaining = text[end:]
+                    return nktree, remaining
+                elif missing_rparen in exc_text:
+                    ic("unexpected end of string")
+                    should_skip = True
+                if should_skip:
+                    ic("skipping")
+                    import pdb; pdb.set_trace()
+                    return None, None
+                ic(exc.args)
+                import pdb; pdb.set_trace()
                 _ = 1 + 1
             except Exception as e:
-                ic()
-                # print(text)
                 p = re.compile("\(URL" + "[^\)]+", re.MULTILINE)
                 try:
                     nktree = nltk.Tree.fromstring(p.sub("", text))
-                    return nktree
+                    ic("Fixed meta subtree bug")
+                    return nktree, None
                 except Exception as e2:
-                    ic()
+                    ic("Unknown exception")
                     import traceback
-
                     traceback.print_exc()
                     print(p.sub("", text))
-                    return None
-                return None
+                    return None, None
+                return None, None
 
         def nltk_tree_reader(line_stream, limit=None):
             buffer = []
             total = 0
             limit = limit or float("inf")
+            remaning = None
             for line_idx, line in enumerate(line_stream):
                 if total >= limit:
                     break
@@ -179,25 +257,54 @@ class Node:
                 # if total <= 2_169_000:
                 # if total <= 8000:
                 #     continue
-                nktree = parse_nltk_tree("".join(buffer))
+                nktree, remaining = parse_nltk_tree("".join(buffer + [" "]))
+                ic(remaning)
                 if nktree is not None:
                     yield nktree
-                buffer = []
-            if buffer and not total >= limit:
-                nktree = parse_nltk_tree("".join(buffer))
+                if remaining:
+                    # import pdb; pdb.set_trace()
+                    buffer = [remaining]
+                else:
+                    buffer = []
+            text = "".join(buffer)
+            buf_size = len(text)
+            last_buf_size = buf_size
+            while not total >= limit and buf_size > 0 and buf_size != last_buf_size:
+                # text = "".join(buffer)
+                nktree, remaining = parse_nltk_tree(text)
                 if nktree is not None:
                     yield nktree
+                if remaining:
+                    buffer = [remaining]
+                else:
+                    buffer = []
+                text = "".join(buffer)
+                last_buf_size = buf_size
+                buf_size = len(text)
+
+        def nltk_tree_reader_v2(text, limit=None):
+            # text = "".join(line_stream)
+            for idx, tree_str in enumerate(iterfind_tree_texts(text)):
+                try:
+                    nktree = nltk.Tree.fromstring(escape_parens(tree_str))
+                    # nktree = nltk.Tree.fromstring(tree_str)
+                    yield nktree
+                except Exception as e:
+                    print(tree_str)
+                    print(idx)
+                    import pdb; pdb.set_trace()
+                    print()
 
         def constructor(nktree):
             if isinstance(nktree, nltk.Tree) and nktree.label().isupper():
-                # nonterminal
+                #nonterminal
                 children = []
                 for child in nktree:
                     node = constructor(child)
                     children.append(node)
                 return NonterminalNode(nktree.label(), children)
             if isinstance(nktree, nltk.Tree):
-                # terminal node
+                #terminal node
                 text = []
                 terminal = nktree.label()
                 # skip lemma, exp-seg and exp-abbrev
@@ -208,39 +315,31 @@ class Node:
                 text = text.replace(HTML_LPAREN, "(").replace(HTML_RPAREN, ")")
                 return TerminalNode(text, terminal)
             ic(nktree)
-            import pdb
+            import pdb; pdb.set_trace()
 
-            pdb.set_trace()
-
-        MONTHS = [
-            "janúar",
-            "febrúar",
-            "mars",
-            "apríl",
-            "maí",
-            "júní",
-            "júlí",
-            "ágúst",
-            "september",
-            "október",
-            "nóvember",
-            "desember",
-        ]
+        MONTHS = ["janúar", "febrúar", "mars", "apríl", "maí", "júní", "júlí", "ágúst", "september", "október", "nóvember", "desember"]
         IGNORE_MISSING_CAT = set(['"19"'])
         MONTHS = set(['"{}"'.format(month) for month in MONTHS])
-        for _idx, nktree in enumerate(nltk_tree_reader(line_stream, limit=limit)):
-            if nktree is None or not any(
-                [child.label() in ("S0", "S0-X") for child in nktree]
-            ):
-                ic("could not find tree root", nktree)
-                if nktree is not None:
-                    nktree.pprint()
-                input("continue...")
-                continue
-            nktree = [child for child in nktree if child.label() in ("S0", "S0-X")][0]
+        num_no_tree_root = 0
+        for _idx, nktree in enumerate(nltk_tree_reader_v2(line_stream, limit=limit)):
+            if nktree is None:
+                num_no_tree_root += 1
+            root_candidate = list(filter(lambda x: x.label() != "META", nktree))
+            if not root_candidate:
+                num_no_tree_root += 1
+            root_candidate = root_candidate[0]
+            # handle invalid save state from annotald
+            # (adds extra parenthesis around tree root)
+            if root_candidate.label() == "":
+                root_candidate = root_candidate[0]
+            if root_candidate.label() == "":
+                root_candidate = root_candidate[0]
 
+            if root_candidate.label() not in ("S0", "S0-X"):
+                num_no_tree_root += 1
+                continue
             try:
-                tree = constructor(nktree)
+                tree = constructor(root_candidate)
             except Exception as e:
                 if e.args and e.args[0] in MONTHS:
                     ic("skipping month bug")
@@ -248,29 +347,22 @@ class Node:
                 elif e.args and e.args[0] in IGNORE_MISSING_CAT:
                     ic("skipping missing cat")
                     continue
-                elif (
-                    e.args
-                    and e.args[0]
-                    == 'eight="100%"width="100%"scrolling="no"frameborder="0"seamless"'
-                ):
+                elif e.args and e.args[0] == 'eight="100%"width="100%"scrolling="no"frameborder="0"seamless"':
                     ic("skipping html error")
                     continue
-                text = " ".join(
-                    [leaf[0] for leaf in nktree.pos() if "lemma" not in leaf]
-                )
+                text = " ".join([leaf[0] for leaf in nktree.pos() if "lemma" not in leaf])
                 nktree.pprint()
                 print(text)
                 ic("constructor exception", e.args)
-                import pdb
-
-                pdb.set_trace()
+                import pdb; pdb.set_trace()
                 raise e
-            yield constructor(nktree)
+            yield tree
+        print("Skipped {} trees".format(num_no_tree_root))
 
     def binarize(self):
         if self.terminal:
             return self
-        new_root = NonterminalNode(self.simple_label)
+        new_root = NonterminalNode(self.nonterminal)
         if len(self.children) <= 2:
             new_root._children = [child.binarize() for child in self.children]
             return new_root
@@ -283,7 +375,7 @@ class Node:
             if len(side) == 1:
                 new_children.append(side[0].binarize())
             else:
-                new_node = NonterminalNode(NULL_CAT, side).binarize()
+                new_node = NonterminalNode(NULL_CAT_NONTERM, side).binarize()
                 new_children.append(new_node)
 
         new_root._children = new_children
@@ -294,7 +386,7 @@ class Node:
             return self
 
         children = [child.debinarize() for child in self.children]
-        if self.simple_label == NULL_CAT:
+        if self.simple_label == NULL_CAT_NONTERM:
             return children
 
         new_children = []
@@ -309,23 +401,35 @@ class Node:
         return new_root
 
     @classmethod
-    def convert_to_nltk_tree(cls, node):
+    def convert_to_nltk_tree(cls, node, simplify_leaves=False):
         if node.terminal:
-            return NltkTree(node.tag, [node.text])
+            text = node.text.replace("(", r"\(").replace(")", r"\)")
+            nltk_children = [text]
+            if node.lemma is not None:
+                lemma = node.lemma.replace("(", r"\(").replace(")", r"\)")
+                lemma_node = nltk.Tree("lemma", [lemma])
+                nltk_children.append(lemma_node)
+            tag = node.tag
+            if simplify_leaves:
+                tag = node.category
+            return NltkTree(tag, nltk_children)
         return NltkTree(
-            node.tag, [cls.convert_to_nltk_tree(child) for child in node.children]
+            node.tag, [
+                cls.convert_to_nltk_tree(child, simplify_leaves=simplify_leaves)
+                for child in node.children
+            ]
         )
 
-    def as_nltk_tree(self):
-        return self.convert_to_nltk_tree(self)
+    def as_nltk_tree(self, simplify_leaves=False):
+        return self.convert_to_nltk_tree(self, simplify_leaves=simplify_leaves)
 
-    def pretty_print(self):
-        tree = self.as_nltk_tree()
-        tree.pretty_print()
+    def pretty_print(self, stream=None, simplify_leaves=False):
+        tree = self.as_nltk_tree(simplify_leaves=simplify_leaves)
+        tree.pretty_print(stream=stream)
         del tree
 
-    def labelled_spans(self, include_null=True):
-        return self.tree_to_spans(self, include_null=include_null)
+    def labelled_spans(self, include_null=True, simplify=True):
+        return self.tree_to_spans(self, include_null=include_null, simplify=simplify)
 
     @classmethod
     def _split_multiword_tokens(cls, node):
@@ -340,8 +444,102 @@ class Node:
         node._children = new_children
         return node
 
+    def merge_multiword_tokens(self):
+        if self.terminal:
+            return self
+
+        def merge_mw_token(term_nodes):
+            new_text = []
+            terminal = term_nodes[0].terminal
+            terminal = terminal if terminal != "mw" else "x"
+            for node in term_nodes:
+                new_text.append(node.text)
+            new_text = " ".join(new_text)
+            new_node = TerminalNode(new_text, terminal)
+            return new_node
+
+        if not any(child.terminal == "mw" for child in self.children):
+            return NonterminalNode(self.nonterminal, [child.merge_multiword_tokens() for child in self.children])
+
+        new_children = []
+        end = None
+        for child_idx in range(len(self.children) - 1, -1, -1):
+            # traverse in reverse order
+            child = self.children[child_idx]
+            if child.nonterminal and end is None:
+                new_children.append(child.merge_multiword_tokens())
+            elif child.nonterminal and end is not None:
+                # just in case parser outputs illegal multiword token
+                new_node = merge_mw_token(self.children[child_idx + 1 : end + 1])
+                new_children.append(new_node)
+                new_children.append(child.merge_multiword_tokens())
+                end = None
+
+            if child.terminal and child.terminal != "mw" and end is None:
+                # regular terminal node
+                new_children.append(child)
+            elif child.terminal and child.terminal != "mw" and end is not None:
+                # multiword token starts here
+                new_node = merge_mw_token(self.children[child_idx : end + 1])
+                new_children.append(new_node)
+                end = None
+            elif child.terminal == "mw" and end is None:
+                # multiword token ends here
+                end = child_idx
+
+        if end is not None:
+            # just in case parser outputs illegal multiword token
+            start = 0
+            new_node = merge_mw_token(self.children[start : end + 1])
+            new_children.append(new_node)
+
+        return NonterminalNode(self.nonterminal, list(reversed(new_children)))
+
+    @property
+    def leaves(self):
+        if self.terminal is not None:
+            return [self]
+        ret = []
+        for child in self.children:
+            ret.extend(child.leaves)
+        return ret
+
     @classmethod
-    def tree_to_spans(cls, tree, include_null=True):
+    def _add_lemmas(cls, node, lemmas, allow_partial=False):
+        # the reason we need this is because multiword tokens need to be merged
+        # before lemmas can be added (i.e. in from_labelled_spans_and_terminals)
+        # if node.nonterminal and "NP-POSS" in node.nonterminal:
+        #     import pdb; pdb.set_trace()
+        start, end = node.span # cache spans
+        # if start >= len(lemmas):
+        #     import pdb; pdb.set_trace()
+        assert (start < len(lemmas)) or allow_partial
+        if node.terminal and start < len(lemmas):
+            start, _end = node.span
+            lemma = lemmas[start]
+            if node.text.count(" ") != lemmas[start].count(" ") and allow_partial:
+                lemma = node.text
+            new_node = TerminalNode(node.text, node.terminal, lemma=lemma)
+            return new_node
+        elif node.terminal and start >= len(lemmas):
+            new_node = TerminalNode(node.text, node.terminal, lemma=node.text)
+            return new_node
+
+        new_children = []
+        for child in node.children:
+            new_child = cls._add_lemmas(child, lemmas, allow_partial=allow_partial)
+            new_children.append(new_child)
+        return NonterminalNode(node.nonterminal, new_children)
+
+    def add_lemmas(self, lemmas, allow_partial=False):
+        return self._add_lemmas(self, lemmas, allow_partial=allow_partial)
+
+    def num_leaves(self):
+        start, end = node.span
+        return end
+
+    @classmethod
+    def tree_to_spans(cls, tree, include_null=True, simplify=True):
         _ = tree.span  # compute and cache spans
         nterms, terms = [], []
 
@@ -350,22 +548,26 @@ class Node:
                 node.add_empty_variants()
                 assert " " not in node.text, "Split multiword tokens before export"
                 if include_null and not is_only_child:
-                    nterm_1wide = LabelledSpan(node.span, NULL_LEAF, depth, node, None)
+                    nterm_1wide = LabelledSpan(node.span, NULL_LEAF_NONTERM, depth, node, None)
                     nterms.append(nterm_1wide)
                     depth = depth + 1
-                lspan = LabelledSpan(
-                    node.span, node.simple_tag, depth, node, node.flags
-                )
+                lspan = LabelledSpan(node.span, node.category, depth, node, node.flags)
                 terms.append(lspan)
                 return
             # nonterminal
-            if len(node.children) == 1:
-                traverse(node.children[0], depth=depth + 1, is_only_child=True)
-            else:
-                for child in node.children:
-                    traverse(child, depth=depth + 1, is_only_child=False)
-            lspan = LabelledSpan(node.span, node.simple_label, depth, node, None)
+            tag = node.simple_label if simplify else node.tag
+            lspan = LabelledSpan(node.span, tag, depth, node, None)
             nterms.append(lspan)
+
+            # if len(node.children) == 1:
+            #     traverse(node.children[0], depth=depth + 1, is_only_child=True)
+            # else:
+            #     for child in node.children:
+            #         traverse(child, depth=depth + 1, is_only_child=False)
+
+            has_only_child = len(node.children) == 1
+            for child in node.children:
+                traverse(child, depth=depth + 1, is_only_child=has_only_child)
 
         traverse(tree)
 
@@ -377,7 +579,9 @@ class Node:
             return self
         if len(self.children) > 1:
             new_node = NonterminalNode(
-                self.nonterminal, [child.collapse_unary() for child in self.children]
+                self.nonterminal, [
+                    child.collapse_unary() for child in self.children
+                ]
             )
             return new_node
         elif self.children[0].terminal:
@@ -395,14 +599,50 @@ class Node:
 
         labels = []
         for elem in merge_list:
-            # labels.append(elem.tag)
-            labels.append(elem.simple_label)
+            labels.append(elem.tag)
         label = ">".join(labels)
 
         new_node = NonterminalNode(
             label, [child.collapse_unary() for child in merge_list[-1].children]
         )
         return new_node
+
+    def separate_unary(self):
+        if self.terminal:
+            return self
+        if ">" not in self.nonterminal:
+            new_children = [
+                child.separate_unary()
+                for child in self.children
+            ]
+            return NonterminalNode(self.nonterminal, new_children)
+
+        separated_labels = self.nonterminal.split(">")
+        new_root = NonterminalNode(separated_labels[0])
+        parent = new_root
+        for label in separated_labels[1:]:
+            new_node = NonterminalNode(label)
+            parent.children.append(new_node)
+            parent = new_node
+        for child in self.children:
+            new_node.children.append(child.separate_unary())
+        return new_root
+
+    def remove_null_leaves(self):
+        cleaned = self._remove_null_leaves_inner()
+        if len(cleaned) == 1:
+            return cleaned[0]
+        return NonterminalNode("S0-X", cleaned)
+
+    def _remove_null_leaves_inner(self):
+        if self.terminal:
+            return [self]
+        new_children = []
+        for child in self.children:
+            new_children.extend(child._remove_null_leaves_inner())
+        if self.nonterminal == NULL_LEAF_NONTERM:
+            return new_children
+        return [NonterminalNode(self.nonterminal, new_children)]
 
     @classmethod
     def from_labelled_spans(cls, spans, labels, tokens=None):
@@ -415,7 +655,7 @@ class Node:
                 children = []
                 if tokens:
                     text = tokens[ii]
-                    children.append(TerminalNode(text, "null"))
+                    children.append(TerminalNode(text, NULL_CAT_TERM))
                 new_node = NonterminalNode(label, children)
             else:
                 new_node = NonterminalNode(label)
@@ -446,9 +686,45 @@ class Node:
         del stack
         return tree
 
+    @classmethod
+    def from_labelled_spans_and_terminals(cls, spans, labels, tokens, terminals):
+        # spans need to be in pre-order
+        last_ii, last_jj = None, None
+        stack = []
+        for idx, ((ii, jj), label) in enumerate(zip(spans, labels)):
+            if ii + 1 == jj:
+                text = None
+                children = []
+                if tokens:
+                    text = tokens[ii]
+                    children.append(TerminalNode(text, terminals[ii]))
+                new_node = NonterminalNode(label, children)
+            else:
+                new_node = NonterminalNode(label)
+            new_node._span = (ii, jj)
+            if last_ii is None:
+                stack.append(new_node)
+            elif last_ii <= ii and jj <= last_jj:
+                stack[-1].children.append(new_node)
+                stack.append(new_node)
+            elif last_jj <= ii:
+                while last_jj <= ii:
+                    parent = stack.pop()
+                    last_ii, last_jj = parent.span
+                stack.append(parent)
+                parent.children.append(new_node)
+                stack.append(new_node)
+            else:
+                ic("Unexpected error")
+                _ = 1 + 1
+            last_ii, last_jj = ii, jj
+        tree = stack.pop(0)
+        del stack
+        return tree
+
     def to_postfix(self, include_terminal=False):
-        """Export tree to postfix ordering
-        with node-labels as keys"""
+        """ Export tree to postfix ordering
+            with node-labels as keys """
         if self.terminal:
             return []
         result = []
@@ -462,16 +738,16 @@ class Node:
             return self
         new_children = [child.uniform(label, allow_null) for child in self.children]
         new_label = nonterminal
-        if allow_null and self.nonterminal == NULL_CAT:
-            new_label = NULL_CAT
-        elif self.nonterminal == NULL_LEAF:
-            new_label = NULL_LEAF
+        if allow_null and self.nonterminal == NULL_CAT_NONTERM:
+            new_label = NULL_CAT_NONTERM
+        elif self.nonterminal == NULL_LEAF_NONTERM:
+            new_label = NULL_LEAF_NONTERM
         return NonterminalNode(new_label, new_children)
 
     def roof(self):
         if self.terminal:
             return None
-        elif self.nonterminal == NULL_LEAF:
+        elif self.nonterminal == NULL_LEAF_NONTERM:
             return None
 
         new_children = []
@@ -481,6 +757,7 @@ class Node:
                 continue
             new_children.append(new_child)
         return NonterminalNode(self.nonterminal, new_children)
+
 
 
 class NonterminalNode(Node):
@@ -514,7 +791,7 @@ class NonterminalNode(Node):
 
     @property
     def simple_tag(self):
-        return self.nonterminal.split("-")[0]
+        return _simplify_nonterminal(self.nonterminal)
 
     @property
     def children(self):
@@ -528,15 +805,17 @@ class NonterminalNode(Node):
 
 
 class TerminalNode(Node):
-    def __init__(self, text, terminal_label, category=None):
+
+    def __init__(self, text, terminal_label, category=None, lemma=None):
         super(TerminalNode, self).__init__()
         self._text = text
         self._terminal = terminal_label
+        self._lemma = lemma
 
         if self._terminal:
             flags = []
-            cat, variants = split_flat_terminal_v2(self._terminal)
-            assert cat in TERM_CATS, cat
+            cat, variants = split_flat_terminal(self._terminal)
+            assert cat in TERM_CATS or cat == NULL_CAT_TERM, cat
             for var_name, val in variants.items():
                 flags.append("{}-{}".format(var_name, val))
             self._flags = flags
@@ -547,7 +826,7 @@ class TerminalNode(Node):
 
     def add_empty_variants(self):
         flags = []
-        cat, variants = split_flat_terminal_v2(self._terminal)
+        cat, variants = split_flat_terminal(self._terminal)
 
         empty = tuple()
         for var_name in VAR:
@@ -570,7 +849,7 @@ class TerminalNode(Node):
         if self.category == "grm":
             return labels
         flat = self.terminal
-        variants = split_flat_terminal(flat)
+        _cat, variants = split_flat_terminal(flat)
         for variant_name, subvariant in variants.items():
             if variant_name == "cat":
                 continue
@@ -601,19 +880,31 @@ class TerminalNode(Node):
     def category(self):
         return self._category
 
+    @property
+    def lemma(self):
+        return self._lemma
+
     def __repr__(self):
         return "({0} {1})".format(self.terminal, self.text)
 
     def split_multiword_tokens(self):
         new_terminals = []
-        for token in self.text.split(" "):
+        for idx, token in enumerate(self.text.split(" ")):
+            term = self.terminal if idx == 0 else CAT_INSIDE_MW_TOKEN
+            cat = self.category if idx == 0 else CAT_INSIDE_MW_TOKEN
             new_node = TerminalNode(
                 token,
-                self.terminal,
-                category=self.category,
+                term,
+                category=cat,
             )
             new_terminals.append(new_node)
         return new_terminals
+
+
+NULL_CAT_NONTERM = "NULL"
+NULL_LEAF_NONTERM = "LEAF"
+NULL_CAT_TERM = "null"
+CAT_INSIDE_MW_TOKEN = "mw"
 
 
 class VARIANT:
@@ -656,6 +947,7 @@ TERM_CATS = [
     "lo",
     "mælieining",
     "myllumerki",
+    CAT_INSIDE_MW_TOKEN,
     "nhm",
     "no",
     "notandanafn",
@@ -687,18 +979,17 @@ TERM_CATS = [
     "x",
 ]
 
-NULL_CAT = "NULL"
-NULL_LEAF = "LEAF"
 
 NONTERM_CATS = [
-    NULL_CAT,
-    NULL_LEAF,
+    NULL_CAT_NONTERM,
+    NULL_LEAF_NONTERM,
     "ADJP",
     "ADVP",
     "C",
     "CP",
     "FOREIGN",
     "IP",
+    "INF",
     "NP",
     "P",
     "PP",
@@ -710,9 +1001,9 @@ NONTERM_CATS = [
 
 
 NONTERM_SUFFIX = {
-    NULL_CAT: [NULL_CAT],
-    NULL_LEAF: [NULL_LEAF],
-    "ADJP": ["ADJP"],
+    # NULL_CAT_NONTERM: [NULL_CAT_NONTERM],
+    # NULL_LEAF_NONTERM: [NULL_LEAF_NONTERM],
+    # "ADJP": ["ADJP"],
     "ADVP": [
         "ADVP",
         "ADVP-DATE",
@@ -757,6 +1048,7 @@ NONTERM_SUFFIX = {
         "NP-MEASURE",
         "NP-OBJ",
         "NP-PERSON",
+        "NP-PREFIX",
         "NP-POSS",
         "NP-PRD",
         "NP-SOURCE",
@@ -777,33 +1069,56 @@ NONTERM_SUFFIX = {
         "S-QUOTE",
     ],
     "VP": ["VP", "VP-AUX"],
-    "C": ["C"],
-    "FOREIGN": ["FOREIGN"],
-    "P": ["P"],
-    "TO": ["TO"],
+    # "C": ["C"],
+    # "FOREIGN": ["FOREIGN"],
+    # "P": ["P"],
+    # "TO": ["TO"],
 }
 
 
-VAR = {
-    "gender": ["kk", "kvk", "hk", "empty"],
-    "number": ["et", "ft", "empty"],
-    "case": ["nf", "þf", "þgf", "ef", "empty"],
-    "article": ["gr", "empty"],
-    "person": ["p3", "p2", "p1", "empty"],
-    "mood": ["fh", "vh", "nh", "bh", "lhnt", "lhþt", "sagnb", "empty"],
-    "tense": ["nt", "þt", "empty"],
-    "degree": ["fst", "mst", "est", "esb", "evb", "empty"],
-    "strength": ["sb", "vb", "empty"],
-    "voice": ["gm", "mm", "empty"],
-    "obj1": ["nf", "þf", "þgf", "ef", "empty"],
-    "obj2": ["nf", "þf", "þgf", "ef", "empty"],
+# VAR = OrderedDict
+# {
+#     "obj1": ["nf", "þf", "þgf", "ef", "empty"],
+#     "obj2": ["nf", "þf", "þgf", "ef", "empty"],
+#     # supine: ["sagnb"],
+#     "impersonal": ["subj", "es", "none", "empty"],
+#     "subj": ["nf", "þf", "þgf", "ef", "empty"],
+#     "person": ["p3", "p2", "p1", "empty"],
+#     "number": ["et", "ft", "empty"],
+#     "case": ["nf", "þf", "þgf", "ef", "empty"],
+#     "gender": ["kk", "kvk", "hk", "empty"],
+#     "article": ["gr", "empty"],
+#     "mood": ["fh", "vh", "nh", "bh", "lhnt", "lhþt", "sagnb", "empty"],
+#     "tense": ["nt", "þt", "empty"],
+#     "voice": ["gm", "mm", "empty"],
+#     "degree": ["fst", "mst", "est", "esb", "evb", "empty"],
+#     "strength": ["sb", "vb", "empty"],
+#     "clitic": ["sn", "empty"],  # enclitic for second person
+#     "lo_obj": ["sþf", "sþgf", "sef", "empty"],
+#     "fs_obj": ["nf", "þf", "þgf", "ef", "nh", "empty"],
+# }
+
+
+VAR = OrderedDict (
+    obj1=["nf", "þf", "þgf", "ef", "empty"],
+    obj2=["nf", "þf", "þgf", "ef", "empty"],
     # supine: ["sagnb"],
-    "subj": ["nf", "þf", "þgf", "ef", "empty"],
-    "impersonal": ["subj", "es", "none", "empty"],
-    "clitic": ["sn", "empty"],  # enclitic for second person
-    "lo_obj": ["sþf", "sþgf", "sef", "empty"],
-    "fs_obj": ["nf", "þf", "þgf", "ef", "nh", "empty"],
-}
+    impersonal=["subj", "es", "none", "empty"],
+    subj=["nf", "þf", "þgf", "ef", "empty"],
+    person=["p3", "p2", "p1", "empty"],
+    number=["et", "ft", "empty"],
+    case=["nf", "þf", "þgf", "ef", "empty"],
+    gender=["kk", "kvk", "hk", "empty"],
+    article=["gr", "empty"],
+    mood=["fh", "vh", "nh", "bh", "lhnt", "lhþt", "sagnb", "empty"],
+    tense=["nt", "þt", "empty"],
+    voice=["gm", "mm", "empty"],
+    degree=["fst", "mst", "est", "esb", "evb", "empty"],
+    strength=["sb", "vb", "empty"],
+    clitic=["sn", "empty"],  # enclitic for second person
+    lo_obj=["sþf", "sþgf", "sef", "empty"],
+    fs_obj=["nf", "þf", "þgf", "ef", "nh", "empty"],
+)
 
 
 CATEGORY_TO_VARIANT = {
@@ -857,56 +1172,54 @@ def dedup_list(items):
     return ret_items
 
 
-# def make_nonterm_labels_decl():
-#     group_name_to_labels = {}
-#     # label_cats = list(NONTERM_CATS)
-#     label_cats = []
-#     category_to_group_names = dict((k, [k]) for k in NONTERM_SUFFIX.keys())
+def make_nonterm_labels_decl():
+    # group_name_to_labels = {}
+    # label_cats = list(NONTERM_CATS)
+    # label_cats = []
+    # group_names = []
+    # category_to_group_names = dict((k, [k]) for k in NONTERM_SUFFIX.keys())
 
-#     import pdb; pdb.set_trace()
-#     nonterm_labels = list(NONTERM_CATS) + NONTERM_SIMPLIFIED
-#     nonterm_labels = dedup_list(nonterm_labels)
+    nonterm_labels = list(NONTERM_CATS)
 
-#     for prefix, nt_with_suffixes in NONTERM_SUFFIX.items():
-#         label_group = []
-#         for nt_with_suffix in nt_with_suffixes:
-#             if "-" not in nt_with_suffix:
-#                 continue
-#             label = "ATTR-{}".format(nt_with_suffix)
-#             nonterm_labels.append(label)
-#             label_group.append(label)
-#             group_name_to_labels[prefix] = label_group
+    for prefix, nt_with_suffixes in NONTERM_SUFFIX.items():
+        label_group = []
+        for nt_with_suffix in nt_with_suffixes:
+            nonterm_labels.append(nt_with_suffix)
+            # if "-" not in nt_with_suffix:
+            #     continue
+            # label = "ATTR-{}".format(nt_with_suffix)
+            # nonterm_labels.append(label)
+            # label_group.append(label)
+            # group_name_to_labels[prefix] = label_group
 
-#     group_names = []
+    # group_names = list(group_name_to_labels)
+    # all_labels = list(label_cats)
+    # for label in nonterm_labels:
+    #     if label not in all_labels:
+    #         all_labels.append(label)
+    #         assert len(all_labels) == len(
+    #             set(all_labels)
+    #         ), "Expected no duplicate labels"
 
-#     # group_names = list(group_name_to_labels)
-#     # all_labels = list(label_cats)
-#     # for label in nonterm_labels:
-#     #     if label not in all_labels:
-#     #         all_labels.append(label)
-#     #         assert len(all_labels) == len(
-#     #             set(all_labels)
-#     #         ), "Expected no duplicate labels"
+    for extra in [
+        unary_branch_labels.COLLAPSED_UNARY_FULL,
+    ]:
+        for composite_label, freq in extra.items():
+            if composite_label not in nonterm_labels:
+                nonterm_labels.append(composite_label)
 
-#     for extra in [
-#         unary_branch_labels.UNARY_BRANCH_FREQUENCIES,
-#         unary_branch_labels.UNARY_BRANCH_FREQUENCIES_GLD,
-#         unary_branch_labels.UNARY_BRANCH_FREQUENCIES_NEW,
-#     ]:
-#         for composite_label, freq in extra.items():
-#             if composite_label in nonterm_labels:
-#                 continue
-#             nonterm_labels.append(composite_label)
-#             label_cat = composite_label.split("-")[0]
-#             # group_name_to_labels[label_cat].append(composite_label)
-
-#     assert len(group_name_to_labels) >= len(label_cats)
-#     return {
-#         "category_to_group_names": category_to_group_names,
-#         "group_name_to_labels": group_name_to_labels,
-#         "label_categories": label_cats,
-#         "labels": nonterm_labels,
-#     }
+    nonterm_labels = dedup_list(nonterm_labels)
+    # assert len(group_name_to_labels) >= len(label_cats)
+    return {
+        "category_to_group_names": {},
+        "group_name_to_labels": {},
+        "group_names": [],
+        "label_categories": nonterm_labels,
+        "labels": nonterm_labels,
+        "null": NULL_CAT_NONTERM,
+        "null_leaf": NULL_LEAF_NONTERM,
+        "separator": None,
+    }
 
 
 def make_simple_nonterm_labels_decl(include_null=True):
@@ -937,8 +1250,8 @@ def make_simple_nonterm_labels_decl(include_null=True):
         "group_names": list(group_name_to_labels.keys()),
         "label_categories": nonterm_labels,
         "labels": nonterm_labels + flags,
-        "null": NULL_CAT,
-        "null_leaf": NULL_LEAF,
+        "null": NULL_CAT_NONTERM,
+        "null_leaf": NULL_LEAF_NONTERM,
         "separator": None,
     }
 
@@ -1080,21 +1393,40 @@ NONTERM_SIMPLIFIED = set(
 
 def rebinarize(spans, labels):
     tree = Node.from_labelled_spans(spans, labels)
-    # tree.pretty_print()
     tree = tree.debinarize()
-    # tree.pretty_print()
     new_tree = tree.binarize()
-    # new_tree.pretty_print()
     nterms, terms = new_tree.labelled_spans(include_null=True)
-    # pprint(nterms)
-    new_spans, new_labels = zip(
-        *[((it.span[0], it.span[1]), it.label) for it in nterms]
-    )
-    # time.sleep(10)
+    new_spans, new_labels = zip(*[((it.span[0], it.span[1]), it.label) for it in nterms])
     return new_spans, new_labels
 
 
-def split_flat_terminal_v2(term):
+def make_flat_terminal_from_attributes(cat, attrs):
+    parts = [cat]
+    variants = dict([
+        attr.split("-") for attr in attrs if (attr and "empty" not in attr)
+    ])
+    nobjs = 0
+    nobjs = 1 if variants.get("obj1") else 0
+    nobjs = 2 if variants.get("obj2") else nobjs
+    if cat == "so" or nobjs > 0:
+        parts.append(str(nobjs))
+    if variants.get("obj1"):
+        parts.append(variants["obj1"])
+        del variants["obj1"]
+    if variants.get("obj2"):
+        parts.append(variants["obj2"])
+        del variants["obj2"]
+    if variants.get("impersonal"):
+        parts.append("op")
+        parts.append(variants["impersonal"])
+        del variants["impersonal"]
+    for var_name in VAR:
+        if var_name in variants:
+            parts.append(variants[var_name])
+    return "_".join(parts)
+
+
+def split_flat_terminal(term):
     parts = term.split("_")
     if len(parts) <= 1:
         cat = term
