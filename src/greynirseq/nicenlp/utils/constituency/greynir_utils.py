@@ -16,7 +16,7 @@ import numpy as np
 from nltk.tree import Tree as NltkTree
 import nltk
 
-import greynirseq.nicenlp.utils.constituency.unary_branch_labels as unary_branch_labels
+from . import unary_branch_labels
 
 HTML_LPAREN = "&#40;"
 HTML_RPAREN = "&#41;"
@@ -48,7 +48,9 @@ def iterfind_tree_texts(stream):
         if buffer and ctr == 0:
             enclosed_text = "".join(buffer).strip()
             if enclosed_text and any(not line.strip(" ") for line in enclosed_text.split("\n")):
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
                 raise ValueError("found delimiter inside enclosed region")
             elif enclosed_text:
                 yield enclosed_text
@@ -58,21 +60,22 @@ def iterfind_tree_texts(stream):
 
     if len(buffer) == BUFFER_MAX_LEN:
         print("Exceeded buffer max length")
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         raise ValueError("Text has mismatching parens: " + str(ctr))
     elif ctr != 0:
         print("Balance is not zero at end of string")
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         raise ValueError("Text has mismatching parens: " + str(ctr))
 
 
 def _simplify_nonterminal(nonterminal):
     if ">" not in nonterminal:
         return nonterminal.split("-")[0]
-    labels = [
-        subnonterminal.split("-")[0]
-        for subnonterminal in nonterminal.split(">")
-    ]
+    labels = [subnonterminal.split("-")[0] for subnonterminal in nonterminal.split(">")]
     return ">".join(labels)
 
 
@@ -180,6 +183,7 @@ class Node:
             text = ESCAPED_LPAREN_PAT.sub(HTML_LPAREN, text)
             text = ESCAPED_RPAREN_PAT.sub(HTML_RPAREN, text)
             return text
+
         def parse_nltk_tree(text):
             """
             Parse bracketed tree from text using NLTK's parser
@@ -209,7 +213,9 @@ class Node:
                     start_of_idx = exc_text.index(at_index_str) + len(at_index_str)
                     end = int(exc_text[start_of_idx:].split(" ")[0].replace(".", ""))
                     if end == 1308:
-                        import pdb; pdb.set_trace()
+                        import pdb
+
+                        pdb.set_trace()
                     tree_text = text[:end]
                     nktree, _ = parse_nltk_tree(tree_text)
                     remaining = text[end:]
@@ -219,10 +225,14 @@ class Node:
                     should_skip = True
                 if should_skip:
                     ic("skipping")
-                    import pdb; pdb.set_trace()
+                    import pdb
+
+                    pdb.set_trace()
                     return None, None
                 ic(exc.args)
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
                 _ = 1 + 1
             except Exception as e:
                 p = re.compile("\(URL" + "[^\)]+", re.MULTILINE)
@@ -233,6 +243,7 @@ class Node:
                 except Exception as e2:
                     ic("Unknown exception")
                     import traceback
+
                     traceback.print_exc()
                     print(p.sub("", text))
                     return None, None
@@ -292,19 +303,21 @@ class Node:
                 except Exception as e:
                     print(tree_str)
                     print(idx)
-                    import pdb; pdb.set_trace()
+                    import pdb
+
+                    pdb.set_trace()
                     print()
 
         def constructor(nktree):
             if isinstance(nktree, nltk.Tree) and nktree.label().isupper():
-                #nonterminal
+                # nonterminal
                 children = []
                 for child in nktree:
                     node = constructor(child)
                     children.append(node)
                 return NonterminalNode(nktree.label(), children)
             if isinstance(nktree, nltk.Tree):
-                #terminal node
+                # terminal node
                 text = []
                 terminal = nktree.label()
                 # skip lemma, exp-seg and exp-abbrev
@@ -315,9 +328,24 @@ class Node:
                 text = text.replace(HTML_LPAREN, "(").replace(HTML_RPAREN, ")")
                 return TerminalNode(text, terminal)
             ic(nktree)
-            import pdb; pdb.set_trace()
+            import pdb
 
-        MONTHS = ["janúar", "febrúar", "mars", "apríl", "maí", "júní", "júlí", "ágúst", "september", "október", "nóvember", "desember"]
+            pdb.set_trace()
+
+        MONTHS = [
+            "janúar",
+            "febrúar",
+            "mars",
+            "apríl",
+            "maí",
+            "júní",
+            "júlí",
+            "ágúst",
+            "september",
+            "október",
+            "nóvember",
+            "desember",
+        ]
         IGNORE_MISSING_CAT = set(['"19"'])
         MONTHS = set(['"{}"'.format(month) for month in MONTHS])
         num_no_tree_root = 0
@@ -354,7 +382,9 @@ class Node:
                 nktree.pprint()
                 print(text)
                 ic("constructor exception", e.args)
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
                 raise e
             yield tree
         print("Skipped {} trees".format(num_no_tree_root))
@@ -414,10 +444,7 @@ class Node:
                 tag = node.category
             return NltkTree(tag, nltk_children)
         return NltkTree(
-            node.tag, [
-                cls.convert_to_nltk_tree(child, simplify_leaves=simplify_leaves)
-                for child in node.children
-            ]
+            node.tag, [cls.convert_to_nltk_tree(child, simplify_leaves=simplify_leaves) for child in node.children]
         )
 
     def as_nltk_tree(self, simplify_leaves=False):
@@ -510,7 +537,7 @@ class Node:
         # before lemmas can be added (i.e. in from_labelled_spans_and_terminals)
         # if node.nonterminal and "NP-POSS" in node.nonterminal:
         #     import pdb; pdb.set_trace()
-        start, end = node.span # cache spans
+        start, end = node.span  # cache spans
         # if start >= len(lemmas):
         #     import pdb; pdb.set_trace()
         assert (start < len(lemmas)) or allow_partial
@@ -578,11 +605,7 @@ class Node:
         if self.terminal:
             return self
         if len(self.children) > 1:
-            new_node = NonterminalNode(
-                self.nonterminal, [
-                    child.collapse_unary() for child in self.children
-                ]
-            )
+            new_node = NonterminalNode(self.nonterminal, [child.collapse_unary() for child in self.children])
             return new_node
         elif self.children[0].terminal:
             return NonterminalNode(self.nonterminal, list(self.children))
@@ -602,19 +625,14 @@ class Node:
             labels.append(elem.tag)
         label = ">".join(labels)
 
-        new_node = NonterminalNode(
-            label, [child.collapse_unary() for child in merge_list[-1].children]
-        )
+        new_node = NonterminalNode(label, [child.collapse_unary() for child in merge_list[-1].children])
         return new_node
 
     def separate_unary(self):
         if self.terminal:
             return self
         if ">" not in self.nonterminal:
-            new_children = [
-                child.separate_unary()
-                for child in self.children
-            ]
+            new_children = [child.separate_unary() for child in self.children]
             return NonterminalNode(self.nonterminal, new_children)
 
         separated_labels = self.nonterminal.split(">")
@@ -723,8 +741,8 @@ class Node:
         return tree
 
     def to_postfix(self, include_terminal=False):
-        """ Export tree to postfix ordering
-            with node-labels as keys """
+        """Export tree to postfix ordering
+        with node-labels as keys"""
         if self.terminal:
             return []
         result = []
@@ -759,7 +777,6 @@ class Node:
         return NonterminalNode(self.nonterminal, new_children)
 
 
-
 class NonterminalNode(Node):
     def __init__(self, nonterminal_label, children=None):
         super(NonterminalNode, self).__init__()
@@ -776,11 +793,7 @@ class NonterminalNode(Node):
         if tag == self.nonterminal or tag not in NONTERM_SIMPLIFIED:
             return self.nonterminal
         label = sorted(
-            [
-                label
-                for label in NONTERM_SUFFIXES_SIMPLIFIED[tag]
-                if self.nonterminal.startswith(label)
-            ],
+            [label for label in NONTERM_SUFFIXES_SIMPLIFIED[tag] if self.nonterminal.startswith(label)],
             key=lambda x: len(x),
         )[-1]
         return label
@@ -805,7 +818,6 @@ class NonterminalNode(Node):
 
 
 class TerminalNode(Node):
-
     def __init__(self, text, terminal_label, category=None, lemma=None):
         super(TerminalNode, self).__init__()
         self._text = text
@@ -1099,7 +1111,7 @@ NONTERM_SUFFIX = {
 # }
 
 
-VAR = OrderedDict (
+VAR = OrderedDict(
     obj1=["nf", "þf", "þgf", "ef", "empty"],
     obj2=["nf", "þf", "þgf", "ef", "empty"],
     # supine: ["sagnb"],
@@ -1351,15 +1363,9 @@ def label_cat_to_label_mask(cat):
     return mask, labels
 
 
-LABEL_CAT_TO_LABEL_MASK = {
-    label_cat: label_cat_to_label_mask(label_cat) for label_cat in LABEL_CATS
-}
-LABEL_CAT_TO_GROUP_MASK = {
-    label_cat: label_cat_to_label_group_mask(label_cat) for label_cat in LABEL_CATS
-}
-LABEL_IDX_TO_GROUP_MASK = {
-    LABEL_CATS.index(label): mask for (label, mask) in LABEL_CAT_TO_GROUP_MASK.items()
-}
+LABEL_CAT_TO_LABEL_MASK = {label_cat: label_cat_to_label_mask(label_cat) for label_cat in LABEL_CATS}
+LABEL_CAT_TO_GROUP_MASK = {label_cat: label_cat_to_label_group_mask(label_cat) for label_cat in LABEL_CATS}
+LABEL_IDX_TO_GROUP_MASK = {LABEL_CATS.index(label): mask for (label, mask) in LABEL_CAT_TO_GROUP_MASK.items()}
 
 for extra in [
     unary_branch_labels.UNARY_BRANCH_FREQUENCIES,
@@ -1386,9 +1392,7 @@ NONTERM_SUFFIXES_SIMPLIFIED = {
     "S": ["S"],
     "S0": ["S0"],
 }
-NONTERM_SIMPLIFIED = set(
-    [label for group in NONTERM_SUFFIXES_SIMPLIFIED.values() for label in group]
-)
+NONTERM_SIMPLIFIED = set([label for group in NONTERM_SUFFIXES_SIMPLIFIED.values() for label in group])
 
 
 def rebinarize(spans, labels):
@@ -1402,9 +1406,7 @@ def rebinarize(spans, labels):
 
 def make_flat_terminal_from_attributes(cat, attrs):
     parts = [cat]
-    variants = dict([
-        attr.split("-") for attr in attrs if (attr and "empty" not in attr)
-    ])
+    variants = dict([attr.split("-") for attr in attrs if (attr and "empty" not in attr)])
     nobjs = 0
     nobjs = 1 if variants.get("obj1") else 0
     nobjs = 2 if variants.get("obj2") else nobjs

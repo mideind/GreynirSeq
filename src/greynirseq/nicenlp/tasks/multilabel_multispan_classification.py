@@ -21,7 +21,6 @@ from fairseq.data import (
     SortDataset,
     TruncateDataset,
     PrependTokenDataset,
-    LabelledSpanDataset,
 )
 from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
@@ -36,7 +35,6 @@ from greynirseq.nicenlp.data.datasets import (
     NestedDictionaryDatasetFix,
     NumWordsDataset,
 )
-import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
     parse_label_schema,
     label_schema_as_dictionary,
@@ -63,9 +61,7 @@ class MultiSpanPredictionTask(FairseqTask):
         )
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
-    def __init__(
-        self, args, data_dictionary, label_dictionary, is_word_initial, label_schema
-    ):
+    def __init__(self, args, data_dictionary, label_dictionary, is_word_initial, label_schema):
         super().__init__(args)
         self.dictionary = data_dictionary
         self._label_dictionary = label_dictionary
@@ -88,9 +84,7 @@ class MultiSpanPredictionTask(FairseqTask):
 
         label_dict, label_schema = cls.load_label_dictionary(args, args.nonterm_schema)
         logger.info("[label] dictionary: {} types".format(len(label_dict)))
-        return MultiSpanPredictionTask(
-            args, data_dict, label_dict, is_word_initial, label_schema
-        )
+        return MultiSpanPredictionTask(args, data_dict, label_dict, is_word_initial, label_schema)
 
     @classmethod
     def load_label_dictionary(cls, args, filename, **kwargs):
@@ -108,9 +102,7 @@ class MultiSpanPredictionTask(FairseqTask):
         for label in labels:
             label_dict.add_symbol(label)
 
-        assert (
-            label_dict.symbols[label_dict.nspecial] == "NULL"
-        ), "Expected first nonspecial token to be 'NULL'"
+        assert label_dict.symbols[label_dict.nspecial] == "NULL", "Expected first nonspecial token to be 'NULL'"
         return label_dict, label_schema
 
     @classmethod
@@ -170,9 +162,7 @@ class MultiSpanPredictionTask(FairseqTask):
             self.args.dataset_impl,
             combine=combine,
         )
-        assert labelled_spans is not None, "could not find labels: {}".format(
-            targets_path
-        )
+        assert labelled_spans is not None, "could not find labels: {}".format(targets_path)
 
         raise NotImplementedError
 
@@ -180,36 +170,24 @@ class MultiSpanPredictionTask(FairseqTask):
         labels = LabelledSpanDataset(labelled_spans, return_spans=False)
 
         # all possible word spans in each sequence
-        word_spans = WordSpanDataset(
-            src_tokens, self.source_dictionary, self.is_word_initial
-        )
+        word_spans = WordSpanDataset(src_tokens, self.source_dictionary, self.is_word_initial)
         all_spans = ProductSpanDataset(word_spans)
 
         dataset = {
             "id": IdDataset(),
             "net_input": {
-                "src_tokens": RightPadDataset(
-                    src_tokens, pad_idx=self.source_dictionary.pad()
-                ),
+                "src_tokens": RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad()),
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "src_spans": RightPadDataset(
-                    all_spans, pad_idx=self.label_dictionary.pad()
-                ),
+                "src_spans": RightPadDataset(all_spans, pad_idx=self.label_dictionary.pad()),
                 "nsrc_spans": NumSpanDataset(all_spans),
             },
             "targets": RightPadDataset(labels, pad_idx=self.label_dictionary.pad()),
-            "target_spans": RightPadDataset(
-                target_spans, pad_idx=self.label_dictionary.pad()
-            ),
+            "target_spans": RightPadDataset(target_spans, pad_idx=self.label_dictionary.pad()),
             "ntargets": NumelDataset(labels),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(
-                src_tokens, self.dictionary, self.is_word_initial
-            ),
-            "word_spans": RightPadDataset(
-                word_spans, pad_idx=self.label_dictionary.pad()
-            ),
+            "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
+            "word_spans": RightPadDataset(word_spans, pad_idx=self.label_dictionary.pad()),
         }
 
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])

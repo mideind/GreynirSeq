@@ -1,14 +1,12 @@
 import argparse
-import os
 import random
 import re
 
-from collections import defaultdict
-
-from greynirseq.ner.aligner import ParallelNER
 from reynir import NounPhrase
-
 import tqdm
+
+from .aligner import NERParser
+
 
 NER_PATTERN = "<\s*e:([0-9]):([^:]*):>([^>]*?)<\s*/\s*e[0-9]+>"
 

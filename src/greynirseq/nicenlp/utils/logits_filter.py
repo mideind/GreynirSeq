@@ -4,9 +4,7 @@ import torch.nn.functional as F
 from greynirseq.utils.ifd_utils import CAT_GROUPS, LABEL_GROUPS
 
 
-def word_classes_to_mask(
-    word_class_tensor, mask_groups=CAT_GROUPS, n_labels_grps=len(LABEL_GROUPS)
-):
+def word_classes_to_mask(word_class_tensor, mask_groups=CAT_GROUPS, n_labels_grps=len(LABEL_GROUPS)):
     """
     word_classes: tensor [bsz, word_class]
     returns tensor [bsz, word, label_groups]
@@ -26,18 +24,12 @@ def word_classes_to_mask(
 
     word_class_mask = word_class_tensor_cp.new_zeros(n_word_clasess, n_labels_grps)
     for i in range(n_word_clasess):
-        word_class_mask[i, :] = F.one_hot(
-            word_class_tensor_cp.new_tensor(mask_groups[i]), n_labels_grps
-        ).sum(dim=0)
-    wc_one_hot = F.one_hot(word_class_tensor_cp, n_word_clasess).type(
-        word_class_tensor.dtype
-    )
+        word_class_mask[i, :] = F.one_hot(word_class_tensor_cp.new_tensor(mask_groups[i]), n_labels_grps).sum(dim=0)
+    wc_one_hot = F.one_hot(word_class_tensor_cp, n_word_clasess).type(word_class_tensor.dtype)
 
     # todo: check if needed
     del word_class_tensor_cp
-    return torch.mm(wc_one_hot.float(), word_class_mask.float()).type(
-        word_class_tensor.dtype
-    )
+    return torch.mm(wc_one_hot.float(), word_class_mask.float()).type(word_class_tensor.dtype)
 
 
 def filter_logits(logits, unique_together):
@@ -73,7 +65,7 @@ def max_tensor_by_bins(tensor, bins, softmax_by_bin=False):
             if bin_end - bin_start > 0:
                 bin_tensors = F.softmax(bin_tensors)
             else:
-                bin_tensors = F.sigmoid(bin_tensors)
+                bin_tensors = torch.sigmoid(bin_tensors)
 
         max_in_bin = bin_tensors.max(dim=-1)
         for j in range(len(max_in_bin[0])):
