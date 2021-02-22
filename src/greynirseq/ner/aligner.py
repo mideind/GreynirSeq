@@ -45,7 +45,7 @@ class NERMarker(NERMarkerIdx):
 class NERAlignment:
     """Hold NER alignment results."""
 
-    cost: float
+    distance: float
     marker_1: NERMarker
     marker_2: NERMarker
 
@@ -143,7 +143,7 @@ class NERAnalyser:
         for pair in pair_info.pair_map:
             self.ner_pair_hist[
                 "{}\t{}\t{}\t{}".format(
-                    pair.marker_1.ne, pair.marker_2.ne, pair.marker_1.ne == pair.marker_2.ne, pair.cost
+                    pair.marker_1.ne, pair.marker_2.ne, pair.marker_1.ne == pair.marker_2.ne, pair.distance
                 )
             ] += 1
         for per in pair_info.per_tags_1:

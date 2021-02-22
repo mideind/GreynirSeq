@@ -8,7 +8,7 @@ def test_add_mark(ner_tagged_sentences_en, ner_tagged_sentences_is, ner_final_si
         en_tokens = en_parse.sent.split()
         is_tokens = is_parse.sent.split()
         for idx, alignment in enumerate(pair_info.pair_map):
-            en_ner_marker, is_ner_marker, distance = alignment.marker_1, alignment.marker_2, alignment.cost
+            en_ner_marker, is_ner_marker, distance = alignment.marker_1, alignment.marker_2, alignment.distance
             # The distance should be small
             assert distance < 0.3
             postagger.add_marker(en_ner_marker, en_tokens, idx, "x")
