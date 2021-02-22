@@ -1,4 +1,5 @@
 """Align NER tags (with enumeration) in a parallel corpus."""
+from __future__ import annotations
 import argparse
 import copy
 import re
@@ -98,7 +99,7 @@ class NERAnalyser:
     }
 
     def __init__(self) -> None:
-        """Initialize counters and stuff"""
+        """Initialize counters and stuff."""
         self.provenance_sets = {path: set() for path in self.DATA_PATHS}
         self.ner_hist_1 = defaultdict(int)
         self.ner_hist_2 = defaultdict(int)
@@ -276,7 +277,7 @@ class NERSentenceParse:
         return [NERMarkerIdx(*offset) for offset in offsets_from_biluo_tags(doc, ner)]
 
     @staticmethod
-    def parse_line(line: str, provenance: Optional[NERAnalyser]):
+    def parse_line(line: str, provenance: Optional[NERAnalyser]) -> NERSentenceParse:
         r"""Parse a line.
 
         Args:
