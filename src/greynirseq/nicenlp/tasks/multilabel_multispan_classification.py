@@ -1,3 +1,7 @@
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
 import logging
 import os
 from pathlib import Path
@@ -22,47 +26,24 @@ from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
 from fairseq.tasks.sentence_prediction import SentencePredictionTask
 
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
 from greynirseq.nicenlp.data.datasets import (
     DynamicLabelledSpanDataset,
     LabelledSpanDataset,
-    SpanDataset,
-    SparseProductSpanDataset,
+    WordSpanDataset,
     ProductSpanDataset,
     NumSpanDataset,
     NestedDictionaryDatasetFix,
-    LossMaskDataset,
     NumWordsDataset,
 )
+from greynirseq.nicenlp.utils.label_schema.label_schema import (
+    parse_label_schema,
+    label_schema_as_dictionary,
+    make_group_masks,
+    make_vec_idx_to_dict_idx,
+)
 
-from greynirseq.nicenlp.utils.greynir import greynir_utils
 
 logger = logging.getLogger(__name__)
-
-
-def parse_label_schema(path):
-    LabelSchema = namedtuple(
-        "LabelSchema",
-        [
-            "labels",
-            "group_name_to_labels",
-            "label_categories",
-            "category_to_group_names",
-            "separator",
-            "group_names",
-            "null",
-            "null_leaf",
-        ],
-    )
-    with open(path, "r") as fp:
-        j_obj = json.load(fp)
-    return LabelSchema(**j_obj)
 
 
 @register_task("multi_span_prediction")
@@ -72,18 +53,15 @@ class MultiSpanPredictionTask(FairseqTask):
         """Add task-specific arguments to the parser."""
         parser.add_argument("data", metavar="FILE", help="file prefix for data")
         parser.add_argument(
-            "--nonterm-schema",
+            "--label-schema",
             metavar="FILE",
             help="json file providing label-set and label-groups \
                 (mutually exclusive labels)",
             required=True,
         )
-        # parser.add_argument('--no-shuffle', action='store_true', default=False)
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
-    def __init__(
-        self, args, data_dictionary, label_dictionary, is_word_initial, label_schema
-    ):
+    def __init__(self, args, data_dictionary, label_dictionary, is_word_initial, label_schema):
         super().__init__(args)
         self.dictionary = data_dictionary
         self._label_dictionary = label_dictionary
@@ -106,9 +84,7 @@ class MultiSpanPredictionTask(FairseqTask):
 
         label_dict, label_schema = cls.load_label_dictionary(args, args.nonterm_schema)
         logger.info("[label] dictionary: {} types".format(len(label_dict)))
-        return MultiSpanPredictionTask(
-            args, data_dict, label_dict, is_word_initial, label_schema
-        )
+        return MultiSpanPredictionTask(args, data_dict, label_dict, is_word_initial, label_schema)
 
     @classmethod
     def load_label_dictionary(cls, args, filename, **kwargs):
@@ -126,9 +102,7 @@ class MultiSpanPredictionTask(FairseqTask):
         for label in labels:
             label_dict.add_symbol(label)
 
-        assert (
-            label_dict.symbols[label_dict.nspecial] == "NULL"
-        ), "Expected first nonspecial token to be 'NULL'"
+        assert label_dict.symbols[label_dict.nspecial] == "NULL", "Expected first nonspecial token to be 'NULL'"
         return label_dict, label_schema
 
     @classmethod
@@ -181,10 +155,6 @@ class MultiSpanPredictionTask(FairseqTask):
 
         src_tokens = PrependTokenDataset(src_tokens, self.source_dictionary.bos())
 
-        # TODO: it does not make sense to parse partial sequences
-        # if self.args.truncate_sequence:
-        #     src_tokens = TruncateDataset(src_tokens, self.args.max_positions)
-
         targets_path = Path(self.args.data) / "{}.nonterm".format(split)
         labelled_spans = data_utils.load_indexed_dataset(
             str(targets_path),
@@ -192,67 +162,37 @@ class MultiSpanPredictionTask(FairseqTask):
             self.args.dataset_impl,
             combine=combine,
         )
-        assert labelled_spans is not None, "could not find labels: {}".format(
-            targets_path
-        )
+        assert labelled_spans is not None, "could not find labels: {}".format(targets_path)
 
-        target_spans = DynamicLabelledSpanDataset(
-            labelled_spans,
-            self.label_dictionary,
-            rebinarize_fn=greynir_utils.rebinarize,
-            seed=self.args.seed,
-            return_spans=True,
-        )
-        labels = DynamicLabelledSpanDataset(
-            labelled_spans,
-            self.label_dictionary,
-            rebinarize_fn=greynir_utils.rebinarize,
-            seed=self.args.seed,
-            return_spans=False,
-        )
+        raise NotImplementedError
+
+        target_spans = LabelledSpanDataset(labelled_spans, return_spans=True)
+        labels = LabelledSpanDataset(labelled_spans, return_spans=False)
 
         # all possible word spans in each sequence
-        word_spans = SpanDataset(src_tokens, self.is_word_initial)
+        word_spans = WordSpanDataset(src_tokens, self.source_dictionary, self.is_word_initial)
         all_spans = ProductSpanDataset(word_spans)
-        # all_spans = SparseProductSpanDataset(spans)
-
-        # loss_masks = LossMaskDataset(
-        #     labels,
-        #     {
-        #         idx: torch.Tensor(mask)
-        #         for (idx, mask) in LABEL_IDX_TO_GROUP_MASK.items()
-        #     },
-        # )
 
         dataset = {
             "id": IdDataset(),
             "net_input": {
-                "src_tokens": RightPadDataset(
-                    src_tokens, pad_idx=self.source_dictionary.pad()
-                ),
+                "src_tokens": RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad()),
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "src_spans": RightPadDataset(
-                    all_spans, pad_idx=self.label_dictionary.pad()
-                ),
+                "src_spans": RightPadDataset(all_spans, pad_idx=self.label_dictionary.pad()),
                 "nsrc_spans": NumSpanDataset(all_spans),
             },
             "targets": RightPadDataset(labels, pad_idx=self.label_dictionary.pad()),
-            "target_spans": RightPadDataset(
-                target_spans, pad_idx=self.label_dictionary.pad()
-            ),
+            "target_spans": RightPadDataset(target_spans, pad_idx=self.label_dictionary.pad()),
             "ntargets": NumelDataset(labels),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, is_word_initial=self.is_word_initial),
-            "word_spans": RightPadDataset(
-                word_spans, pad_idx=self.label_dictionary.pad()
-            ),
-            # "loss_masks": loss_masks,
+            "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
+            "word_spans": RightPadDataset(word_spans, pad_idx=self.label_dictionary.pad()),
         }
 
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
 
-        if self.args.no_shuffle or True:
+        if self.args.no_shuffle:
             dataset = nested_dataset
         else:
             dataset = SortDataset(nested_dataset, sort_order=[shuffle])
@@ -268,21 +208,14 @@ class MultiSpanPredictionTask(FairseqTask):
         model = models.build_model(args, self)
         model.task = self
 
-        # num_classes_mutex = len(self._label_dictionary)
-        # num_classes_binary = 0
-
-        # if hasattr(self.args, "num_classes_mutex"):
-        #     num_classes_mutex = self.args.num_classes_mutex
-
-        # if hasattr(self.args, "num_classes_binary"):
-        #     num_classes_binary = self.args.num_classes_binary
-
-        model.register_classification_head(
-            "multi_span_classification",
-            # num_cats=len(self.label_schema.label_categories),
-            num_cats=None,
-            num_labels=self.num_labels,
-        )
+        raise NotImplementedError
+        # TODO: This is incorrect
+        # model.register_classification_head(
+        #     "multi_span_classification",
+        #     # num_cats=len(self.label_schema.label_categories),
+        #     num_cats=None,
+        #     num_labels=self.num_labels,
+        # )
 
         return model
 

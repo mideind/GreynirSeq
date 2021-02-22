@@ -1,3 +1,7 @@
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
 from fairseq.data import BaseWrapperDataset
 import torch
 
@@ -16,4 +20,4 @@ class LookupDataset(BaseWrapperDataset):
         ]
         if self.label_first:
             indexes[0] = self.default
-        return torch.Tensor(indexes).int()
+        return torch.tensor(indexes).int()

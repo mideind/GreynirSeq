@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
 import enum
 import numpy as np
 import itertools
@@ -183,7 +188,7 @@ DIM = len(CATS) + len(FEATS)
 assert DIM == len(set(LABELS)), "tag collision"
 
 
-GENDER = {"k": "masc", "v": "fem", "h": "neut", "x": "gender_x"}
+GENDER = {"k": "masc", "v": "fem", "h": "neut", "x": "gender_x", "-": "gender_x"}
 NUMBER = {"e": "sing", "f": "plur"}
 PERSON = {"1": "1", "2": "2", "3": "3"}
 CASE = {"n": "nom", "o": "acc", "þ": "dat", "e": "gen"}
@@ -228,6 +233,10 @@ TAGSET = {
 }
 
 
+
+
+
+
 def one_hot(idx, dim=DIM):
     vec = np.zeros(idx)
     vec[idx] = 1
@@ -257,9 +266,90 @@ def ifd2coarse(tag):
     return tag[0]
 
 
+
+ftags = [a.split()[0] for a in open("/home/vesteinn/work/GreynirSeq/src/greynirseq/nicenlp/examples/pos/labdict2.txt").readlines() if a]
+
+foreign_name = 'n----s'
 def ifd2labels(tag):
     if not tag[0].isalpha():
         return ["p"]
+
+    if tag == foreign_name:
+        return ["ns"]
+
+    tagset_key = tag[0]
+    cat = tag[0]
+    tagset_key = tag[0]
+    rest = tag[1:]
+    if tag[0] in "csftapk":
+        cat = tag[:2]
+        rest = tag[2:]
+        tagset_key = "sþ" if tag.startswith("sþ") else tagset_key
+
+    labels = []
+    labels.append(cat)
+
+    if tagset_key not in TAGSET:
+        #try:
+        #    assert tagset_key in ftags, tagset_key
+        #except:
+        #    import pdb; pdb.set_trace()
+        return labels
+
+    if tagset_key == "a" and not rest:
+        label = "pos"
+        labels.append(label)
+
+    for feature, code in zip(TAGSET[tagset_key], rest):
+        try:
+           label = feature[code]
+        except:
+            import pdb; pdb.set_trace()
+        if not label:
+            continue
+        labels.append(label)
+
+    for l in labels:
+        assert l in ftags, l
+        
+    return labels
+
+
+def ifd2labelsNew(tag):
+    # Move to separete file
+    GENDER = {"k": "masc", "v": "fem", "h": "neut"}
+    NUMBER = {"e": "sing", "f": "plur"}
+    PERSON = {"1": "1", "2": "2", "3": "3"}
+    CASE = {"n": "nom", "o": "acc", "þ": "dat", "e": "gen"}
+
+    DEGREE = {"f": "pos", "m": "cmp", "e": "superl"}
+    
+    VOICE = {"g": "act", "m": "mid"}
+    TENSE = {"n": "pres", "þ": "past"}
+    ADJ_CLASS = {"s": "strong", "v": "weak", "o": "equiinflected"}
+    DEFINITE = {"g": "definite", " ": "indefinite"}
+
+    TAGSET = {
+        "n": [
+            GENDER,
+            NUMBER,
+            CASE,
+            {"g": "definite", "-": "", " ": ""},
+            {"": "", "s": "proper"},
+        ],
+        "l": [GENDER, NUMBER, CASE, ADJ_CLASS, DEGREE],
+        # we skip PRONTYPE, as thats part of fine categories
+        "f": [{**GENDER, **PERSON}, NUMBER, CASE],
+        "g": [GENDER, NUMBER, CASE],
+        # we skip NUMTYPE, as thats part of fine categories, this only applies to 'tf'
+        "t": [GENDER, NUMBER, CASE],
+        # NOTE:
+        "sþ": [VOICE, GENDER, NUMBER, CASE],
+        # we skip MOOD, as thats part of fine categories
+        "s": [VOICE, PERSON, NUMBER, TENSE],
+        # we skip subcategories as thats part of fine categories
+        "a": [DEGREE],
+    }
     tagset_key = tag[0]
     cat = tag[0]
     tagset_key = tag[0]
@@ -274,13 +364,20 @@ def ifd2labels(tag):
 
     if tagset_key not in TAGSET:
         return labels
+
+    if tagset_key == "a" and not rest:
+        label = "pos"
+        labels.append(label)
+
     for feature, code in zip(TAGSET[tagset_key], rest):
         label = feature[code]
+       
         if not label:
             continue
         labels.append(label)
 
     return labels
+
 
 
 def ifd2vec(tag):

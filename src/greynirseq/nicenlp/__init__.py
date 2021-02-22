@@ -1,13 +1,10 @@
 from greynirseq.nicenlp.tasks import (
-    wordclassification,
-    multi_span_prediction_task,
-    pos_task,
+    multilabel_token_classification_task,
 )
 from greynirseq.nicenlp.criterions import (
-    multi_label,
-    multi_span_prediction_criterion,
-    pos_criterion,
+    multilabel_token_classification_criterion,
 )
-from greynirseq.nicenlp.models.icebert import MultiLabelClassificationHead
-from greynirseq.nicenlp.models import multi_span_model
+from greynirseq.nicenlp.models import (
+    multilabel,
+)
 from greynirseq.nicenlp.data import datasets

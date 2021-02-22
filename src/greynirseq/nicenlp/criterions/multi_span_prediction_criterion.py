@@ -1,27 +1,16 @@
-import itertools
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
 import math
-import time
 from collections import namedtuple
 
 from fairseq.criterions import FairseqCriterion, register_criterion
-from fairseq import utils
 
 import torch
 import torch.nn.functional as F
 
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
-from greynirseq.nicenlp.utils.greynir import greynir_utils
-
-import pyximport
-
-pyximport.install()
-from greynirseq.nicenlp.utils.greynir import tree_dist
+from greynirseq.nicenlp.utils.constituency import greynir_utils, tree_dist
 
 
 def gen_2d_diags(chart_width):
@@ -64,9 +53,7 @@ def parse_from_chart(scores, widths, scores_only=False, score_shift=None):
         mask = widths.ge(jj).type(chart.dtype)  # mask out shorter sequences
         best_chart[:, ii, jj] = (label_score + best_split) * mask
 
-    tree_scores = torch.stack(
-        [best_chart[seq_idx, 0, widths[seq_idx]] for seq_idx in range(bsz)]
-    )
+    tree_scores = torch.stack([best_chart[seq_idx, 0, widths[seq_idx]] for seq_idx in range(bsz)])
 
     if scores_only:
         return tree_scores, None
@@ -97,24 +84,6 @@ def parse_from_chart(scores, widths, scores_only=False, score_shift=None):
         res = ParseResult(tree_scores[seq_idx], spans, labels, masked_lchart)
         results.append(res)
     return tree_scores, results
-
-
-def sparse_to_chart(scores, widths):
-    bsz, _, num_labels = scores.shape
-    max_nwords = widths.max()
-    chart_scores = scores.new_zeros(bsz, max_nwords + 1, max_nwords + 1, num_labels)
-    chart_mask = torch.zeros_like(chart_scores)
-    for seq_idx in range(bsz):
-        width = widths[seq_idx]
-        square = scores[seq_idx, : (width * width), :].reshape(width, width, num_labels)
-        chart_scores[seq_idx, :width, 1 : 1 + width, :] = square
-        chart_mask[seq_idx, :width, 1 : 1 + width, :] = (
-            torch.triu(chart_mask.new_ones(width, width))
-            .unsqueeze(-1)
-            .expand_as(square)
-        )
-    chart_scores *= chart_mask  # make upper triangular
-    return chart_scores, chart_mask
 
 
 @register_criterion("multi_span")
@@ -169,35 +138,26 @@ class MultiSpanCriterion(FairseqCriterion):
         # go from (bsz, max_nsrc_spans, num_labels)
         # to (bsz, max_nwords +1, max_nwords, num_labels) aligned for each sequence
         num_labels = model.task.num_labels
-        assert (
-            num_labels
-            == model.classification_heads["multi_span_classification"].num_labels
-        )
+        assert num_labels == model.classification_heads["multi_span_classification"].num_labels
         chart_scores = scores.new_zeros(bsz, max_nwords + 1, max_nwords + 1, num_labels)
         # we dont copy gradient, we only use these to force the
         # parser to select the right labels/spans
         max_chart_score = scores.max().data
         min_chart_score = scores.min().data
         chart_mask = torch.zeros_like(chart_scores)
-        chart_logprobs = scores.new_zeros(
-            bsz, max_nwords + 1, max_nwords + 1, num_labels
-        )
+        chart_logprobs = scores.new_zeros(bsz, max_nwords + 1, max_nwords + 1, num_labels)
         for seq_idx in range(bsz):
             width = nswidths[seq_idx]
-            square = scores[seq_idx, : nsspans[seq_idx], :].reshape(
-                width, width, num_labels
-            )
+            square = scores[seq_idx, : nsspans[seq_idx], :].reshape(width, width, num_labels)
             chart_scores[seq_idx, :width, 1 : 1 + width, :] = square
             # we prohibit chart decoding to select NULL as the root label
             chart_scores[seq_idx, 0, width, 0] = min_chart_score - 1
             chart_mask[seq_idx, :width, 1 : 1 + width, :] = (
-                torch.triu(chart_mask.new_ones(width, width))
-                .unsqueeze(-1)
-                .expand_as(square)
+                torch.triu(chart_mask.new_ones(width, width)).unsqueeze(-1).expand_as(square)
             )
-            chart_logprobs[seq_idx, :width, 1 : 1 + width, :] = logprobs[
-                seq_idx, : nsspans[seq_idx], :
-            ].reshape(width, width, num_labels)
+            chart_logprobs[seq_idx, :width, 1 : 1 + width, :] = logprobs[seq_idx, : nsspans[seq_idx], :].reshape(
+                width, width, num_labels
+            )
         chart_logprobs *= chart_mask  # make upper triangular
         chart_scores *= chart_mask
 
@@ -211,16 +171,12 @@ class MultiSpanCriterion(FairseqCriterion):
             seq_ntargets = ntargets[seq_idx]
             seq_labels = target_labels[seq_idx, :seq_ntargets]
             seq_tgt_ii, seq_tgt_jj = tspans[seq_idx, :, :seq_ntargets].chunk(2, dim=0)
-            seq_pred_tgts = chart_logprobs[seq_idx, seq_tgt_ii, seq_tgt_jj, :].squeeze(
-                0
-            )
+            seq_pred_tgts = chart_logprobs[seq_idx, seq_tgt_ii, seq_tgt_jj, :].squeeze(0)
             if not seq_labels.le(num_labels + label_shift).all():
                 import pdb
 
                 pdb.set_trace()
-            chart_mask_not_gold[
-                seq_idx, seq_tgt_ii, seq_tgt_jj, seq_labels - label_shift
-            ] = 0
+            chart_mask_not_gold[seq_idx, seq_tgt_ii, seq_tgt_jj, seq_labels - label_shift] = 0
             rect_pred.append(seq_pred_tgts)
             rect_tgts.append(seq_labels)
 
@@ -251,13 +207,8 @@ class MultiSpanCriterion(FairseqCriterion):
         )
 
         def parse_result_to_tree(parse_result):
-            labels_str = [
-                model.task.label_dictionary.symbols[idx + label_shift]
-                for idx in parse_result.labels
-            ]
-            tree = greynir_utils.Node.from_labelled_spans(
-                parse_result.spans, labels_str
-            ).debinarize()
+            labels_str = [model.task.label_dictionary.symbols[idx + label_shift] for idx in parse_result.labels]
+            tree = greynir_utils.Node.from_labelled_spans(parse_result.spans, labels_str).debinarize()
             return tree
 
         trees_best = list(map(parse_result_to_tree, results_best))
@@ -313,26 +264,13 @@ class MultiSpanCriterion(FairseqCriterion):
 
 
         """
-        label_hamming_losses = 5 * F.nll_loss(
-            rect_pred, rect_tgts - label_shift, reduction="none"
-        )
+        label_hamming_losses = 5 * F.nll_loss(rect_pred, rect_tgts - label_shift, reduction="none")
         label_hamming_losses = torch.stack(
-            [
-                seq_loss.sum()
-                for seq_loss in label_hamming_losses.split(ntargets.tolist())
-            ]
+            [seq_loss.sum() for seq_loss in label_hamming_losses.split(ntargets.tolist())]
         )
 
         # clamp for hinge loss
-        loss = (
-            (
-                label_hamming_losses
-                + tree_scores_bad.view(-1).sum()
-                - tree_scores_gold.view(-1).sum()
-            )
-            .clamp(0)
-            .sum()
-        )
+        loss = (label_hamming_losses + tree_scores_bad.view(-1).sum() - tree_scores_gold.view(-1).sum()).clamp(0).sum()
 
         null_leaf_idx = model.task.label_dictionary.index("LEAF")
         ncorrect_labels_best_roof = []
@@ -344,17 +282,13 @@ class MultiSpanCriterion(FairseqCriterion):
             seq_targets = target_labels[seq_idx, :seq_ntargets]
             seq_tgt_ii, seq_tgt_jj = tspans[seq_idx, :, :seq_ntargets].chunk(2, dim=0)
             pred_labels_best = presult.masked_lchart[seq_tgt_ii, seq_tgt_jj]
-            seq_ncorrect_labels = pred_labels_best.gt(1) * (
-                pred_labels_best == (seq_targets - label_shift)
-            )
+            seq_ncorrect_labels = pred_labels_best.gt(1) * (pred_labels_best == (seq_targets - label_shift))
             seq_ncorrect_spans = pred_labels_best.gt(1)
             ncorrect_spans_best_roof.append(seq_ncorrect_spans.sum())
             ncorrect_labels_best_roof.append(seq_ncorrect_labels.sum())
             seq_nlabels = presult.labels.gt(1)
             nlabels_best_roof.append(seq_nlabels.sum())
-            seq_bracketing_errors = (
-                seq_nlabels.sum() + seq_ntargets - 2 * seq_ncorrect_spans.sum()
-            )
+            seq_bracketing_errors = seq_nlabels.sum() + seq_ntargets - 2 * seq_ncorrect_spans.sum()
             bracketing_errors.append(seq_bracketing_errors)
 
         nwords_total = nwords.sum().data
@@ -372,9 +306,7 @@ class MultiSpanCriterion(FairseqCriterion):
             "ncorrect_spans": sum(ncorrect_spans_best_roof),
             # filter out NULL labels
             "gold_nlabels": target_labels.gt(label_shift).sum(),
-            "gold_nlabels_roof": (
-                target_labels[target_labels != null_leaf_idx] > label_shift
-            ).sum(),
+            "gold_nlabels_roof": (target_labels[target_labels != null_leaf_idx] > label_shift).sum(),
             "best_nlabels_roof": sum(nlabels_best_roof),
             "bracketing_errors": sum(bracketing_errors),
         }
@@ -384,16 +316,10 @@ class MultiSpanCriterion(FairseqCriterion):
             trees_bad = list(map(parse_result_to_tree, results_bad))
 
             logging_output["dist_gold_bad"] = sum(
-                [
-                    tree_dist.tree_dist(gold, bad, None)
-                    for gold, bad in zip(trees_gold, trees_bad)
-                ]
+                [tree_dist.tree_dist(gold, bad, None) for gold, bad in zip(trees_gold, trees_bad)]
             )
             logging_output["dist_best_gold"] = sum(
-                [
-                    tree_dist.tree_dist(best, gold, None)
-                    for best, gold in zip(trees_best, trees_gold)
-                ]
+                [tree_dist.tree_dist(best, gold, None) for best, gold in zip(trees_best, trees_gold)]
             )
 
             dist_best_gold_unif = 0.0
@@ -402,11 +328,7 @@ class MultiSpanCriterion(FairseqCriterion):
                 gold = gold.roof()
                 dist = 0.0
                 if best is not None and gold is not None:
-                    dist = tree_dist.tree_dist(
-                        best.uniform(),
-                        gold.uniform(),
-                        None,
-                    )
+                    dist = tree_dist.tree_dist(best.uniform(), gold.uniform(), None)
                 dist_best_gold_unif += dist
             logging_output["dist_best_gold_unif"] = dist_best_gold_unif
         return loss, nwords_total, logging_output
@@ -424,24 +346,12 @@ class MultiSpanCriterion(FairseqCriterion):
         best_tree = float(sum(log.get("best_tree", 0) for log in logging_outputs))
         worst_tree = float(sum(log.get("worst_tree", 0) for log in logging_outputs))
 
-        gold_nlabels = float(
-            sum(log.get("gold_nlabels", float("inf")) for log in logging_outputs)
-        )
-        gold_nlabels_roof = float(
-            sum(log.get("gold_nlabels_roof", float("inf")) for log in logging_outputs)
-        )
-        best_nlabels_roof = float(
-            sum(log.get("best_nlabels_roof", float("inf")) for log in logging_outputs)
-        )
-        ncorrect_labels = float(
-            sum(log.get("ncorrect_labels", 0) for log in logging_outputs)
-        )
-        ncorrect_spans = float(
-            sum(log.get("ncorrect_spans", 0) for log in logging_outputs)
-        )
-        bracketing_errors = int(
-            sum(log.get("bracketing_errors", 0) for log in logging_outputs)
-        )
+        gold_nlabels = float(sum(log.get("gold_nlabels", float("inf")) for log in logging_outputs))
+        gold_nlabels_roof = float(sum(log.get("gold_nlabels_roof", float("inf")) for log in logging_outputs))
+        best_nlabels_roof = float(sum(log.get("best_nlabels_roof", float("inf")) for log in logging_outputs))
+        ncorrect_labels = float(sum(log.get("ncorrect_labels", 0) for log in logging_outputs))
+        ncorrect_spans = float(sum(log.get("ncorrect_spans", 0) for log in logging_outputs))
+        bracketing_errors = int(sum(log.get("bracketing_errors", 0) for log in logging_outputs))
 
         label_loss = float(sum(log.get("label_loss", 0.0) for log in logging_outputs))
         # loss for NULL is always 0 so we dont count it in total
@@ -461,8 +371,7 @@ class MultiSpanCriterion(FairseqCriterion):
             "label_f1": 2 / (1 / (label_precision or 1) + 1 / (label_recall or 1)),
             "bracketing_precision": bracketing_precision,
             "bracketing_recall": bracketing_recall,
-            "bracketing_f1": 2
-            / (1 / (bracketing_precision or 1) + 1 / (bracketing_recall or 1)),
+            "bracketing_f1": 2 / (1 / (bracketing_precision or 1) + 1 / (bracketing_recall or 1)),
             "avg_bracketing_errors": bracketing_errors / (nsentences),
             "delta_gold_worst": (gold_tree - worst_tree) / nsentences,
             "delta_best_gold": (best_tree - gold_tree) / (nsentences),
@@ -477,19 +386,13 @@ class MultiSpanCriterion(FairseqCriterion):
 
         if len(logging_outputs) > 0:
             if "dist_gold_bad" in logging_outputs[0]:
-                dist_diff = float(
-                    sum(log.get("dist_gold_bad", 0) for log in logging_outputs)
-                )
+                dist_diff = float(sum(log.get("dist_gold_bad", 0) for log in logging_outputs))
                 agg_output.update(dist_gold_bad=dist_diff)
             if "dist_best_gold" in logging_outputs[0]:
-                dist_diff = float(
-                    sum(log.get("dist_best_gold", 0) for log in logging_outputs)
-                )
+                dist_diff = float(sum(log.get("dist_best_gold", 0) for log in logging_outputs))
                 agg_output.update(dist_best_gold=dist_diff)
             if "dist_best_gold_unif" in logging_outputs[0]:
-                dist_diff = float(
-                    sum(log.get("dist_best_gold_unif", 0) for log in logging_outputs)
-                )
+                dist_diff = float(sum(log.get("dist_best_gold_unif", 0) for log in logging_outputs))
                 agg_output.update(dist_best_gold_unif=dist_diff)
 
         return agg_output
