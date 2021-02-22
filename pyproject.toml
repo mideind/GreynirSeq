@@ -5,8 +5,6 @@ line-length = 120
 testpaths = [
     "tests"
 ]
-# addopts = "--electra_model electra-small-pytorch --tagger /home/haukur/Resources/Models/POS/tagger-v2.0.0.pt"
-
 
 [tool.poetry]
 name = "greynirseq"
