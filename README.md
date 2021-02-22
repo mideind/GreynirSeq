@@ -51,3 +51,17 @@ docker build -t greynirseq .
 ```
 
 Assuming you have the models and other files necessary you can then run `serve/prod.sh` or a variation therof. You can serve the models over http using the container or run experiments within it.
+
+## Development
+
+### Linting
+
+All code is checked with [Super-Linter](https://github.com/github/super-linter) in a *GitHub Action*, we recommend running it locally before pushing
+
+``` bash
+docker run -e RUN_LOCAL=true -v /path/to/local/GreynirSeq:/tmp/lint github/super-linter
+```
+
+### Type annotation
+
+Type annotation is checked with mypy and should be done for all python code.
