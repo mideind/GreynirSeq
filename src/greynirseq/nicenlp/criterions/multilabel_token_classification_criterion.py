@@ -15,7 +15,7 @@ from fairseq import utils
 import torch
 import torch.nn.functional as F
 
-from greynirseq.utils.types import Numeric
+Numeric = Union[float, int]
 
 
 @register_criterion("multilabel_token_classification")
@@ -28,11 +28,9 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
-        assert hasattr(
-            model, "task_head"
-        ), "model must provide task specific classification head"
+        assert hasattr(model, "task_head"), "model must provide task specific classification head"
 
-        target_cats = sample["target_cats"] 
+        target_cats = sample["target_cats"]
         target_exclude_mask = sample["exclude_cats_mask"]
         target_attrs = sample["target_attrs"]
         nwords = sample["nwords"]
@@ -40,9 +38,7 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         bsz, _max_nwords = target_cats.shape
         bsz, _max_nwords, _num_attrs = target_attrs.shape
 
-        (cat_logits, attr_logits), _extra = model(
-            **sample["net_input"], features_only=True
-        )
+        (cat_logits, attr_logits), _extra = model(**sample["net_input"], features_only=True)
 
         pad_idx = model.task.label_dictionary.pad()
         padding_mask = target_cats.ne(pad_idx)
@@ -56,7 +52,7 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
             cat_dict_to_vec_idx[target_cats],
             reduction="none",
         )
-        
+
         # padding_value is -100 which as special semantics in cross_entropy
         cat_loss = (cat_loss * target_exclude_mask).sum()
 
@@ -80,8 +76,10 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         # we want fixed iteration order of group names
         for i, group_name in enumerate(group_names):
             group_idxs = group_name_to_group_attr_vec_idxs[group_name]
-            group_loss_mask = group_masks[cat_vec_idxs][:,:,i]
-            group_loss_mask *= padding_mask * target_exclude_mask # reset padding to zero, since 0th vector was selected where padding is
+            group_loss_mask = group_masks[cat_vec_idxs][:, :, i]
+            group_loss_mask *= (
+                padding_mask * target_exclude_mask
+            )  # reset padding to zero, since 0th vector was selected where padding is
             group_logits = attr_logits[:, :, group_idxs]
 
             if group_idxs.numel() == 1:
@@ -96,26 +94,30 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
                 group_loss = group_loss * group_loss_mask
 
                 group_losses.append(group_loss)
-    
+
                 correct = (
-                    group_logits.ge(0).int() == group_targets
-                ) * group_loss_mask.bool() * target_exclude_mask.bool() * padding_mask.bool()
-            
+                    (group_logits.ge(0).int() == group_targets)
+                    * group_loss_mask.bool()
+                    * target_exclude_mask.bool()
+                    * padding_mask.bool()
+                )
+
             else:
                 # Batch x Time x Depth -> Batch x Depth x Time
                 group_targets = target_attrs[:, :, group_idxs].max(dim=-1).indices
                 bsz, num_words, num_members = group_logits.shape
-                group_loss = F.cross_entropy(
-                   group_logits.transpose(2,1), group_targets, reduction="none"
-                )               
+                group_loss = F.cross_entropy(group_logits.transpose(2, 1), group_targets, reduction="none")
                 group_loss *= group_loss_mask.type_as(group_logits)
                 group_loss *= target_exclude_mask * padding_mask
-                group_losses.append(group_loss) 
+                group_losses.append(group_loss)
 
                 correct = (
-                    group_logits.max(dim=-1).indices == group_targets
-                ) * group_loss_mask.bool() * target_exclude_mask.bool() * padding_mask
-                
+                    (group_logits.max(dim=-1).indices == group_targets)
+                    * group_loss_mask.bool()
+                    * target_exclude_mask.bool()
+                    * padding_mask
+                )
+
             # Correct attrs starts true for all words
             # then a single incorrect should flip the word
             # Just need to make sure to only flip those that have current group attrs!
@@ -124,17 +126,16 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
             correct_attrs *= correct + keep_unchanged
 
         correct_attrs *= padding_mask * target_exclude_mask.bool()  # Only count words, not padding
-        
-        correct_cat = ((
-            cat_logits.max(-1).indices == cat_dict_to_vec_idx[target_cats]
-        ) * padding_mask.bool() ) * target_exclude_mask.bool()
+
+        correct_cat = (
+            (cat_logits.max(-1).indices == cat_dict_to_vec_idx[target_cats]) * padding_mask.bool()
+        ) * target_exclude_mask.bool()
 
         nwords_total = nwords.sum().item() - (target_exclude_mask == 0).sum().item()
-       
-        correct_all = correct_attrs * correct_cat 
-       
-        
-       # NOTE: Just target attrs does not suffice for the binary labels since 0 has a meaning, hence adding missing_binary_targets
+
+        correct_all = correct_attrs * correct_cat
+
+        # NOTE: Just target attrs does not suffice for the binary labels since 0 has a meaning, hence adding missing_binary_targets
         attrs_divisor = target_attrs.sum(-1) + missing_binary_targets.sum(-1)
 
         attrs_divisor[attrs_divisor == 0] = 1
@@ -155,7 +156,7 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
             "ncorrect_exact": correct_all.sum(),
             "ncorrect_attrs": correct_attrs.sum(),
         }
-        
+
         return loss, nwords_total, logging_output
 
     @staticmethod

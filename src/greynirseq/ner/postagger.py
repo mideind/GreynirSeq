@@ -4,7 +4,7 @@ import re
 from typing import Dict, List
 
 from greynirseq.ner.aligner import NERMarkerIdx, NERParser, NERSentenceParse, PairInfo, NERAnalyser
-from greynirseq.nicenlp.models.icebert import IcebertModel
+from greynirseq.nicenlp.models.multilabel import MutliLabelRobertaModel
 from greynirseq.settings import IceBERT_POS_PATH, IceBERT_POS_CONFIG
 
 from reynir import NounPhrase
@@ -56,7 +56,7 @@ def main():
     parser.add_argument("--output")
     args = parser.parse_args()
 
-    pos_model = IcebertModel.from_pretrained(IceBERT_POS_PATH, **IceBERT_POS_CONFIG)
+    pos_model = MutliLabelRobertaModel.from_pretrained(IceBERT_POS_PATH, **IceBERT_POS_CONFIG)
     pos_model.to("cuda")
     pos_model.eval()
 
