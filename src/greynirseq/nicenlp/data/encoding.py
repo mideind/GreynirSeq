@@ -2,7 +2,7 @@ import argparse
 from fairseq.data import Dictionary, encoders
 
 
-def get_word_beginnings(cls, args: argparse.Namespace, dictionary: Dictionary):
+def get_word_beginnings(args: argparse.Namespace, dictionary: Dictionary):
     bpe = encoders.build_bpe(args)
     if bpe is not None:
 

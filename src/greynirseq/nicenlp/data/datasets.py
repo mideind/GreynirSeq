@@ -237,6 +237,25 @@ class POSDataset(BaseWrapperDataset):
         return attrs
 
 
+class NoBosEosDataset(BaseWrapperDataset):
+    def __init__(
+        self,
+        dataset: Dataset,
+        dictionary: Dictionary,
+    ):
+        super().__init__(dataset)
+        self.dictionary = dictionary
+        self.has_bos = True if dataset[0][0] == self.dictionary.bos() else False
+        self.has_eos = True if dataset[0][-1] == self.dictionary.eos() else False
+
+    def __getitem__(self, index: int):
+        item = self.dataset[index]
+        start = 1 if self.has_bos else 0
+        if self.has_eos:
+            return item[start:-1]
+        return item[start:]
+
+
 class WordEndMaskDataset(BaseWrapperDataset):
     def __init__(
         self,
