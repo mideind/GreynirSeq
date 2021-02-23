@@ -26,6 +26,7 @@ from fairseq.data import (
 from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
 
+from greynirseq.nicenlp.data.encoding import get_word_beginnings
 from greynirseq.nicenlp.data.datasets import (
     POSDataset,
     WordEndMaskDataset,
@@ -98,7 +99,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         data_dict = cls.load_dictionary(args, os.path.join(args.data, "dict.txt"))
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
 
-        is_word_initial = cls.get_word_beginnings(args, data_dict)
+        is_word_initial = get_word_beginnings(args, data_dict)
         term_dict = cls.load_dictionary(
             args, os.path.join(args.data, "dict_term.txt"), add_mask=False
         )
@@ -152,28 +153,6 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         if add_mask:
             dictionary.add_symbol("<mask>")
         return dictionary
-
-    @classmethod
-    def get_word_beginnings(cls, args: argparse.Namespace, dictionary: Dictionary):
-        bpe = encoders.build_bpe(args)
-        if bpe is not None:
-
-            def is_beginning_of_word(i):
-                if i < dictionary.nspecial:
-                    return True
-                tok = dictionary[i]
-                if tok.startswith("madeupword"):
-                    return True
-                try:
-                    return bpe.is_beginning_of_word(tok)
-                except ValueError:
-                    return True
-
-            is_word_initial = {}
-            for i in range(len(dictionary)):
-                is_word_initial[i] = int(is_beginning_of_word(i))
-            return is_word_initial
-        return None
 
     def load_dataset(self, split: str, combine: bool = False, **kwargs):
         """Load a given dataset split (e.g., train, valid, test)."""
