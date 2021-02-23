@@ -36,6 +36,7 @@ from greynirseq.nicenlp.data.icelandic_character_noising import (
 )
 from greynirseq.nicenlp.data.masked_byte_sequence import MaskedByteSequenceDataset
 from greynirseq.nicenlp.data.mmapped_text import MmappedTextDataset
+from greynirseq.nicenlp.data.byte_token_blocks import ByteTokenBlockDataset
 
 logger = logging.getLogger(__name__)
 
@@ -205,11 +206,8 @@ class ByteMaskedLMTask(FairseqTask):
         # XXX: token_block_dataset of tokens
 
         # prepend beginning-of-sentence token (<s>, equiv. to [CLS] in BERT)
-        bos_tensor = torch.tensor([self.byte_dictionary.bos()], dtype=torch.long)
-        seq_dataset = MapDataset(seq_dataset, fn=lambda x: x.add_byte_prefix(bos_tensor))
         byte_bos_tensor = torch.tensor([self.byte_dictionary.bos()], dtype=torch.long)
         bpe_bos_tensor = torch.tensor([self.bpe_dictionary.bos()], dtype=torch.long)
-        seq_dataset = MapDataset(seq_dataset, fn=lambda x: x.add_byte_prefix(byte_bos_tensor, bpe_bos_tensor))
 
         seq_dataset = IcelandicCharacterNoising(
             seq_dataset, case_prob=self.args.case_switch_prob
@@ -222,7 +220,20 @@ class ByteMaskedLMTask(FairseqTask):
             insert_prob=self.args.insert_byte_prob,
             replace_prob=self.args.random_byte_prob,
             transpose_prob=self.args.transpose_bytes_prob,
+            seed=self.seed,
         )
+
+        logger.info(f"Using sample-break-mode: {self.args.sample_break_mode}")
+        seq_dataset = ByteTokenBlockDataset(
+            seq_dataset,
+            seq_dataset.sizes,
+            self.args.tokens_per_sample,
+            self.byte_dictionary.pad(),
+            self.byte_dictionary.eos(),
+            self.args.sample_break_mode,
+        )
+
+        seq_dataset = MapDataset(seq_dataset, fn=lambda x: x.add_byte_prefix(byte_bos_tensor, bpe_bos_tensor))
 
         seq_dataset = MaskedByteSequenceDataset(
             seq_dataset,
@@ -263,7 +274,6 @@ class ByteMaskedLMTask(FairseqTask):
 
         if self.bpe_dictionary.index("<mask>") == self.bpe_dictionary.unk():
             logger.error("BPE dictionary is missing <mask>")
-
 
         self.datasets[split] = SortDataset(
             NestedDictionaryDataset(

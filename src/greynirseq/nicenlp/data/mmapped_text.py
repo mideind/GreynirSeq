@@ -78,4 +78,4 @@ class MmappedTextDataset(FairseqDataset):
 
     @property
     def supports_prefetch(self):
-        return False
+        return True

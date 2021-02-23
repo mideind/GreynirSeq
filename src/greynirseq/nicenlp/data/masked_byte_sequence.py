@@ -92,7 +92,7 @@ class MaskedByteSequenceDataset(BaseWrapperDataset):
 
         # NOTE: why should this not be sampled from wider distribution (e.g. a gaussian)?
         #       the no-operation action does this! Albeit uniformly
-        num_actions = int(self.mask_prob * length + np.random.rand()) # probabalistic rounding
+        num_actions = int(self.mask_prob * length + np.random.rand())  # probabalistic rounding
 
         mask[np.random.choice(length, num_actions, replace=False)] = True
 
@@ -119,7 +119,7 @@ class MaskedByteSequenceDataset(BaseWrapperDataset):
 
         return new_seq
 
-    @lru_cache(maxsize=8)
+    @lru_cache(maxsize=32)
     def __getitem__(self, index):
         seq = self.dataset[index]
 
@@ -128,3 +128,7 @@ class MaskedByteSequenceDataset(BaseWrapperDataset):
 
         assert torch.all(new_seq.bpe_lens.gt(0)), "Unexpected bpe token with length 0"
         return new_seq
+
+    @property
+    def can_reuse_epoch_itr_across_epochs(self):
+        return False

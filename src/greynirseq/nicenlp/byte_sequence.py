@@ -65,3 +65,21 @@ class ByteSequence:
                 [torch.tensor([len(byte_prefix)]), self.word_lens]
             )
         return new_seq
+
+    @classmethod
+    def cat(cls, seqs):
+        byteseq = {}
+        for key in cls.__dataclass_fields__.keys():
+            if getattr(seqs[0], key) is None:
+                continue
+            values = [getattr(seq, key) for seq in seqs]
+            if key == "str_seq":
+                byteseq[key] = "\n".join(values)
+            else:
+                byteseq[key] = torch.cat(values)
+
+        item = ByteSequence(
+            **byteseq
+        )
+
+        return item

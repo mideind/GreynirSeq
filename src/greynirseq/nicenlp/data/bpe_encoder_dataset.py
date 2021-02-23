@@ -25,6 +25,9 @@ from greynirseq.nicenlp.utils.data_utils import lengths_to_offsets, lengths_to_b
 
 
 class BPEEncoderDataset(BaseWrapperDataset):
+
+    _CACHE_SIZE = 1028  # due to non-reproducibility nondeterminism in tokenizers
+
     def __init__(
         self,
         args: argparse.Namespace,
@@ -59,7 +62,7 @@ class BPEEncoderDataset(BaseWrapperDataset):
         )
         self._sizes = self.dataset._sizes
 
-    @lru_cache(maxsize=8)
+    @lru_cache(maxsize=_CACHE_SIZE)
     def __getitem__(self, index: int) -> ByteSequence:
         str_seq: str = self.dataset[index]
         word_byte_offsets = self.word_byte_offsets[index]
@@ -115,9 +118,6 @@ class BPEEncoderDataset(BaseWrapperDataset):
                 new_start_offsets.append(segment_start_offset)
                 new_ids.append(str(hf_segment_id))
 
-
-            # new_ids = [str(hf_bpe_id) for hf_bpe_id in hf_encoding.ids]
-
             seq_bpe_offsets.extend(new_start_offsets)
             seq_hf_bpe_ids.extend(new_ids)
 
@@ -168,4 +168,17 @@ class BPEEncoderDataset(BaseWrapperDataset):
 
     @property
     def sizes(self):
-        return self._sizes
+        return self._sizes + (1 if self.append_eos else 0)
+
+    @property
+    def can_reuse_epoch_itr_across_epochs(self):
+        return False
+
+    @property
+    def supports_prefetch(self):
+        return True
+
+    def prefetch(self, indices):
+        assert len(indices) <= self._CACHE_SIZE
+        for index in indices:
+            self[index]

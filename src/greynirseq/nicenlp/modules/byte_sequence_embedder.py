@@ -56,7 +56,7 @@ class ByteSequenceEmbedder(nn.Module):
         self.projection = nn.Linear(self.word_embed_dim, self.word_embed_dim)
 
     def embed_bpe_markers(self, bpe_mask):
-        bpe_markers = bpe_mask.long()
+        bpe_markers = bpe_mask.clone().long()
         bpe_markers[bpe_mask] = self.bpe_mask_idx
         bpe_markers = self.token_embeddings(bpe_markers)
         return bpe_markers

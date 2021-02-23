@@ -392,7 +392,7 @@ class ConvGLUSentenceEncoder(TransformerSentenceEncoder):
         pool_lengths: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor]:
         # compute padding mask. This is needed for multi-head attention
-        padding_mask: Optional[Tensor] = src_tokens.eq(self.padding_idx)
+        padding_mask: Optional[Tensor] = pool_lengths.eq(0)
         if (
             not self.traceable
             and not self.tpu
@@ -470,8 +470,9 @@ class ConvGLUSentenceEncoder(TransformerSentenceEncoder):
 def bytebert_small_architecture(args):
     args.num_conv_layers = getattr(args, "num_conv_layers", 2)
     args.num_highway_layers = getattr(args, "num_highway_layers", 2)
-    args.encoder_layers = getattr(args, "encoder_layers", 4)
+
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
+    args.encoder_layers = getattr(args, "encoder_layers", 4)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 2048)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
     roberta.model.base_architecture(args)
@@ -488,15 +489,14 @@ def bytebert_small_architecture(args):
 #     base_architecture(args)
 
 
-# @register_model_architecture("bytebert", "bytebert_tiny")
-# def roberta_base_architecture(args):
-#     base_architecture(args)
-#     args.encoder_layers = getattr(args, "character_embed_dim", 32)
-#     args.encoder_layers = getattr(args, "encoder_layers", 16)
-#     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 128)
-#     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512)
-#     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 2)
-#     base_architecture(args)
+@register_model_architecture("bytebert", "bytebert_tiny")
+def bytebert_tiny_architecture(args):
+    args.character_embed_dim = getattr(args, "character_embed_dim", 32)
+    args.encoder_layers = getattr(args, "encoder_layers", 2)
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 128)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512)
+    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 2)
+    bytebert_small_architecture(args)
 
 
 # @register_model_architecture("bytebert", "bytebert_tinybert")
