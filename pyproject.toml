@@ -7,10 +7,10 @@ multi_line_output = 3
 
 [tool.flake8]
 max-line-length = 120
-extend-ignore = E203, W503
+extend-ignore = ["E203", "W503"]
 
 [tool.pylint]
-disable = C0330, C0326
+disable = ["C0330", "C0326"]
 max-line-length = 120
 
 [tool.pytest.ini_options]
