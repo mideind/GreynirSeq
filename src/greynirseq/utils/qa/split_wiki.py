@@ -6,7 +6,7 @@ from collections import namedtuple
 
 # TOOD: use actual mp
 from multiprocessing.dummy import Pool
-from typing import Generator, List, NamedTuple
+from typing import Generator, List
 
 from lemmatizer import Lemmatizer
 
@@ -16,7 +16,7 @@ WikiArticle = namedtuple("WikiArticle", ["title_id", "title", "linking_title", "
 class LemmatizeWiki:
     def __init__(self, wiki_file: str) -> None:
         self.wiki_file = wiki_file
-        self.l = Lemmatizer()
+        self.l = Lemmatizer()  # noqa
 
     def _read_wiki_dump(self) -> Generator[WikiArticle, None, None]:
         with open(self.wiki_file) as inputfile:
@@ -25,7 +25,7 @@ class LemmatizeWiki:
                 yield WikiArticle(title_id, title, linking_title, text)
 
     def write_sentences(self, outfile_name: str, thread_count: int = 16) -> None:
-        def parse_batch(article: WikiArticle, lemmatizer: Lemmatizer = self.l) -> List:
+        def parse_batch(article: WikiArticle, lemmatizer: Lemmatizer = self.l) -> List:  # noqa
             data = []
             for idx, (lemmas, tokens, sentence) in enumerate(lemmatizer.lemmatize(article.text)):
                 data.append("{}\t{}\t{}\t{}\n".format(article.title_id, idx, sentence, " ".join(lemmas)))

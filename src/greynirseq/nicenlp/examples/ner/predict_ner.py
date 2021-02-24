@@ -1,3 +1,5 @@
+# flake8: noqa
+
 import time
 
 from greynirseq.ner.utils.ner_f1_stats import EvalNER

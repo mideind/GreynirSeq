@@ -20,8 +20,8 @@ def load_file(
                 o_d.writelines("{}\n".format(" ".join(inp)))
             if lab is not None:
                 o_l.writelines(
-                    "{}\n".format(" <SEP> ".join([" ".join(slab) for slab in lab]))
-                )  # pylint: disable=not-an-iterable
+                    "{}\n".format(" <SEP> ".join([" ".join(slab) for slab in lab]))  # pylint: disable=not-an-iterable
+                )
             inp = []
             lab = []
             while line and line != "\n":

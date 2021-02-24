@@ -84,7 +84,7 @@ def patch_sentence(sentence, names, force=None):
                 kasus = force
             try:
                 decl = decline_np(names[int(neridx)], kasus)
-            except:
+            except:  # noqa
                 # TODO FIX!!
                 return None
             if decl is None:

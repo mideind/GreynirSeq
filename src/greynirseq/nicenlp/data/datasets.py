@@ -7,13 +7,7 @@ from functools import lru_cache
 from typing import Callable, Dict, List, Tuple
 
 import torch
-from fairseq.data import (
-    BaseWrapperDataset,
-    Dictionary,
-    LRUCacheDataset,
-    NestedDictionaryDataset,
-    data_utils,
-)
+from fairseq.data import BaseWrapperDataset, Dictionary, LRUCacheDataset, NestedDictionaryDataset, data_utils
 from fairseq.data.nested_dictionary_dataset import _unflatten
 from torch import LongTensor, Tensor
 from torch.utils.data import Dataset

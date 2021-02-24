@@ -67,8 +67,8 @@ for dataset_offset in np.random.randint(0, dataset_size, 100):
     pred_roof = pred_tree.roof()
 
     gold_tree = Node.from_labelled_spans(
-        seq_spans, seq_labels, tokenize(sentences[seq_idx])
-    )  # pylint: disable=undefined-variable
+        seq_spans, seq_labels, tokenize(sentences[seq_idx])  # pylint: disable=undefined-variable
+    )
     gold_tree = gold_tree.debinarize()
     ic(dataset_name)
     gold_tree.pretty_print()

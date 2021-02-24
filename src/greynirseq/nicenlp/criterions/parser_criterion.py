@@ -22,7 +22,7 @@ import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pyl
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
-from greynirseq.utils.types import Numeric
+from greynirseq.utils.types import Numeric  # pylint: disable=no-name-in-module
 
 
 def gen_2d_diags(chart_width: Union[int, LongTensor]):  # pylint: disable=unsubscriptable-object

@@ -52,7 +52,7 @@ class MultiLabelTokenClassificationHead(nn.Module):
 
 
 @register_model("multilabel_roberta")
-class MutliLabelRobertaModel(RobertaModel):
+class MultiLabelRobertaModel(RobertaModel):
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
 
@@ -119,7 +119,8 @@ class MutliLabelRobertaModel(RobertaModel):
             mean_words.append(x[seq_idx, token_idx:end].mean(dim=0))
         mean_words = torch.stack(mean_words)
         words = mean_words
-
+        
+        nwords = word_mask.sum(-1)
         (cat_logits, attr_logits) = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
@@ -165,7 +166,6 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
         tokens = net_input["src_tokens"]
 
         word_mask = sample["net_input"]["word_mask"]
-        nwords = sample["net_input"]["word_mask"].sum(-1)
 
         (cat_logits, attr_logits), _extra = self.model(tokens, word_mask=word_mask)
 

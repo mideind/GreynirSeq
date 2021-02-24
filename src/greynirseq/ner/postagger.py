@@ -1,13 +1,7 @@
 import argparse
 from typing import List
 
-from greynirseq.ner.aligner import (
-    NERAnalyser,
-    NERMarkerIdx,
-    NERParser,
-    NERSentenceParse,
-    PairInfo,
-)
+from greynirseq.ner.aligner import NERAnalyser, NERMarkerIdx, NERParser, NERSentenceParse, PairInfo
 from greynirseq.nicenlp.models.multilabel import MutliLabelRobertaModel
 from greynirseq.settings import IceBERT_POS_CONFIG, IceBERT_POS_PATH
 

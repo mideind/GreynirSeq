@@ -6,8 +6,8 @@ import tqdm
 from spacy.gold import biluo_tags_from_offsets
 from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
 
-from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 from greynirseq.nicenlp.models.multilabel import MultiLabelRobertaModel
+from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 
 
 def icelandic_ner(input_file, tagged_file):

@@ -37,10 +37,7 @@ from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
 )
 from greynirseq.nicenlp.utils.constituency import token_utils
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    label_schema_as_dictionary,
-    parse_label_schema,
-)
+from greynirseq.nicenlp.utils.label_schema.label_schema import label_schema_as_dictionary, parse_label_schema
 
 logger = logging.getLogger(__name__)
 

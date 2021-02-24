@@ -30,13 +30,7 @@ from fairseq.data import (
     indexed_dataset,
 )
 from fairseq.data.encoders.utils import get_whole_word_mask
-from fairseq.data.noising import (
-    NoisingDataset,
-    UnsupervisedMTNoising,
-    WordDropout,
-    WordNoising,
-    WordShuffle,
-)
+from fairseq.data.noising import NoisingDataset, UnsupervisedMTNoising, WordDropout, WordNoising, WordShuffle
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask
 
@@ -436,7 +430,6 @@ def load_unpaired_langpair(
         if tgt_dataset is not None:
             tgt_dataset = PrependTokenDataset(tgt_dataset, tgt_dict.bos())
 
-    eos = None
     if append_source_id:
         src_dataset = AppendTokenDataset(src_dataset, src_dict.index("[{}]".format(src)))
         if tgt_dataset is not None:

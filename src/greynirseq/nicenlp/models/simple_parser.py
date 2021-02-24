@@ -6,12 +6,7 @@ import logging
 import torch
 import torch.nn.functional as F
 from fairseq import utils
-from fairseq.data import (
-    BaseWrapperDataset,
-    NestedDictionaryDataset,
-    NumelDataset,
-    RightPadDataset,
-)
+from fairseq.data import BaseWrapperDataset, NestedDictionaryDataset, NumelDataset, RightPadDataset
 from fairseq.models import register_model, register_model_architecture
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import RobertaEncoder, RobertaModel, base_architecture

@@ -2,11 +2,7 @@ import unittest
 
 import torch
 
-from greynirseq.nicenlp.utils.logits_filter import (
-    filter_max_logits,
-    max_tensor_by_bins,
-    word_classes_to_mask,
-)
+from greynirseq.nicenlp.utils.logits_filter import filter_max_logits, max_tensor_by_bins, word_classes_to_mask
 
 
 class TestLogitsFilter(unittest.TestCase):
