@@ -6,35 +6,39 @@
 #    This source code is licensed under the MIT license found in the
 #    LICENSE file in the root directory of this source tree.
 
-from argparse import Namespace
-import json
 import itertools
+import json
 import logging
 import os
+from argparse import Namespace
 from functools import lru_cache
 
 import numpy as np
 import torch
-
 from fairseq import metrics, options, utils
 from fairseq.data import (
     AppendTokenDataset,
+    BaseWrapperDataset,
     ConcatDataset,
-    data_utils,
-    encoders,
-    indexed_dataset,
+    Dictionary,
     LanguagePairDataset,
     PrependTokenDataset,
     StripTokenDataset,
     TruncateDataset,
-    BaseWrapperDataset,
-    Dictionary,
+    data_utils,
+    encoders,
+    indexed_dataset
 )
-
-from fairseq.tasks import FairseqTask, register_task
-from fairseq.tasks.translation import load_langpair_dataset, TranslationTask
-from fairseq.data.noising import NoisingDataset, UnsupervisedMTNoising, WordShuffle, WordDropout, WordNoising
 from fairseq.data.encoders.utils import get_whole_word_mask
+from fairseq.data.noising import (
+    NoisingDataset,
+    UnsupervisedMTNoising,
+    WordDropout,
+    WordNoising,
+    WordShuffle
+)
+from fairseq.tasks import FairseqTask, register_task
+from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
 
 EVAL_BLEU_ORDER = 4
 

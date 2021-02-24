@@ -4,19 +4,18 @@
 Data pre-processing: build vocabularies and binarize training data.
 """
 
-from collections import Counter
-from itertools import zip_longest
 import logging
-from multiprocessing import Pool
 import os
 import shutil
 import sys
+from collections import Counter
+from itertools import zip_longest
+from multiprocessing import Pool
 
 import torch
-
 from fairseq import options, tasks, utils
-from fairseq.data import indexed_dataset, Dictionary
 from fairseq.binarizer import Binarizer
+from fairseq.data import Dictionary, indexed_dataset
 
 # from . import multi_span_prediction_task
 from greynirseq.nicenlp.tasks import multi_span_prediction_task

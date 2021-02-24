@@ -2,18 +2,22 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from typing import List, Union, Dict, Any, Callable, Tuple
 from collections import OrderedDict
 from functools import lru_cache
-
-from fairseq.data import BaseWrapperDataset, NestedDictionaryDataset, LRUCacheDataset
-from fairseq.data.nested_dictionary_dataset import _unflatten
-from fairseq.data import data_utils, Dictionary
+from typing import Any, Callable, Dict, List, Tuple, Union
 
 import torch
+from fairseq.data import (
+    BaseWrapperDataset,
+    Dictionary,
+    LRUCacheDataset,
+    NestedDictionaryDataset,
+    data_utils
+)
+from fairseq.data.nested_dictionary_dataset import _unflatten
 from torch import LongTensor, Tensor
-from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
 
 

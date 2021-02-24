@@ -3,11 +3,17 @@ import os
 import re
 from typing import Dict, List
 
-from greynirseq.ner.aligner import NERMarkerIdx, NERParser, NERSentenceParse, PairInfo, NERAnalyser
-from greynirseq.nicenlp.models.multilabel import MutliLabelRobertaModel
-from greynirseq.settings import IceBERT_POS_PATH, IceBERT_POS_CONFIG
-
 from reynir import NounPhrase
+
+from greynirseq.ner.aligner import (
+    NERAnalyser,
+    NERMarkerIdx,
+    NERParser,
+    NERSentenceParse,
+    PairInfo
+)
+from greynirseq.nicenlp.models.multilabel import MutliLabelRobertaModel
+from greynirseq.settings import IceBERT_POS_CONFIG, IceBERT_POS_PATH
 
 
 def add_marker(ner_marker: NERMarkerIdx, tokens: List[str], idx: int, tag: str):

@@ -2,46 +2,44 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+import json
 import logging
 import os
-from pathlib import Path
-import json
 from collections import namedtuple
+from pathlib import Path
 
 import numpy as np
-
 import torch
 from fairseq.data import (
-    data_utils,
     Dictionary,
     IdDataset,
-    NumSamplesDataset,
     NumelDataset,
+    NumSamplesDataset,
+    PrependTokenDataset,
     RightPadDataset,
     SortDataset,
     TruncateDataset,
-    PrependTokenDataset,
+    data_utils,
+    encoders
 )
-from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
 from fairseq.tasks.sentence_prediction import SentencePredictionTask
 
 from greynirseq.nicenlp.data.datasets import (
     DynamicLabelledSpanDataset,
     LabelledSpanDataset,
-    WordSpanDataset,
-    ProductSpanDataset,
-    NumSpanDataset,
     NestedDictionaryDatasetFix,
+    NumSpanDataset,
     NumWordsDataset,
+    ProductSpanDataset,
+    WordSpanDataset
 )
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    parse_label_schema,
     label_schema_as_dictionary,
     make_group_masks,
     make_vec_idx_to_dict_idx,
+    parse_label_schema
 )
-
 
 logger = logging.getLogger(__name__)
 

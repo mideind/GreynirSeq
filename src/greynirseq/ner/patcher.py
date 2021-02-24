@@ -2,11 +2,10 @@ import argparse
 import random
 import re
 
-from reynir import NounPhrase
 import tqdm
+from reynir import NounPhrase
 
 from .aligner import NERParser
-
 
 NER_PATTERN = "<\s*e:([0-9]):([^:]*):>([^>]*?)<\s*/\s*e[0-9]+>"
 

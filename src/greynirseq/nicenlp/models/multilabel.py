@@ -6,26 +6,25 @@ import itertools
 import logging
 
 import torch
-from torch import nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
-
 from fairseq import utils
+from fairseq.models import register_model, register_model_architecture
+from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import (
+    RobertaEncoder,
+    RobertaModel,
     base_architecture,
     roberta_base_architecture,
-    roberta_large_architecture,
-    RobertaModel,
+    roberta_large_architecture
 )
-from fairseq.models.roberta.hub_interface import RobertaHubInterface
-from fairseq.models.roberta.model import RobertaEncoder
-from fairseq.models import register_model, register_model_architecture
 from fairseq.modules import LayerNorm
-
-from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
+from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 
 from greynirseq.nicenlp.utils.constituency import token_utils
-
+from greynirseq.nicenlp.utils.label_schema.label_schema import (
+    make_vec_idx_to_dict_idx
+)
 
 logger = logging.getLogger(__name__)
 

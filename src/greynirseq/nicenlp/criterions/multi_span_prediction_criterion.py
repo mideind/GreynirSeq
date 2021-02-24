@@ -5,10 +5,9 @@
 import math
 from collections import namedtuple
 
-from fairseq.criterions import FairseqCriterion, register_criterion
-
 import torch
 import torch.nn.functional as F
+from fairseq.criterions import FairseqCriterion, register_criterion
 
 from greynirseq.nicenlp.utils.constituency import greynir_utils, tree_dist
 

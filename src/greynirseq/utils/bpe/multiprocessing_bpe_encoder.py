@@ -8,7 +8,6 @@
 import argparse
 import contextlib
 import sys
-
 from collections import Counter
 from multiprocessing import Pool
 

@@ -1,9 +1,15 @@
-from collections import Counter, namedtuple, OrderedDict
 import json
-from operator import itemgetter
-import time
-from pprint import pprint
 import re
+import time
+from collections import Counter, OrderedDict, namedtuple
+from operator import itemgetter
+from pprint import pprint
+
+import nltk
+import numpy as np
+from nltk.tree import Tree as NltkTree
+
+from . import unary_branch_labels
 
 try:
     from icecream import ic
@@ -12,11 +18,7 @@ try:
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
-import numpy as np
-from nltk.tree import Tree as NltkTree
-import nltk
 
-from . import unary_branch_labels
 
 HTML_LPAREN = "&#40;"
 HTML_RPAREN = "&#41;"

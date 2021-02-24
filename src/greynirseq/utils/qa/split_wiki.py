@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 import argparse
-import os
 import json
+import os
 from collections import namedtuple
-from typing import Generator, List, NamedTuple
-
 # TOOD: use actual mp
 from multiprocessing.dummy import Pool
-from lemmatizer import Lemmatizer
+from typing import Generator, List, NamedTuple
 
+from lemmatizer import Lemmatizer
 
 WikiArticle = namedtuple("WikiArticle", ["title_id", "title", "linking_title", "text"])
 

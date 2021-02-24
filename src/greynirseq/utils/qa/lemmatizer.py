@@ -18,14 +18,13 @@
 
 
 import argparse
+from typing import List, Tuple
 
 from reynir import Greynir, _Sentence
 from reynir.bintokenizer import TokenList
 from reynir.ifdtagger import IFD_Tagset
 
 from greynirseq.nicenlp.models.icebert import IcebertModel
-
-from typing import List, Tuple
 
 TokLem = Tuple[List[str], List[str]]
 

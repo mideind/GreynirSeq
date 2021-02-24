@@ -1,15 +1,16 @@
-import torch
-import numpy as np
 import time
+
+import numpy as np
+import torch
 import tqdm
 
+import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
+from greynirseq.ner.utils.ner_f1_stats import EvalNER
+from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
 from greynirseq.nicenlp.data.datasets import *
 from greynirseq.nicenlp.models.multi_span_model import *
 from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
-from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
-from greynirseq.ner.utils.ner_f1_stats import EvalNER
 from greynirseq.nicenlp.utils.greynir.greynir_utils import Node
-import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
 
 model = IcebertConstModel.from_pretrained(
     "/media/hd/MIDEIND/data/models/icebert_ner/ner_slset",

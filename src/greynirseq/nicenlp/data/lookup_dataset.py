@@ -2,8 +2,8 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from fairseq.data import BaseWrapperDataset
 import torch
+from fairseq.data import BaseWrapperDataset
 
 
 class LookupDataset(BaseWrapperDataset):

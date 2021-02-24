@@ -1,8 +1,22 @@
 import os
 import re
-import torch
-import numpy as np
 import time
+
+import numpy as np
+import torch
+from fairseq.models.roberta import RobertaHubInterface, RobertaModel
+from fairseq.models.transformer import TransformerModel
+from flask import Flask, escape, request
+from flask_cors import CORS, cross_origin
+
+import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
+from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
+from greynirseq.nicenlp.data.datasets import *
+from greynirseq.nicenlp.models.multi_span_model import *
+from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
+from greynirseq.nicenlp.tasks.translation_with_backtranslation import *
+from greynirseq.nicenlp.utils.greynir.greynir_utils import Node
+from greynirseq.utils.tokenize_splitter import index_text
 
 try:
     from icecream import ic
@@ -11,17 +25,8 @@ try:
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
-from greynirseq.nicenlp.data.datasets import *
-from greynirseq.nicenlp.models.multi_span_model import *
-from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
-from greynirseq.nicenlp.tasks.translation_with_backtranslation import *
-from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
 
-from greynirseq.nicenlp.utils.greynir.greynir_utils import Node
-import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
 
-from fairseq.models.roberta import RobertaModel, RobertaHubInterface
-from fairseq.models.transformer import TransformerModel
 
 
 class IceBERTRunner:
@@ -147,8 +152,6 @@ class TranslationRunnerIsEn(TranslationRunner):
         self.model.eval()
 
 
-from flask import Flask, escape, request
-from flask_cors import CORS, cross_origin
 
 application = Flask(__name__)
 cors = CORS(application)
@@ -172,7 +175,6 @@ def ner():
     return {"ok": True, "text": text, "labels": labels, "sentence": sentence}
 
 
-from greynirseq.utils.tokenize_splitter import index_text
 
 
 @application.route("/translate", methods=["POST"])

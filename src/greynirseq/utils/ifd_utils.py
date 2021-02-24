@@ -4,8 +4,9 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import enum
-import numpy as np
 import itertools
+
+import numpy as np
 
 GENDER = list(range(4))
 PER = list(range(4, 7))

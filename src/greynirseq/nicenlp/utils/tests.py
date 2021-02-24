@@ -5,7 +5,7 @@ import torch
 from greynirseq.nicenlp.utils.logits_filter import (
     filter_max_logits,
     max_tensor_by_bins,
-    word_classes_to_mask,
+    word_classes_to_mask
 )
 
 

@@ -1,17 +1,19 @@
 """Align NER tags (with enumeration) in a parallel corpus."""
 from __future__ import annotations
+
 import argparse
 import copy
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Generator, Iterable, List, Optional, Tuple
+
 import spacy
 import tqdm
-
-from collections import defaultdict
-from pyjarowinkler import distance
 from scipy.optimize import linear_sum_assignment
 from spacy.gold import offsets_from_biluo_tags
+
+from pyjarowinkler import distance
 
 nlp = spacy.load("en_core_web_lg")
 

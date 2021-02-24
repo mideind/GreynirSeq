@@ -2,11 +2,11 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from pathlib import Path
+import json
 import sys
+from pathlib import Path
 
 from tokenizers import ByteLevelBPETokenizer
-import json
 
 
 def main(args):

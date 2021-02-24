@@ -2,26 +2,27 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from typing import List, Union, Dict, Any
 import itertools
 import math
 import time
 from collections import namedtuple
-
-from fairseq.criterions import FairseqCriterion, register_criterion
-from fairseq import utils
-from fairseq.data import Dictionary
-from fairseq.models import FairseqModel
+from typing import Any, Dict, List, Union
 
 import torch
 import torch.nn.functional as F
-from torch import Tensor, LongTensor
+from fairseq import utils
+from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.data import Dictionary
+from fairseq.models import FairseqModel
+from torch import LongTensor, Tensor
 
 import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser
-import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
+import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
+from greynirseq.nicenlp.utils.label_schema.label_schema import (
+    make_dict_idx_to_vec_idx
+)
 from greynirseq.types import Numeric
-from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
 
 
 def gen_2d_diags(chart_width: Union[int, LongTensor]):

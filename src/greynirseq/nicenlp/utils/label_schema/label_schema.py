@@ -1,9 +1,9 @@
-from collections import namedtuple
 import json
+from collections import namedtuple
 
-from fairseq.data import Dictionary
 import torch
 import torch.nn.functional as F
+from fairseq.data import Dictionary
 
 
 def parse_label_schema(path):

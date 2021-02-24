@@ -4,10 +4,9 @@
 
 from collections import OrderedDict
 
+import torch
 from fairseq.data import BaseWrapperDataset, NestedDictionaryDataset
 from fairseq.data.nested_dictionary_dataset import _unflatten
-
-import torch
 from torch.utils.data.dataloader import default_collate
 
 

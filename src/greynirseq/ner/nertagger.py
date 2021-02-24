@@ -1,20 +1,22 @@
 import argparse
 import time
 
-import torch
 import numpy as np
+import spacy
+import torch
 import tqdm
+from spacy.gold import biluo_tags_from_offsets
+from transformers import (
+    AutoModelForTokenClassification,
+    AutoTokenizer,
+    pipeline
+)
 
+from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
 from greynirseq.nicenlp.data.datasets import *
 from greynirseq.nicenlp.models.multi_span_model import *
 from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
-from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
 from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
-
-from transformers import AutoModelForTokenClassification, AutoTokenizer
-from transformers import pipeline
-import spacy
-from spacy.gold import biluo_tags_from_offsets
 
 
 def icelandic_ner(input_file, tagged_file):

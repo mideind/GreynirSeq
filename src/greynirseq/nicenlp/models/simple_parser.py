@@ -1,41 +1,40 @@
 import itertools
 import logging
 
-
 import torch
-from torch import nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
-
 from fairseq import utils
-from fairseq.models.roberta.model import base_architecture, RobertaModel
-from fairseq.models.roberta.hub_interface import RobertaHubInterface
-from fairseq.models import register_model, register_model_architecture
-from fairseq.modules import LayerNorm
 from fairseq.data import (
-    RightPadDataset,
     BaseWrapperDataset,
     NestedDictionaryDataset,
     NumelDataset,
+    RightPadDataset
 )
-from fairseq.models.roberta.model import RobertaEncoder
-
-from greynirseq.nicenlp.data.datasets import (
-    WordEndMaskDataset,
-    LabelledSpanDataset,
-    ProductSpanDataset,
-    NumSpanDataset,
-    NestedDictionaryDatasetFix,
-    NestedDictionaryDatasetFix2,
+from fairseq.models import register_model, register_model_architecture
+from fairseq.models.roberta.hub_interface import RobertaHubInterface
+from fairseq.models.roberta.model import (
+    RobertaEncoder,
+    RobertaModel,
+    base_architecture
 )
-
-from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
-
-from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
-import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
+from fairseq.modules import LayerNorm
+from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 
 import greynirseq.nicenlp.chart_parser as chart_parser
-
+import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
+from greynirseq.nicenlp.data.datasets import (
+    LabelledSpanDataset,
+    NestedDictionaryDatasetFix,
+    NestedDictionaryDatasetFix2,
+    NumSpanDataset,
+    ProductSpanDataset,
+    WordEndMaskDataset
+)
+from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
+from greynirseq.nicenlp.utils.label_schema.label_schema import (
+    make_vec_idx_to_dict_idx
+)
 
 logger = logging.getLogger(__name__)
 
