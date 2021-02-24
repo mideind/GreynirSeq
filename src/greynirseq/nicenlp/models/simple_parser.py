@@ -8,15 +8,11 @@ from fairseq.data import (
     BaseWrapperDataset,
     NestedDictionaryDataset,
     NumelDataset,
-    RightPadDataset
+    RightPadDataset,
 )
 from fairseq.models import register_model, register_model_architecture
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
-from fairseq.models.roberta.model import (
-    RobertaEncoder,
-    RobertaModel,
-    base_architecture
-)
+from fairseq.models.roberta.model import RobertaEncoder, RobertaModel, base_architecture
 from fairseq.modules import LayerNorm
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
@@ -29,12 +25,10 @@ from greynirseq.nicenlp.data.datasets import (
     NestedDictionaryDatasetFix2,
     NumSpanDataset,
     ProductSpanDataset,
-    WordEndMaskDataset
+    WordEndMaskDataset,
 )
 from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    make_vec_idx_to_dict_idx
-)
+from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
 
 logger = logging.getLogger(__name__)
 

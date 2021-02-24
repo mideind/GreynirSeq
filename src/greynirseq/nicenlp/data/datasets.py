@@ -12,7 +12,7 @@ from fairseq.data import (
     Dictionary,
     LRUCacheDataset,
     NestedDictionaryDataset,
-    data_utils
+    data_utils,
 )
 from fairseq.data.nested_dictionary_dataset import _unflatten
 from torch import LongTensor, Tensor

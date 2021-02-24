@@ -6,11 +6,7 @@ import spacy
 import torch
 import tqdm
 from spacy.gold import biluo_tags_from_offsets
-from transformers import (
-    AutoModelForTokenClassification,
-    AutoTokenizer,
-    pipeline
-)
+from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
 
 from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
 from greynirseq.nicenlp.data.datasets import *

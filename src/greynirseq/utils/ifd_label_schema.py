@@ -260,7 +260,9 @@ def ifd_label_schema():
 
 
 if __name__ == "__main__":
-    import argparse, json, sys
+    import argparse
+    import json
+    import sys
     from pathlib import Path
 
     try:

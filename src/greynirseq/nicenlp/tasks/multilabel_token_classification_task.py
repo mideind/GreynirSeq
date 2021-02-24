@@ -21,7 +21,7 @@ from fairseq.data import (
     SortDataset,
     TruncateDataset,
     data_utils,
-    encoders
+    encoders,
 )
 from fairseq.tasks import FairseqTask, register_task
 
@@ -31,7 +31,7 @@ from greynirseq.nicenlp.data.datasets import (
     NumWordsDataset,
     POSDataset,
     RightPad2dDataset,
-    WordEndMaskDataset
+    WordEndMaskDataset,
 )
 from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
@@ -40,7 +40,7 @@ from greynirseq.nicenlp.utils.label_schema.label_schema import (
     make_group_masks,
     make_group_name_to_group_attr_vec_idxs,
     make_vec_idx_to_dict_idx,
-    parse_label_schema
+    parse_label_schema,
 )
 
 logger = logging.getLogger(__name__)
@@ -246,8 +246,11 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
     def encode(self, sentence: str):
         # TODO remove or refactor
-        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
         from argparse import Namespace
+
+        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import (
+            MultiprocessingEncoder,
+        )
 
         enc = MultiprocessingEncoder(
             Namespace(
@@ -260,8 +263,11 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
     def decode(self, src_tokens):
         # TODO remove or refactor
-        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
         from argparse import Namespace
+
+        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import (
+            MultiprocessingEncoder,
+        )
 
         enc = MultiprocessingEncoder(
             Namespace(

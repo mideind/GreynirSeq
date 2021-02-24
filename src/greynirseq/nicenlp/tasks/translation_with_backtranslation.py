@@ -27,7 +27,7 @@ from fairseq.data import (
     TruncateDataset,
     data_utils,
     encoders,
-    indexed_dataset
+    indexed_dataset,
 )
 from fairseq.data.encoders.utils import get_whole_word_mask
 from fairseq.data.noising import (
@@ -35,7 +35,7 @@ from fairseq.data.noising import (
     UnsupervisedMTNoising,
     WordDropout,
     WordNoising,
-    WordShuffle
+    WordShuffle,
 )
 from fairseq.tasks import FairseqTask, register_task
 from fairseq.tasks.translation import TranslationTask, load_langpair_dataset

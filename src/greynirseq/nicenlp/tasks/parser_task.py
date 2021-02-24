@@ -23,7 +23,7 @@ from fairseq.data import (
     SortDataset,
     TruncateDataset,
     data_utils,
-    encoders
+    encoders,
 )
 from fairseq.tasks import FairseqTask, register_task
 
@@ -32,12 +32,12 @@ from greynirseq.nicenlp.data.datasets import (
     DynamicLabelledSpanDataset,
     NestedDictionaryDatasetFix,
     NumWordsDataset,
-    WordEndMaskDataset
+    WordEndMaskDataset,
 )
 from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
     label_schema_as_dictionary,
-    parse_label_schema
+    parse_label_schema,
 )
 
 logger = logging.getLogger(__name__)

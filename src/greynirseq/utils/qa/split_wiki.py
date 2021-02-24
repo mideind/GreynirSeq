@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 from collections import namedtuple
+
 # TOOD: use actual mp
 from multiprocessing.dummy import Pool
 from typing import Generator, List, NamedTuple

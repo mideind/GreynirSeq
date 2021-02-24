@@ -19,9 +19,7 @@ from torch import LongTensor, Tensor
 import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    make_dict_idx_to_vec_idx
-)
+from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
 from greynirseq.types import Numeric
 
 

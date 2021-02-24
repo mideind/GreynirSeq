@@ -20,7 +20,7 @@ from fairseq.data import (
     SortDataset,
     TruncateDataset,
     data_utils,
-    encoders
+    encoders,
 )
 from fairseq.tasks import FairseqTask, register_task
 from fairseq.tasks.sentence_prediction import SentencePredictionTask
@@ -32,13 +32,13 @@ from greynirseq.nicenlp.data.datasets import (
     NumSpanDataset,
     NumWordsDataset,
     ProductSpanDataset,
-    WordSpanDataset
+    WordSpanDataset,
 )
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
     label_schema_as_dictionary,
     make_group_masks,
     make_vec_idx_to_dict_idx,
-    parse_label_schema
+    parse_label_schema,
 )
 
 logger = logging.getLogger(__name__)

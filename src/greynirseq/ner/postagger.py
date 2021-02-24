@@ -10,7 +10,7 @@ from greynirseq.ner.aligner import (
     NERMarkerIdx,
     NERParser,
     NERSentenceParse,
-    PairInfo
+    PairInfo,
 )
 from greynirseq.nicenlp.models.multilabel import MutliLabelRobertaModel
 from greynirseq.settings import IceBERT_POS_CONFIG, IceBERT_POS_PATH

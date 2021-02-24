@@ -1,7 +1,7 @@
 from greynirseq.ner.patcher import (
-    parse_sentence,
-    idf2kasus,
     decline_np,
+    idf2kasus,
+    parse_sentence,
     parse_sentence_pair,
 )
 

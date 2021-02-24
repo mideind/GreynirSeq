@@ -10,10 +10,9 @@ from typing import Generator, Iterable, List, Optional, Tuple
 
 import spacy
 import tqdm
+from pyjarowinkler import distance
 from scipy.optimize import linear_sum_assignment
 from spacy.gold import offsets_from_biluo_tags
-
-from pyjarowinkler import distance
 
 nlp = spacy.load("en_core_web_lg")
 

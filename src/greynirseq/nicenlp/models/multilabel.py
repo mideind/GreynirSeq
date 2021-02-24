@@ -15,16 +15,14 @@ from fairseq.models.roberta.model import (
     RobertaModel,
     base_architecture,
     roberta_base_architecture,
-    roberta_large_architecture
+    roberta_large_architecture,
 )
 from fairseq.modules import LayerNorm
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
 from greynirseq.nicenlp.utils.constituency import token_utils
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    make_vec_idx_to_dict_idx
-)
+from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
 
 logger = logging.getLogger(__name__)
 
