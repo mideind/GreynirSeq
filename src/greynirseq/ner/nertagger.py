@@ -55,7 +55,7 @@ def english_ner(input_file, output_file):
 
         tokens = []
         for range in ranges:
-            tokens.append(sent[range[0] : range[1]])
+            tokens.append(sent[range[0] : range[1]])  # noqa
 
         entlocs = [(a["start"], a["end"], a["label"]) for a in ents]
         labels = biluo_tags_from_offsets(doc, entlocs)

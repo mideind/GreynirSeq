@@ -266,10 +266,7 @@ class NumWordsDataset(BaseWrapperDataset):
         self.start_offset = 1 if dataset[0][0] == self.dictionary.bos() else 0
 
     def __getitem__(self, index: int):
-        word_starts = [
-            self.is_word_initial.get(int(v), 1)
-            for v in self.dataset[index][self.start_offset : -1]  # noqa
-        ]
+        word_starts = [self.is_word_initial.get(int(v), 1) for v in self.dataset[index][self.start_offset : -1]]  # noqa
 
         # LEGACY hack
         # try:
