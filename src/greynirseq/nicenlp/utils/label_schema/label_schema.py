@@ -18,7 +18,7 @@ def parse_label_schema(path):
             "group_names",
             "null",
             "null_leaf",
-            "ignore_categories"
+            "ignore_categories",
         ],
     )
     with open(path, "r") as fp:
@@ -39,9 +39,7 @@ def label_schema_as_dictionary(label_schema):
 
 
 def make_vec_idx_to_dict_idx(dictionary, labels, device="cpu", fill_value=-100):
-    vec_idx_to_dict_idx = torch.full(
-        (len(dictionary),), device=device, fill_value=fill_value, dtype=torch.long
-    )
+    vec_idx_to_dict_idx = torch.full((len(dictionary),), device=device, fill_value=fill_value, dtype=torch.long)
     for vec_idx, label in enumerate(labels):
         vec_idx_to_dict_idx[vec_idx] = dictionary.index(label)
     return vec_idx_to_dict_idx
@@ -69,19 +67,14 @@ def make_group_name_to_group_attr_vec_idxs(dict_, schema):
     group_names = schema.group_name_to_labels.keys()
     name_to_labels = schema.group_name_to_labels
     group_name_to_group_attr_vec_idxs = {
-        name: torch.tensor(
-            [dict_.index(item) - offset for item in name_to_labels[name]]
-        )
-        for name in group_names
+        name: torch.tensor([dict_.index(item) - offset for item in name_to_labels[name]]) for name in group_names
     }
     return group_name_to_group_attr_vec_idxs
 
 
 def make_dict_idx_to_vec_idx(dictionary, cats, device="cpu", fill_value=-100):
     # NOTE: when target is not in label_categories, the error is silent
-    map_tgt = torch.full(
-        (len(dictionary),), device=device, fill_value=fill_value, dtype=torch.long
-    )
+    map_tgt = torch.full((len(dictionary),), device=device, fill_value=fill_value, dtype=torch.long)
     for vec_idx, label in enumerate(cats):
         map_tgt[dictionary.index(label)] = vec_idx
     return map_tgt

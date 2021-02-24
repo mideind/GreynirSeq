@@ -43,7 +43,7 @@ class LinearSampler:
 
     def __call__(self, keys):
         current_weights = {}
-        t = (self.num_updates - self.start_step)/((self.end_step - self.start_step) or 1)
+        t = (self.num_updates - self.start_step) / ((self.end_step - self.start_step) or 1)
         for key in self.start_map:
             start_val, end_val = self.start_map[key], self.end_map[key]
             if self.num_updates <= self.start_step:
@@ -65,7 +65,9 @@ def make_sampling_fn(weight_map, seed=1):
     }
     rng = np.random.RandomState(seed)
     total = sum(weight_map.values())
+
     def sampling_fn(keys):
-        distribution = [weight_map[key]/total for key in keys]
+        distribution = [weight_map[key] / total for key in keys]
         return rng.choice(keys, p=distribution)
+
     return sampling_fn

@@ -2,9 +2,7 @@ class EvalNER:
     EMPTY_SPAN = ["", 0, 0]
 
     def __init__(self, model, ignore=["O", "<sep>"]):
-        self.labels = [
-            lbl[2:] for lbl in model.task.label_schema.labels if lbl not in ignore
-        ]
+        self.labels = [lbl[2:] for lbl in model.task.label_schema.labels if lbl not in ignore]
         self.true_positive = {lbl: 0 for lbl in self.labels}
         self.false_positive = {lbl: 0 for lbl in self.labels}
         self.true_negative = {lbl: 0 for lbl in self.labels}
@@ -70,18 +68,11 @@ class EvalNER:
         print("")
         print(
             tbl_num_string.format(
-                "All",
-                self.precision(set(self.labels)),
-                self.recall(set(self.labels)),
-                self.f1(set(self.labels)),
+                "All", self.precision(set(self.labels)), self.recall(set(self.labels)), self.f1(set(self.labels)),
             )
         )
         for lbl in set(self.labels):
-            print(
-                tbl_num_string.format(
-                    lbl, self.precision([lbl]), self.recall([lbl]), self.f1([lbl])
-                )
-            )
+            print(tbl_num_string.format(lbl, self.precision([lbl]), self.recall([lbl]), self.f1([lbl])))
 
     def print_bool_evals(self):
         tbl_string = "{:>13}   {:>10}    {:>10}    {:>10}    {:>10}"
@@ -93,13 +84,7 @@ class EvalNER:
         sum_true_negative = sum(self.true_negative[lbl] for lbl in labels)
         sum_false_negative = sum(self.false_negative[lbl] for lbl in labels)
         print(
-            tbl_num_string.format(
-                "All",
-                sum_true_positive,
-                sum_false_positive,
-                sum_true_negative,
-                sum_false_negative,
-            )
+            tbl_num_string.format("All", sum_true_positive, sum_false_positive, sum_true_negative, sum_false_negative,)
         )
         for lbl in set(self.labels):
             print(
@@ -121,9 +106,7 @@ class EvalNER:
 
         for lbl in set(self.labels):
             pred_lbl_spans = set([tuple(span) for span in pred_spans if span[0] == lbl])
-            target_lbl_spans = set(
-                [tuple(span) for span in target_spans if span[0] == lbl]
-            )
+            target_lbl_spans = set([tuple(span) for span in target_spans if span[0] == lbl])
 
             true_positive = len(pred_lbl_spans.intersection(target_lbl_spans))
             false_positive = len(pred_lbl_spans.difference(target_lbl_spans))

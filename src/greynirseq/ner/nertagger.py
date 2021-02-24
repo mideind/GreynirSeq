@@ -37,9 +37,9 @@ def english_ner(input_file, output_file):
     nlp = spacy.load("en_core_web_lg")
     hnlp = pipeline("ner")
 
-    model = AutoModelForTokenClassification.from_pretrained(
-        "dbmdz/bert-large-cased-finetuned-conll03-english"
-    ).to("cuda")
+    model = AutoModelForTokenClassification.from_pretrained("dbmdz/bert-large-cased-finetuned-conll03-english").to(
+        "cuda"
+    )
     tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
     label_list = [
         "O",  # Outside of a named entity
@@ -75,10 +75,9 @@ def english_ner(input_file, output_file):
         inputs = tokenizer.encode(sequence, return_tensors="pt").to("cuda")
         outputs = model(inputs)[0]
         predictions = torch.argmax(outputs, dim=2)
-        bert_tokens = [
-            (token, label_list[prediction])
-            for token, prediction in zip(tokens, predictions[0].tolist())
-        ][1:-1]
+        bert_tokens = [(token, label_list[prediction]) for token, prediction in zip(tokens, predictions[0].tolist())][
+            1:-1
+        ]
         tokens = " ".join([t[0] for t in bert_tokens]).replace(" ##", "").split(" ")
         labels = [t[1] for t in bert_tokens if len(t[0]) < 2 or t[0][:2] != "##"]
         return tokens, labels
@@ -93,9 +92,7 @@ def english_ner(input_file, output_file):
             else:
                 using = "sp"
                 tokens, ents = spacy_tok_ner(source)
-            ofile.writelines(
-                "{}\t{}\t{}\n".format(" ".join(tokens), " ".join(ents), using)
-            )
+            ofile.writelines("{}\t{}\t{}\n".format(" ".join(tokens), " ".join(ents), using))
 
 
 def main():

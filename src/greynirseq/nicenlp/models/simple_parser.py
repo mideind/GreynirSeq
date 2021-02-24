@@ -105,9 +105,7 @@ class SimpleParserModel(RobertaModel):
 
         self.task = task
         self.task_head = ChartParserHead(
-            sentence_encoder.embedding_dim,
-            self.task.num_nterm_cats,
-            self.args.pooler_dropout,
+            sentence_encoder.embedding_dim, self.task.num_nterm_cats, self.args.pooler_dropout,
         )
 
     @staticmethod
@@ -134,12 +132,8 @@ class SimpleParserModel(RobertaModel):
         encoder = RobertaEncoder(args, task.source_dictionary)
         return cls(args, encoder, task)
 
-    def forward(
-        self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs
-    ):
-        x, _extra = self.decoder(
-            src_tokens, features_only, return_all_hiddens=True, **kwargs
-        )
+    def forward(self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs):
+        x, _extra = self.decoder(src_tokens, features_only, return_all_hiddens=True, **kwargs)
         x = x.transpose(0, 1)
         _, _, nchannels = x.shape
         mask = kwargs["word_mask_w_bos"]
@@ -148,9 +142,7 @@ class SimpleParserModel(RobertaModel):
         nwords_w_bos = kwargs["word_mask_w_bos"].sum(-1)
 
         words_w_bos_padded = pad_sequence(
-            words_w_bos.softmax(-1).split((nwords_w_bos).tolist()),
-            padding_value=0,
-            batch_first=True,
+            words_w_bos.softmax(-1).split((nwords_w_bos).tolist()), padding_value=0, batch_first=True,
         )
 
         span_features = self.task_head(words_w_bos_padded)
@@ -170,12 +162,7 @@ class SimpleParserModel(RobertaModel):
 
     @classmethod
     def from_pretrained(
-        cls,
-        model_name_or_path,
-        checkpoint_file="model.pt",
-        data_name_or_path=".",
-        bpe="gpt2",
-        **kwargs,
+        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs,
     ):
         from fairseq import hub_utils
 
@@ -200,32 +187,20 @@ class SimpleParserHubInterface(RobertaHubInterface):
         word_mask_w_bos = sample["net_input"]["word_mask_w_bos"]
 
         # get roberta features
-        x, _extra = self.model.decoder(
-            tokens, features_only=True, return_all_hiddens=False
-        )
+        x, _extra = self.model.decoder(tokens, features_only=True, return_all_hiddens=False)
 
         # use first bpe token of each "word" as contextual word vectors
-        words_w_bos = x.masked_select(word_mask_w_bos.unsqueeze(-1).bool()).reshape(
-            -1, self.in_features
-        )
+        words_w_bos = x.masked_select(word_mask_w_bos.unsqueeze(-1).bool()).reshape(-1, self.in_features)
 
         parser_input_features = words_w_bos
 
-        span_features = self.model.classification_heads["chart_parser_head"](
-            parser_input_features
-        )
-        _tree_scores, lspans, _mask, _lmask = chart_parser.parse_many(
-            span_features.cpu().detach(), nwords.cpu()
-        )
+        span_features = self.model.classification_heads["chart_parser_head"](parser_input_features)
+        _tree_scores, lspans, _mask, _lmask = chart_parser.parse_many(span_features.cpu().detach(), nwords.cpu())
 
-        cat_vec_idx_to_dict_idx = make_vec_idx_to_dict_idx(
-            self.task.nterm_dictionary, self.task.nterm_schema.labels
-        )
+        cat_vec_idx_to_dict_idx = make_vec_idx_to_dict_idx(self.task.nterm_dictionary, self.task.nterm_schema.labels)
 
         span_labels = [
-            self.task.nterm_dictionary.string(
-                cat_vec_idx_to_dict_idx[seq_lspans[:, 2].long()]
-            ).split(" ")
+            self.task.nterm_dictionary.string(cat_vec_idx_to_dict_idx[seq_lspans[:, 2].long()]).split(" ")
             for seq_lspans in lspans
         ]
 

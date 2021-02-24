@@ -42,10 +42,7 @@ class IceBERTRunner:
 
 class RoBERTaRunner:
     def __init__(self):
-        self.model = RobertaModel.from_pretrained(
-            "/data/models/roberta.large",
-            checkpoint_file="model.pt",
-        )
+        self.model = RobertaModel.from_pretrained("/data/models/roberta.large", checkpoint_file="model.pt",)
         self.model.to("cpu")
         self.model.eval()
 
@@ -74,7 +71,7 @@ class NERRunner:
 class TranslationRunner:
 
     add_bos = False
-    
+
     def __init__(self):
 
         self.model = TransformerModel.from_pretrained(
@@ -88,7 +85,7 @@ class TranslationRunner:
             bpe="gpt2",
             beam=5,
             len_penalty=0.6,
-            task="translation_with_backtranslation"
+            task="translation_with_backtranslation",
         )
 
         self.model.to("cpu")
@@ -101,7 +98,7 @@ class TranslationRunner:
             return self.infer([sentences], [prefixes])
 
         bos_idx_tensor = torch.tensor([self.model.task.src_dict.bos()])
-        
+
         prefix_args = {}
         if prefixes is not None:
             # prefix = self.model.encode(prefixes)[:-1].unsqueeze(0)
@@ -120,9 +117,7 @@ class TranslationRunner:
             tokenized_sentences = [torch.cat([bos_idx_tensor, self.model.encode(sentence)]) for sentence in sentences]
         else:
             tokenized_sentences = [self.model.encode(" " + sentence) for sentence in sentences]
-        batched_hypos = self.model.generate(
-            tokenized_sentences, 10, inference_step_args=prefix_args
-        )
+        batched_hypos = self.model.generate(tokenized_sentences, 10, inference_step_args=prefix_args)
         hypos = []
         for s_hypos in batched_hypos:
             hypos.append([self.model.decode(hypo["tokens"]) for hypo in s_hypos])
@@ -131,7 +126,7 @@ class TranslationRunner:
 
 class TranslationRunnerIsEn(TranslationRunner):
     add_bos = True
-    
+
     def __init__(self):
 
         self.model = TransformerModel.from_pretrained(
@@ -145,7 +140,7 @@ class TranslationRunnerIsEn(TranslationRunner):
             bpe="gpt2",
             beam=5,
             len_penalty=0.6,
-            task="translation_with_backtranslation"
+            task="translation_with_backtranslation",
         )
 
         self.model.to("cpu")
@@ -192,8 +187,8 @@ def translate():
 
     batched = [pair for pair in zip(sentences, prefixes)]
 
-    src_lang = request.json.get('sourceLanguageCode', 'en')
-    if src_lang == 'en':
+    src_lang = request.json.get("sourceLanguageCode", "en")
+    if src_lang == "en":
         translation_hypos = [translation_runner.infer(pair[0], pair[1]) for pair in batched]
     else:
         translation_hypos = [translation_runner_isen.infer(pair[0], pair[1]) for pair in batched]

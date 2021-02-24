@@ -39,23 +39,16 @@ batch_size = 1
 
 for dataset_offset in np.random.randint(0, dataset_size, 100):
     start = time.time()
-    sample = dataset.collater(
-        [dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)]
-    )
+    sample = dataset.collater([dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)])
     ntokens = sample["net_input"]["nsrc_tokens"]
     tokens = [tokens for tokens in sample["net_input"]["src_tokens"]]
-    sentences = [
-        model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)
-    ]
+    sentences = [model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)]
 
     seq_idx = 0
     ntargets = sample["ntargets"][seq_idx]
     targets = sample["targets"][seq_idx]
     target_spans = sample["target_spans"][seq_idx, : 2 * ntargets].reshape(-1, 2)
-    labelled_constituents = [
-        (ii, jj, target)
-        for ((ii, jj), target) in zip(target_spans.tolist(), targets.tolist())
-    ]
+    labelled_constituents = [(ii, jj, target) for ((ii, jj), target) in zip(target_spans.tolist(), targets.tolist())]
     # should already be pre-sorted, but just in case
     labelled_constituents = sorted(labelled_constituents, key=lambda x: (x[0], -x[0]))
     seq_spans = [(it[0], it[1]) for it in labelled_constituents]
@@ -69,9 +62,7 @@ for dataset_offset in np.random.randint(0, dataset_size, 100):
     pred_tree.pretty_print()
     pred_roof = pred_tree.roof()
 
-    gold_tree = Node.from_labelled_spans(
-        seq_spans, seq_labels, tokenize(sentences[seq_idx])
-    )
+    gold_tree = Node.from_labelled_spans(seq_spans, seq_labels, tokenize(sentences[seq_idx]))
     gold_tree = gold_tree.debinarize()
     ic(dataset_name)
     gold_tree.pretty_print()
@@ -80,10 +71,7 @@ for dataset_offset in np.random.randint(0, dataset_size, 100):
     seq_ii, seq_jj = zip(*seq_spans)
     ncorr = (
         (
-            (
-                presult.masked_lchart[seq_ii, seq_jj]
-                == (torch.tensor(seq_label_idxs) - lbl_shift)
-            )
+            (presult.masked_lchart[seq_ii, seq_jj] == (torch.tensor(seq_label_idxs) - lbl_shift))
             * presult.masked_lchart[seq_ii, seq_jj].gt(1)
         )
         .sum()
@@ -98,9 +86,7 @@ for dataset_offset in np.random.randint(0, dataset_size, 100):
     ic((ncorr, npred, ngold), (prec, recall, f1))
     gold_pred_tree_dist = int(tree_dist.tree_dist(gold_tree, pred_tree, None))
     gold_pred_roof_dist = int(tree_dist.tree_dist(gold_roof, pred_roof, None))
-    unif_gold_pred_dist = int(
-        tree_dist.tree_dist(gold_roof.uniform(), pred_roof.uniform(), None)
-    )
+    unif_gold_pred_dist = int(tree_dist.tree_dist(gold_roof.uniform(), pred_roof.uniform(), None))
     ic(gold_pred_roof_dist)
     ic(unif_gold_pred_dist)
 

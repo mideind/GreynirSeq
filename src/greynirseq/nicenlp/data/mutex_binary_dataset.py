@@ -12,9 +12,7 @@ from torch.utils.data.dataloader import default_collate
 
 
 class MutexBinaryDataset(BaseWrapperDataset):
-    def __init__(
-        self, dataset, default=1, num_mutex_classes=34, skip_n=5, separator=-1
-    ):
+    def __init__(self, dataset, default=1, num_mutex_classes=34, skip_n=5, separator=-1):
         super().__init__(dataset)
         self.default = default
         self.num_mutex_classes = num_mutex_classes

@@ -6,9 +6,7 @@ from greynirseq.utils.ifd_utils import ifd2labels
 
 
 def load_file(
-    input,
-    output_folder,
-    prefix,
+    input, output_folder, prefix,
 ):
     o_d = open("{}/{}.input0".format(output_folder, prefix), "w")
     o_l = open("{}/{}.label0".format(output_folder, prefix), "w")
@@ -21,9 +19,7 @@ def load_file(
             if inp is not None:
                 o_d.writelines("{}\n".format(" ".join(inp)))
             if lab is not None:
-                o_l.writelines(
-                    "{}\n".format(" <SEP> ".join([" ".join(slab) for slab in lab]))
-                )
+                o_l.writelines("{}\n".format(" <SEP> ".join([" ".join(slab) for slab in lab])))
             inp = []
             lab = []
             while line and line != "\n":

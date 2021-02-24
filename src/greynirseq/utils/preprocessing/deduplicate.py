@@ -9,9 +9,7 @@ from tokenizers import ByteLevelBPETokenizer
 
 
 class Corpus:
-    def __init__(
-        self, files, max_lines, min_lines, max_bpe_length, merge_file, vocab_file
-    ):
+    def __init__(self, files, max_lines, min_lines, max_bpe_length, merge_file, vocab_file):
         self.files = files
         self.pg_hashes = set()
         self.line_hashes = {i: set() for i in range(min_lines, max_lines + 1)}
@@ -113,12 +111,7 @@ def main():
     args = parser.parse_args()
 
     corpus = Corpus(
-        args.files,
-        args.max_sentences,
-        args.min_sentences,
-        args.max_bpe_length,
-        args.bpe_merges,
-        args.bpe_vocab,
+        args.files, args.max_sentences, args.min_sentences, args.max_bpe_length, args.bpe_merges, args.bpe_vocab,
     )
     corpus.deduplicate(args.output)
 

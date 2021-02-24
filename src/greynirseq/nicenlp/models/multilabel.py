@@ -11,7 +11,12 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 
 from fairseq import utils
-from fairseq.models.roberta.model import base_architecture, roberta_base_architecture, roberta_large_architecture, RobertaModel
+from fairseq.models.roberta.model import (
+    base_architecture,
+    roberta_base_architecture,
+    roberta_large_architecture,
+    RobertaModel,
+)
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import RobertaEncoder
 from fairseq.models import register_model, register_model_architecture
@@ -106,20 +111,16 @@ class MutliLabelRobertaModel(RobertaModel):
         encoder = RobertaEncoder(args, task.source_dictionary)
         return cls(args, encoder, task)
 
-    def forward(
-        self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs
-    ):
-        x, _extra = self.encoder(
-            src_tokens, features_only, return_all_hiddens=True, **kwargs
-        ) 
+    def forward(self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs):
+        x, _extra = self.encoder(src_tokens, features_only, return_all_hiddens=True, **kwargs)
 
         _, _, inner_dim = x.shape
         word_mask = kwargs["word_mask"]
 
         # use first bpe token of word as representation
-        x = x[:,1:-1]
-        starts = word_mask[:,1:-1]  # remove bos, eos
-        ends = starts.roll(-1,dims=[-1]).nonzero()[:,-1] + 1
+        x = x[:, 1:-1]
+        starts = word_mask[:, 1:-1]  # remove bos, eos
+        ends = starts.roll(-1, dims=[-1]).nonzero()[:, -1] + 1
         starts = starts.nonzero().tolist()
         mean_words = []
         for (seq_idx, token_idx), end in zip(starts, ends):
@@ -131,24 +132,13 @@ class MutliLabelRobertaModel(RobertaModel):
         (cat_logits, attr_logits) = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
-        cat_logits = pad_sequence(
-            cat_logits.split((nwords).tolist()), padding_value=0, batch_first=True
-        )
-        attr_logits = pad_sequence(
-            attr_logits.split((nwords).tolist()),
-            padding_value=0,
-            batch_first=True,
-        )
+        cat_logits = pad_sequence(cat_logits.split((nwords).tolist()), padding_value=0, batch_first=True)
+        attr_logits = pad_sequence(attr_logits.split((nwords).tolist()), padding_value=0, batch_first=True,)
         return (cat_logits, attr_logits), _extra
 
     @classmethod
     def from_pretrained(
-        cls,
-        model_name_or_path,
-        checkpoint_file="model.pt",
-        data_name_or_path=".",
-        bpe="gpt2",
-        **kwargs,
+        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs,
     ):
         from fairseq import hub_utils
 
@@ -174,7 +164,7 @@ class MutliLabelRobertaModel(RobertaModel):
             if path not in state_dict:
                 state_dict[path] = value
 
-    #def max_decoder_positions(self):
+    # def max_decoder_positions(self):
     #    return 512
 
 
@@ -211,7 +201,7 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
 
     def predict_labels(self, sentence):
         # assert task is set
-      
+
         word_start_dict = self.task.get_word_beginnings(self.args, self.task.dictionary)
 
         tokens = self.encode(sentence)
@@ -221,11 +211,10 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
         word_mask = word_mask.unsqueeze(0)
         tokens = tokens.unsqueeze(0)
         (cat_logits, attr_logits), _extra = self.model(tokens, features_only=True, word_mask=word_mask)
-    
-        labels = self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
-        
-        return labels
 
+        labels = self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
+
+        return labels
 
 
 @register_model_architecture("multilabel_roberta", "multilabel_roberta_base")
@@ -236,5 +225,3 @@ def multilabel_roberta_base_architecture(args):
 @register_model_architecture("multilabel_roberta", "multilabel_roberta_large")
 def multilabel_roberta_large_architecture(args):
     roberta_large_architecture(args)
-
-

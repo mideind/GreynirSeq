@@ -34,9 +34,7 @@ def main(basedir, destdir, train_size=None, valid_size=None, test_size=None):
         with open(path, "r") as fp_in:
             lines = fp_in.readlines()
         for split_name, split_size in splits.items():
-            with open(
-                destdir / ("{0}.{1}.txt".format(split_name, content_type)), "w"
-            ) as fp_out:
+            with open(destdir / ("{0}.{1}.txt".format(split_name, content_type)), "w") as fp_out:
                 out_lines = lines[:split_size]
                 lines = lines[split_size:]
                 fp_out.write("".join(out_lines))
@@ -52,46 +50,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Description")
 
     parser.add_argument(
-        "BASE",
-        type=str,
-        metavar="FILE",
+        "BASE", type=str, metavar="FILE",
     )
     parser.add_argument(
-        "DEST",
-        type=str,
-        metavar="FILE",
+        "DEST", type=str, metavar="FILE",
     )
 
     parser.add_argument(
-        "--train-size",
-        dest="train_size",
-        type=int,
-        required=False,
-        default=sys.maxsize,
-        metavar="NUM",
+        "--train-size", dest="train_size", type=int, required=False, default=sys.maxsize, metavar="NUM",
     )
     parser.add_argument(
-        "--valid-size",
-        dest="valid_size",
-        type=int,
-        required=False,
-        default=10000,
-        metavar="NUM",
+        "--valid-size", dest="valid_size", type=int, required=False, default=10000, metavar="NUM",
     )
     parser.add_argument(
-        "--test-size",
-        dest="test_size",
-        type=int,
-        required=False,
-        default=10000,
-        metavar="NUM",
+        "--test-size", dest="test_size", type=int, required=False, default=10000, metavar="NUM",
     )
 
     args = parser.parse_args()
     main(
-        Path(args.BASE),
-        Path(args.DEST),
-        args.train_size,
-        args.valid_size,
-        args.test_size,
+        Path(args.BASE), Path(args.DEST), args.train_size, args.valid_size, args.test_size,
     )

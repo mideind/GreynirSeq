@@ -14,10 +14,7 @@ class LookupDataset(BaseWrapperDataset):
         self.label_first = label_first
 
     def __getitem__(self, index):
-        indexes = [
-            self.lookup_dictionary.get(int(v), self.default)
-            for v in self.dataset[index]  # [:-1]
-        ]
+        indexes = [self.lookup_dictionary.get(int(v), self.default) for v in self.dataset[index]]  # [:-1]
         if self.label_first:
             indexes[0] = self.default
         return torch.tensor(indexes).int()

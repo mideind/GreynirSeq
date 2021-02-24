@@ -33,18 +33,12 @@ eval_ner = EvalNER(model)
 
 for dataset_offset in range(dataset_size):
     start = time.time()
-    sample = dataset.collater(
-        [dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)]
-    )
+    sample = dataset.collater([dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)])
     ntokens = sample["net_input"]["nsrc_tokens"]
     tokens = [tokens for tokens in sample["net_input"]["src_tokens"]]
-    sentences = [
-        model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)
-    ]
+    sentences = [model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)]
     seq_idx = 0
     target_cats = sample["target_cats"][seq_idx]
-    pred_cats, labels, tokenized = model.predict_sample_pos(
-        sample, sentences, device="cpu"
-    )
+    pred_cats, labels, tokenized = model.predict_sample_pos(sample, sentences, device="cpu")
     eval_ner.compare(pred_cats, target_cats)
     eval_ner.print_all_stats()

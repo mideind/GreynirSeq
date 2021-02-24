@@ -27,14 +27,8 @@ class LemmatizeWiki:
     def write_sentences(self, outfile_name: str, thread_count: int = 16) -> None:
         def parse_batch(article: WikiArticle, lemmatizer: Lemmatizer = self.l) -> List:
             data = []
-            for idx, (lemmas, tokens, sentence) in enumerate(
-                lemmatizer.lemmatize(article.text)
-            ):
-                data.append(
-                    "{}\t{}\t{}\t{}\n".format(
-                        article.title_id, idx, sentence, " ".join(lemmas)
-                    )
-                )
+            for idx, (lemmas, tokens, sentence) in enumerate(lemmatizer.lemmatize(article.text)):
+                data.append("{}\t{}\t{}\t{}\n".format(article.title_id, idx, sentence, " ".join(lemmas)))
             return data
 
         pool = Pool(thread_count)

@@ -85,7 +85,7 @@ CATEGORY_TO_CATEGORY_NAME = {
     "tf": "cardinal num",
     "ta": "date and misc. num",
     "tp": "percentage",
-    "to": "number prec. numeral", # e.g. one third
+    "to": "number prec. numeral",  # e.g. one third
     # verbs+
     "sn": "infinitive",
     "sb": "imperative",
@@ -139,12 +139,12 @@ CATEGORY_TO_GROUP_NAMES = {
     "aþ": ["deg"],  # govern dat
     "ae": ["deg"],  # govern gen
     "as": ["deg"],  # abbreviation
- }
+}
 
 
-GENDER = {"k": "masc", "v": "fem", "h": "neut", "x": "unspec", "":"gend-empty"}
+GENDER = {"k": "masc", "v": "fem", "h": "neut", "x": "unspec", "": "gend-empty"}
 NUMBER = {"e": "sing", "f": "plur"}
-PERSON = {"1": "p1", "2": "p2", "3": "p3", "":"per-empty"}
+PERSON = {"1": "p1", "2": "p2", "3": "p3", "": "per-empty"}
 CASE = {"n": "nom", "o": "acc", "þ": "dat", "e": "gen"}
 DEGREE = {"f": "pos", "m": "cmp", "e": "superl"}
 VOICE = {"g": "act", "m": "mid"}
@@ -159,12 +159,12 @@ GROUP_NAME_TO_IFD_SUBLABEL_TO_NAME = {
     "gender": GENDER,
     "number": NUMBER,
     "person": PERSON,
-    "case" : CASE,
+    "case": CASE,
     "degree": DEGREE,
-    "voice" : VOICE,
-    "tense" : TENSE,
-    "def" : DEFINITE,
-    "proper" : PROPER,
+    "voice": VOICE,
+    "tense": TENSE,
+    "def": DEFINITE,
+    "proper": PROPER,
 }
 
 
@@ -259,7 +259,7 @@ def ifd_label_schema():
     }
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse, json, sys
     from pathlib import Path
 
@@ -270,17 +270,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser("Description")
 
     parser.add_argument(
-        "output",
-        type=str,
-        metavar="FILE",
+        "output", type=str, metavar="FILE",
     )
     parser.add_argument(
-        "-f",
-        "--force",
-        action="store_true",
-        help="Force overwrite",
+        "-f", "--force", action="store_true", help="Force overwrite",
     )
-
 
     args = parser.parse_args()
     path = Path(args.output)

@@ -93,11 +93,7 @@ class Lemmatizer:
                 # Number
                 lemmas.append(tok.txt)
                 continue
-            if (
-                cands
-                and len(cands) > 1
-                and (isinstance(cands[0], int) or isinstance(cands[0], float))
-            ):
+            if cands and len(cands) > 1 and (isinstance(cands[0], int) or isinstance(cands[0], float)):
                 # Punctuation
                 lemmas.append(tok.txt)
                 continue
@@ -122,15 +118,7 @@ class Lemmatizer:
                     found = True
                     break
                 try:
-                    ifd = IFD_Tagset(
-                        k=tok.kind,
-                        c=c.ordfl,
-                        t=c.ordfl,
-                        f=c.fl,
-                        txt=tok.txt,
-                        s=c.stofn,
-                        b=c.beyging,
-                    )
+                    ifd = IFD_Tagset(k=tok.kind, c=c.ordfl, t=c.ordfl, f=c.fl, txt=tok.txt, s=c.stofn, b=c.beyging,)
                 except:
                     lemmas.append(tok.txt)
                     found = True

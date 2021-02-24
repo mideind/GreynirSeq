@@ -54,10 +54,7 @@ CATS_W_LABELS = [
     ("fo", [GENDER_OR_PER, NUMBER, CASE]),
     ("fp", [GENDER_OR_PER, NUMBER, CASE]),
     ("fs", [GENDER, NUMBER, CASE]),
-    (
-        "ft",
-        [GENDER, NUMBER, CASE],
-    ),  # Deprecated but needs to be here for backwards compatibility.
+    ("ft", [GENDER, NUMBER, CASE],),  # Deprecated but needs to be here for backwards compatibility.
     # numerals
     ("tf", [GENDER, NUMBER, CASE]),
     ("ta", []),
@@ -125,50 +122,16 @@ FEATS = [
 ]
 
 FEATS_MUTEX = {
-    "gen": [
-        "masc",
-        "fem",
-        "neut",
-        "gender_undet",
-    ],
-    "per": [
-        "1",  # person
-        "2",
-        "3",
-    ],
-    "num": [
-        "sing",
-        "plur",
-    ],
-    "cas": [
-        "nom",
-        "acc",
-        "dat",
-        "gen",
-    ],
-    "def": [
-        "definite",
-    ],
+    "gen": ["masc", "fem", "neut", "gender_undet",],
+    "per": ["1", "2", "3",],  # person
+    "num": ["sing", "plur",],
+    "cas": ["nom", "acc", "dat", "gen",],
+    "def": ["definite",],
     "pro": ["proper"],
-    "dec": [
-        "strong",
-        "weak",
-        "equiinflected",  # "óbeygt"
-    ],
-    "deg": [
-        "pos",  # positive degree
-        "cmp",
-        "superl",
-    ],
-    "ten": [
-        "past",
-        "pres",
-        "pass",  # Not used but needs to be here for backwards compatibility.
-    ],
-    "voi": [
-        "act",
-        "mid",
-    ],
+    "dec": ["strong", "weak", "equiinflected",],  # "óbeygt"
+    "deg": ["pos", "cmp", "superl",],  # positive degree
+    "ten": ["past", "pres", "pass",],  # Not used but needs to be here for backwards compatibility.
+    "voi": ["act", "mid",],
 }
 FEATS_MUTEX_MAP = {}
 FEATS_MUTEX_MAP_IDX = {}
@@ -176,9 +139,7 @@ for feat, i in enumerate(FEATS):
     for feat_map in FEATS_MUTEX:
         if feat in FEATS_MUTEX[feat_map]:
             FEATS_MUTEX_MAP[feat] = FEATS_MUTEX[feat_map]
-            FEATS_MUTEX_MAP_IDX[FEATS.index(feat)] = [
-                FEATS.index(f) for f in FEATS_MUTEX[feat_map]
-            ]
+            FEATS_MUTEX_MAP_IDX[FEATS.index(feat)] = [FEATS.index(f) for f in FEATS_MUTEX[feat_map]]
 
 
 LABELS = CATS + FEATS
@@ -211,13 +172,7 @@ ADJ_CLASS = {"s": "strong", "v": "weak", "o": "equiinflected"}
 DEFINITE = {"g": "definite", " ": "indefinite"}
 
 TAGSET = {
-    "n": [
-        GENDER,
-        NUMBER,
-        CASE,
-        {"g": "definite", "-": "", " ": ""},
-        {"": "", "s": "proper"},
-    ],
+    "n": [GENDER, NUMBER, CASE, {"g": "definite", "-": "", " ": ""}, {"": "", "s": "proper"},],
     "l": [GENDER, NUMBER, CASE, ADJ_CLASS, DEGREE],
     # we skip PRONTYPE, as thats part of fine categories
     "f": [{**GENDER, **PERSON}, NUMBER, CASE],
@@ -231,10 +186,6 @@ TAGSET = {
     # we skip subcategories as thats part of fine categories
     "a": [DEGREE],
 }
-
-
-
-
 
 
 def one_hot(idx, dim=DIM):
@@ -266,10 +217,15 @@ def ifd2coarse(tag):
     return tag[0]
 
 
+ftags = [
+    a.split()[0]
+    for a in open("/home/vesteinn/work/GreynirSeq/src/greynirseq/nicenlp/examples/pos/labdict2.txt").readlines()
+    if a
+]
 
-ftags = [a.split()[0] for a in open("/home/vesteinn/work/GreynirSeq/src/greynirseq/nicenlp/examples/pos/labdict2.txt").readlines() if a]
+foreign_name = "n----s"
 
-foreign_name = 'n----s'
+
 def ifd2labels(tag):
     if not tag[0].isalpha():
         return ["p"]
@@ -290,9 +246,9 @@ def ifd2labels(tag):
     labels.append(cat)
 
     if tagset_key not in TAGSET:
-        #try:
+        # try:
         #    assert tagset_key in ftags, tagset_key
-        #except:
+        # except:
         #    import pdb; pdb.set_trace()
         return labels
 
@@ -302,16 +258,18 @@ def ifd2labels(tag):
 
     for feature, code in zip(TAGSET[tagset_key], rest):
         try:
-           label = feature[code]
+            label = feature[code]
         except:
-            import pdb; pdb.set_trace()
+            import pdb
+
+            pdb.set_trace()
         if not label:
             continue
         labels.append(label)
 
     for l in labels:
         assert l in ftags, l
-        
+
     return labels
 
 
@@ -323,20 +281,14 @@ def ifd2labelsNew(tag):
     CASE = {"n": "nom", "o": "acc", "þ": "dat", "e": "gen"}
 
     DEGREE = {"f": "pos", "m": "cmp", "e": "superl"}
-    
+
     VOICE = {"g": "act", "m": "mid"}
     TENSE = {"n": "pres", "þ": "past"}
     ADJ_CLASS = {"s": "strong", "v": "weak", "o": "equiinflected"}
     DEFINITE = {"g": "definite", " ": "indefinite"}
 
     TAGSET = {
-        "n": [
-            GENDER,
-            NUMBER,
-            CASE,
-            {"g": "definite", "-": "", " ": ""},
-            {"": "", "s": "proper"},
-        ],
+        "n": [GENDER, NUMBER, CASE, {"g": "definite", "-": "", " ": ""}, {"": "", "s": "proper"},],
         "l": [GENDER, NUMBER, CASE, ADJ_CLASS, DEGREE],
         # we skip PRONTYPE, as thats part of fine categories
         "f": [{**GENDER, **PERSON}, NUMBER, CASE],
@@ -371,13 +323,12 @@ def ifd2labelsNew(tag):
 
     for feature, code in zip(TAGSET[tagset_key], rest):
         label = feature[code]
-       
+
         if not label:
             continue
         labels.append(label)
 
     return labels
-
 
 
 def ifd2vec(tag):

@@ -22,9 +22,7 @@ def main():
     parser.add_argument("remainder_output", help="valid output file")
     parser.add_argument("-p", type=float, help="remainder size 0-1")
     parser.add_argument("--seed", default=1, type=int, help="seed")
-    parser.add_argument(
-        "--lines", action="store_true", help="split lines instead of docs"
-    )
+    parser.add_argument("--lines", action="store_true", help="split lines instead of docs")
     args = parser.parse_args()
 
     data = []

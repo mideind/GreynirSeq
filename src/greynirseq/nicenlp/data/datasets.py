@@ -43,27 +43,15 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
 
     @classmethod
     def make_both(
-        cls,
-        dataset: Dataset,
-        label_dictionary: Dictionary,
-        rebinarize_fn=None,
-        seed: int = 1,
+        cls, dataset: Dataset, label_dictionary: Dictionary, rebinarize_fn=None, seed: int = 1,
     ):
         dataset = LRUCacheDataset(dataset)
         return (
             DynamicLabelledSpanDataset(
-                dataset,
-                label_dictionary,
-                return_spans=True,
-                rebinarize_fn=rebinarize_fn,
-                seed=seed,
+                dataset, label_dictionary, return_spans=True, rebinarize_fn=rebinarize_fn, seed=seed,
             ),
             DynamicLabelledSpanDataset(
-                dataset,
-                label_dictionary,
-                return_spans=False,
-                rebinarize_fn=rebinarize_fn,
-                seed=seed,
+                dataset, label_dictionary, return_spans=False, rebinarize_fn=rebinarize_fn, seed=seed,
             ),
         )
 

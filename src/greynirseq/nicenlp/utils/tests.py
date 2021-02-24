@@ -27,13 +27,9 @@ class TestLogitsFilter(unittest.TestCase):
         assert torch.eq(max_id_by_bins, torch.tensor(expected_ids)).all()
 
     def test_word_classes_to_mask(self):
-        word_class_tensor = torch.tensor(
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-        )
+        word_class_tensor = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
         # 3 label groups
         mask_groups = [[0, 1], [1, 2], [0, 2], []]
-        wc2m = word_classes_to_mask(
-            word_class_tensor, mask_groups=mask_groups, n_labels_grps=3
-        )
+        wc2m = word_classes_to_mask(word_class_tensor, mask_groups=mask_groups, n_labels_grps=3)
         expected = torch.tensor([[1, 1, 0], [0, 1, 1], [1, 0, 1], [0, 0, 0]])
         assert torch.eq(wc2m, expected).all()

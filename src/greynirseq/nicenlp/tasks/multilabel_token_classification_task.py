@@ -56,10 +56,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         """Add task-specific arguments to the parser."""
         parser.add_argument("data", metavar="FILE", help="file prefix for data")
         parser.add_argument(
-            "--term-schema",
-            metavar="FILE",
-            help="json file providing label-set and label-groups",
-            required=True,
+            "--term-schema", metavar="FILE", help="json file providing label-set and label-groups", required=True,
         )
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
@@ -75,9 +72,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         torch.autograd.set_detect_anomaly(True)
         self.dictionary = data_dictionary
         self._label_dictionary = label_dictionary
-        self._label_dictionary.sep = lambda: self._label_dictionary.index(
-            label_schema.separator
-        )
+        self._label_dictionary.sep = lambda: self._label_dictionary.index(label_schema.separator)
         assert self._label_dictionary.index("<mask>") == self._label_dictionary.unk()
         assert self._label_dictionary.sep() != self._label_dictionary.unk()
         if not hasattr(args, "max_positions"):
@@ -99,9 +94,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
 
         is_word_initial = cls.get_word_beginnings(args, data_dict)
-        term_dict = cls.load_dictionary(
-            args, os.path.join(args.data, "dict_term.txt"), add_mask=False
-        )
+        term_dict = cls.load_dictionary(args, os.path.join(args.data, "dict_term.txt"), add_mask=False)
 
         # label_dict, label_schema = cls.load_label_dictionary(args, args.term_schema)
         _, label_schema = cls.load_label_dictionary(args, args.term_schema)
@@ -117,17 +110,13 @@ class MultiLabelTokenClassificationTask(FairseqTask):
                 and (lbl != "<mask>")
                 and (lbl.startswith("madeupword"))  # ignore vocabulary padding
             ):
-                assert False, "Unexpected POS label item in term_dict.txt: {}".format(
-                    lbl
-                )
+                assert False, "Unexpected POS label item in term_dict.txt: {}".format(lbl)
         for lbl in label_schema.labels:
             if lbl in seen:
                 continue
             assert False, "Unexpected POS label item in label_schema {}".format(lbl)
 
-        return MultiLabelTokenClassificationTask(
-            args, data_dict, term_dict, is_word_initial, label_schema
-        )
+        return MultiLabelTokenClassificationTask(args, data_dict, term_dict, is_word_initial, label_schema)
 
     @classmethod
     def load_label_dictionary(cls, args: argparse.Namespace, filename, **kwargs):
@@ -140,9 +129,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         return label_schema_as_dictionary(label_schema), label_schema
 
     @classmethod
-    def load_dictionary(
-        cls, args: argparse.Namespace, filename: str, add_mask: bool = True
-    ):
+    def load_dictionary(cls, args: argparse.Namespace, filename: str, add_mask: bool = True):
         """Load the dictionary from the filename
 
         Args:
@@ -180,30 +167,22 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
         inputs_path = Path(self.args.data) / "{split}".format(split=split)
         src_tokens = data_utils.load_indexed_dataset(
-            str(inputs_path),
-            self.source_dictionary,
-            self.args.dataset_impl,
-            combine=combine,
+            str(inputs_path), self.source_dictionary, self.args.dataset_impl, combine=combine,
         )
         assert src_tokens is not None, "could not find dataset: {}".format(inputs_path)
 
         with data_utils.numpy_seed(self.args.seed):
             shuffle = np.random.permutation(len(src_tokens))
-       
+
         src_tokens = PrependTokenDataset(src_tokens, self.source_dictionary.bos())
 
         targets_path = Path(self.args.data) / "{}.term".format(split)
         term_labels = data_utils.load_indexed_dataset(
-            str(targets_path),
-            self.label_dictionary,
-            self.args.dataset_impl,
-            combine=combine,
+            str(targets_path), self.label_dictionary, self.args.dataset_impl, combine=combine,
         )
         assert term_labels is not None, "could not find labels: {}".format(targets_path)
 
-        term_cats, term_attrs = POSDataset.make_both(
-            term_labels, self.dictionary, self.label_dictionary
-        )
+        term_cats, term_attrs = POSDataset.make_both(term_labels, self.dictionary, self.label_dictionary)
 
         def print_terms(term_cats, term_attrs):
             # Debug function
@@ -214,36 +193,26 @@ class MultiLabelTokenClassificationTask(FairseqTask):
                 if not word_attr.numel():
                     attr_labels.append([])
                     continue
-                attr_labels.append([self.label_dictionary[t+self.label_dictionary.nspecial] for t in word_attr[0]])
+                attr_labels.append([self.label_dictionary[t + self.label_dictionary.nspecial] for t in word_attr[0]])
             return cat_labels, attr_labels
 
-        word_mask = WordEndMaskDataset(
-            src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0
-        )
+        word_mask = WordEndMaskDataset(src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0)
 
-        exclude_cats_mask = IgnoreLabelsDataset(
-            term_cats, self.ignore_cats
-        )
-        
+        exclude_cats_mask = IgnoreLabelsDataset(term_cats, self.ignore_cats)
+
         dataset = {
             "id": IdDataset(),
             "net_input": {
-                "src_tokens": RightPadDataset(
-                    src_tokens, pad_idx=self.source_dictionary.pad()
-                ),
+                "src_tokens": RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad()),
                 "nsrc_tokens": NumelDataset(src_tokens),
                 "word_mask": RightPadDataset(word_mask, pad_idx=0),
             },
             "exclude_cats_mask": RightPadDataset(exclude_cats_mask, pad_idx=1),
-            "target_cats": RightPadDataset(
-                term_cats, pad_idx=self.label_dictionary.pad()
-            ),
+            "target_cats": RightPadDataset(term_cats, pad_idx=self.label_dictionary.pad()),
             "target_attrs": RightPad2dDataset(term_attrs, pad_idx=0),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(
-                src_tokens, self.dictionary, self.is_word_initial
-            ),
+            "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
         }
 
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
@@ -262,9 +231,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         src_tokens = ListDataset(tokens, sizes=sizes)
         src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
 
-        word_mask = WordEndMaskDataset(
-            src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0
-        )
+        word_mask = WordEndMaskDataset(src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0)
 
         dataset = {
             "id": IdDataset(),
@@ -274,9 +241,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
                 "word_mask": RightPadDataset(word_mask, pad_idx=0),
             },
             "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(
-                src_tokens, self.dictionary, self.is_word_initial
-            ),
+            "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
             "nsentences": NumSamplesDataset(),
         }
         dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
@@ -286,7 +251,12 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         # TODO remove or refactor
         from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
         from argparse import Namespace
-        enc = MultiprocessingEncoder(Namespace(encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True))
+
+        enc = MultiprocessingEncoder(
+            Namespace(
+                encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True
+            )
+        )
         enc.initializer()
         bpe_ids = enc.encode(sentence)
         return [int(self.dictionary[int(t)]) for t in bpe_ids]
@@ -295,16 +265,18 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         # TODO remove or refactor
         from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
         from argparse import Namespace
-        enc = MultiprocessingEncoder(Namespace(encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True))
+
+        enc = MultiprocessingEncoder(
+            Namespace(
+                encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True
+            )
+        )
         enc.initializer()
         bpe_ids = [self.dictionary.symbols[t] for t in src_tokens]
         return enc.decode([int(i) for i in bpe_ids if i.isnumeric()])
 
     def prepare_sentences(self, sentences: List[str]):
-        tokens = [
-            self.encode(token_utils.tokenize_to_string(sentence))
-            for sentence in sentences
-        ]
+        tokens = [self.encode(token_utils.tokenize_to_string(sentence)) for sentence in sentences]
         return self.prepare_tokens(torch.tensor(tokens))
 
     @property
@@ -321,31 +293,22 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
     @property
     def group_name_to_group_attr_vec_idxs(self):
-        return make_group_name_to_group_attr_vec_idxs(
-            self.label_dictionary, self.label_schema
-        )
+        return make_group_name_to_group_attr_vec_idxs(self.label_dictionary, self.label_schema)
 
     @property
     def cat_dict_idx_to_vec_idx(self):
-        return make_dict_idx_to_vec_idx(
-            self.label_dictionary, self.label_schema.label_categories
-        )
+        return make_dict_idx_to_vec_idx(self.label_dictionary, self.label_schema.label_categories)
 
     @property
     def cat_vec_idx_to_dict_idx(self):
-        return make_vec_idx_to_dict_idx(
-            self.label_dictionary, self.label_schema.label_categories
-        )
+        return make_vec_idx_to_dict_idx(self.label_dictionary, self.label_schema.label_categories)
 
     @property
     def group_mask(self):
         return make_group_masks(self.label_dictionary, self.label_schema)
 
     def logits_to_labels(
-        self,
-        cat_logits: torch.Tensor,
-        attr_logits: torch.Tensor,
-        word_mask: torch.Tensor,
+        self, cat_logits: torch.Tensor, attr_logits: torch.Tensor, word_mask: torch.Tensor,
     ):
         # logits: Batch x Time x Labels
         bsz, _, num_cats = cat_logits.shape
@@ -370,12 +333,14 @@ class MultiLabelTokenClassificationTask(FairseqTask):
                 group_logits = attr_logits[seq_idx, :seq_nwords, group_vec_idxs]
                 if len(group_vec_idxs) == 1:
                     group_pred = group_logits.sigmoid().ge(0.5).long()
-                    group_pred_dict_idxs = (group_pred.squeeze() * (group_vec_idxs.item() + offset)).T.to('cpu') * group_mask[:, group_idx]
+                    group_pred_dict_idxs = (group_pred.squeeze() * (group_vec_idxs.item() + offset)).T.to(
+                        "cpu"
+                    ) * group_mask[:, group_idx]
                 else:
                     group_pred_vec_idxs = group_logits.max(dim=-1).indices
                     group_pred_dict_idxs = (group_vec_idxs[group_pred_vec_idxs] + offset) * group_mask[:, group_idx]
                 pred_attrs.append(group_pred_dict_idxs)
-                
+
             pred_attrs = torch.stack([p.squeeze() for p in pred_attrs]).t()
             nwords_tup = tuple(nwords.tolist())
 
@@ -384,12 +349,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
         predictions = list(
             [
-                _clean_cats_attrs(
-                    self.label_dictionary,
-                    self.label_schema,
-                    seq_cats,
-                    seq_attrs,
-                )
+                _clean_cats_attrs(self.label_dictionary, self.label_schema, seq_cats, seq_attrs,)
                 for seq_cats, seq_attrs in zip(batch_cats, batch_attrs)
             ]
         )
@@ -397,13 +357,10 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         return predictions
 
 
-def _clean_cats_attrs(
-    ldict: Dictionary, schema, pred_cats: torch.Tensor, pred_attrs: torch.Tensor
-):
+def _clean_cats_attrs(ldict: Dictionary, schema, pred_cats: torch.Tensor, pred_attrs: torch.Tensor):
     cats = ldict.string(pred_cats).split(" ")
     attrs = []
-   
-    
+
     if len(pred_attrs.shape) == 1:
         split_pred_attrs = [pred_attrs]
     else:
@@ -412,7 +369,9 @@ def _clean_cats_attrs(
         try:
             seq_attrs = [lbl for lbl in ldict.string((attr_idxs.squeeze())).split(" ")]
         except:
-            import pdb; pdb.set_trace()
+            import pdb
+
+            pdb.set_trace()
         if not any(it for it in seq_attrs):
             seq_attrs = []
         attrs.append(seq_attrs)
