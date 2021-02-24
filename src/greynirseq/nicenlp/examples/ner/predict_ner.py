@@ -3,21 +3,16 @@ import numpy as np
 import time
 import tqdm
 
-from greynirseq.nicenlp.data.datasets import *
-from greynirseq.nicenlp.models.multi_span_model import *
-from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
-from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
-from greynirseq.ner.utils.ner_f1_stats import EvalNER
-from greynirseq.nicenlp.utils.greynir.greynir_utils import Node
-import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
+from greynirseq.ner.ner_f1_stats import EvalNER
+from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
 
-model = IcebertConstModel.from_pretrained(
-    "/media/hd/MIDEIND/data/models/icebert_ner/ner_slset",
-    checkpoint_file="checkpoint_last.pt",
-    data_name_or_path="/media/hd/MIDEIND/data/models/MIM-GOLD-NER/8_entity_types/bin/bin",
-    gpt2_encoder_json="/media/hd/MIDEIND/data/models/icebert-base-36k/icebert-bpe-vocab.json",
-    gpt2_vocab_bpe="/media/hd/MIDEIND/data/models/icebert-base-36k/icebert-bpe-merges.txt",
-    term_schema="/media/hd/MIDEIND/data/models/MIM-GOLD-NER_split/term.json",
+
+
+model = MultiClassRobertaModel.from_pretrained(
+    "/data/datasets/MIM-GOLD-NER/8_entity_types/8_entity_types/prep_space_rmh_vocab/bin",
+    checkpoint_file="/home/vesteinn/work/GreynirSeq/src/greynirseq/nicenlp/examples/ner/ner_out/chkpts/checkpoint_best.pt",
+    gpt2_encoder_json="/data/models/icebert-base-36k/icebert-bpe-vocab.json",
+    gpt2_vocab_bpe="/data/models/icebert-base-36k/icebert-bpe-merges.txt",
 )
 model.to("cpu")
 model.eval()
@@ -29,7 +24,9 @@ ldict = model.task.label_dictionary
 lbl_shift = ldict.nspecial
 batch_size = 1
 
-eval_ner = EvalNER(model)
+symbols = model.task.label_dictionary.symbols[model.task.label_dictionary.nspecial:]
+
+eval_ner = EvalNER(symbols)
 
 for dataset_offset in range(dataset_size):
     start = time.time()
@@ -42,9 +39,9 @@ for dataset_offset in range(dataset_size):
         model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)
     ]
     seq_idx = 0
-    target_cats = sample["target_cats"][seq_idx]
-    pred_cats, labels, tokenized = model.predict_sample_pos(
-        sample, sentences, device="cpu"
+    target_idxs = sample["target_attrs"][seq_idx]
+    pred_labels, pred_idxs = model.predict_labels(
+       sentences[0]
     )
-    eval_ner.compare(pred_cats, target_cats)
+    eval_ner.compare(pred_idxs, target_idxs)
     eval_ner.print_all_stats()

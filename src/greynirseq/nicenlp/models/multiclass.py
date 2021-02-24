@@ -18,7 +18,7 @@ from fairseq.models import register_model, register_model_architecture
 from fairseq.modules import LayerNorm
 
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
-
+from greynirseq.nicenlp.data.encoding import get_word_beginnings
 from greynirseq.nicenlp.utils.constituency import token_utils
 
 
@@ -50,7 +50,7 @@ class MultiClassTokenClassificationHead(nn.Module):
 
 
 @register_model("multiclass_roberta")
-class MutliClassRobertaModel(RobertaModel):
+class MultiClassRobertaModel(RobertaModel):
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
 
@@ -167,26 +167,6 @@ class MutliClassRobertaModel(RobertaModel):
 
 
 class MultiClassRobertaHubInterface(RobertaHubInterface):
-    def predict_sample(self, sample):
-        net_input = sample["net_input"]
-        tokens = net_input["src_tokens"]
-
-        word_mask = sample["net_input"]["word_mask"]
-        nwords = sample["net_input"]["word_mask"].sum(-1)
-
-        attr_logits, _extra = self.model(tokens, word_mask=word_mask)
-
-        return self.task.logits_to_labels(attr_logits, word_mask)
-
-    def predict(self, sentences, device="cuda"):
-        device = torch.device(device)
-        num_sentences = len(sentences)
-
-        dataset = self.task.prepare_sentences(sentences)
-        sample = dataset.collater([dataset[i] for i in range(num_sentences)])
-
-        return self.predict_sample(sample)
-
     def encode(self, sentence):
         if sentence[0] != " ":
             sentence = " " + sentence
@@ -198,10 +178,8 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         return super().decode(tokens)[1:]
 
     def predict_labels(self, sentence):
-        # assert task is set
       
-        word_start_dict = self.task.get_word_beginnings(self.args, self.task.dictionary)
-
+        word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
         tokens = self.encode(sentence)
         word_mask = torch.tensor([word_start_dict[t.item()] for t in tokens])
         word_mask[0] = 0
@@ -209,10 +187,9 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         word_mask = word_mask.unsqueeze(0)
         tokens = tokens.unsqueeze(0)
         attr_logits, extra = self.model(tokens, features_only=True, word_mask=word_mask)
-    
-        labels = self.task.logits_to_labels(attr_logits, word_mask)
-        
-        return labels
+        pred_idxs = attr_logits.max(dim=-1).indices[0]    
+        labels = [self.model.task.label_dictionary.symbols[i] for i in pred_idxs]
+        return labels, pred_idxs
 
 
 
