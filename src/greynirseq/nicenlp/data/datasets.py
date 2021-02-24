@@ -197,7 +197,7 @@ class POSDataset(BaseWrapperDataset):
     def __getitem__(self, index: int):
         item = self.dataset[index]
         end = item.numel() - 1 if self.has_eos else item.numel()
-        word_items = split_tensor_on(item[self.start_offset : end], self.label_dict.sep())
+        word_items = split_tensor_on(item[self.start_offset : end], self.label_dict.sep())  # noqa
         assert all(subseq.numel() > 0 for subseq in word_items)
         assert len(word_items) == (item.eq(self.label_dict.sep()).sum() + 1)
         num_words = len(word_items)
@@ -268,7 +268,7 @@ class NumWordsDataset(BaseWrapperDataset):
     def __getitem__(self, index: int):
         word_starts = [
             self.is_word_initial.get(int(v), 1)
-            for v in self.dataset[index][self.start_offset : -1]  # ignore bos and eos
+            for v in self.dataset[index][self.start_offset : -1]  # noqa
         ]
 
         # LEGACY hack

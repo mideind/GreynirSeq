@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 import argparse
-import json
-import os
 from collections import namedtuple
 
 # TOOD: use actual mp

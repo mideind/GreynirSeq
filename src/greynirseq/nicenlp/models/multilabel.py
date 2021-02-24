@@ -119,7 +119,6 @@ class MultiLabelRobertaModel(RobertaModel):
             mean_words.append(x[seq_idx, token_idx:end].mean(dim=0))
         mean_words = torch.stack(mean_words)
         words = mean_words
-        
         nwords = word_mask.sum(-1)
         (cat_logits, attr_logits) = self.task_head(words)
 

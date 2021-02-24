@@ -268,8 +268,8 @@ class NERSentenceParse:
 
     @staticmethod
     def parse_line(
-        line: str, provenance: Optional[NERAnalyser]
-    ) -> NERSentenceParse:  # pylint: disable=unsubscriptable-object
+        line: str, provenance: Optional[NERAnalyser]  # pylint: disable=unsubscriptable-object
+    ) -> NERSentenceParse:
         r"""Parse a line.
 
         Args:
@@ -426,18 +426,18 @@ class NERParser:
         # Get the NEs strings (i.e. the actual names)
         if p1.model == "sp":
             # Spacy returns character indices.
-            ner_markers_1 = [NERMarker.from_idx(t, p1.sent[t.start_idx: t.end_idx].lower()) for t in ner_markers_idx_1]
+            ner_markers_1 = [NERMarker.from_idx(t, p1.sent[t.start_idx : t.end_idx].lower()) for t in ner_markers_idx_1]  # noqa
         else:
             # Other models return token indices.
             ner_markers_1 = [
                 NERMarker.from_idx(
-                    ner_marker_idx, " ".join(p1.sent.split()[ner_marker_idx.start_idx: ner_marker_idx.end_idx]).lower()
+                    ner_marker_idx, " ".join(p1.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower()  # noqa
                 )
                 for ner_marker_idx in ner_markers_idx_1
             ]
         ner_markers_2 = [
             NERMarker.from_idx(
-                ner_marker_idx, " ".join(p2.sent.split()[ner_marker_idx.start_idx: ner_marker_idx.end_idx]).lower()
+                ner_marker_idx, " ".join(p2.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower()  # noqa
             )
             for ner_marker_idx in ner_markers_idx_2
         ]

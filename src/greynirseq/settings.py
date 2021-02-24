@@ -23,6 +23,6 @@ IceBERT_POS_CONFIG = {
 }
 
 try:
-    from greynirseq.local_settings import *
+    from greynirseq.local_settings import *  # noqa
 except ImportError:
     pass
