@@ -4,8 +4,6 @@
 
 import unittest
 
-import torch
-
 from greynirseq.nicenlp.data.lookup_dataset import LookupDataset
 from greynirseq.nicenlp.data.mutex_binary_dataset import MutexBinaryDataset
 

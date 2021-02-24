@@ -1,3 +1,5 @@
+# flake8: noqa
+
 import time
 
 import numpy as np
@@ -18,7 +20,7 @@ except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
 
-model = IcebertConstModel.from_pretrained(
+model = IcebertConstModel.from_pretrained(  # pylint: disable=undefined-variable
     "/data/models/constituency_parser/icebert_const_debug_07",
     checkpoint_file="checkpoint_last.pt",
     data_name_or_path="/home/haukur/github/nicenlp-icebert/data-bin/sym",
@@ -64,7 +66,7 @@ for dataset_offset in np.random.randint(0, dataset_size, 100):
     pred_tree.pretty_print()
     pred_roof = pred_tree.roof()
 
-    gold_tree = Node.from_labelled_spans(seq_spans, seq_labels, tokenize(sentences[seq_idx]))
+    gold_tree = Node.from_labelled_spans(seq_spans, seq_labels, tokenize(sentences[seq_idx]))  # pylint: disable=undefined-variable
     gold_tree = gold_tree.debinarize()
     ic(dataset_name)
     gold_tree.pretty_print()

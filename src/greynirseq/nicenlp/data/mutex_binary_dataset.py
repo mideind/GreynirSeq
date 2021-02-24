@@ -56,7 +56,7 @@ class NestedDictionaryDatasetFix(NestedDictionaryDataset):
         for k, ds in self.defn.items():
             try:
                 sample[k] = ds.collater([s[k] for s in samples])
-            except (NotImplementedError, AttributeError) as e:
+            except (NotImplementedError, AttributeError) as e:  # noqa
                 sample[k] = default_collate([s[k] for s in samples])
         return _unflatten(sample)
 

@@ -1,22 +1,17 @@
 import argparse
-import time
 
-import numpy as np
 import spacy
 import torch
 import tqdm
 from spacy.gold import biluo_tags_from_offsets
 from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
 
-from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
-from greynirseq.nicenlp.data.datasets import *
-from greynirseq.nicenlp.models.multi_span_model import *
-from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
 from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
+from greynirseq.nicenlp.models.multilabel import MultiLabelRobertaModel
 
 
 def icelandic_ner(input_file, tagged_file):
-    model = IcebertConstModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
+    model = MultiLabelRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
     model.to("cpu")
     model.eval()
 
@@ -33,7 +28,7 @@ def icelandic_ner(input_file, tagged_file):
 def english_ner(input_file, output_file):
 
     nlp = spacy.load("en_core_web_lg")
-    hnlp = pipeline("ner")
+    hnlp = pipeline("ner")  # noqa
 
     model = AutoModelForTokenClassification.from_pretrained("dbmdz/bert-large-cased-finetuned-conll03-english").to(
         "cuda"
@@ -60,7 +55,7 @@ def english_ner(input_file, output_file):
 
         tokens = []
         for range in ranges:
-            tokens.append(sent[range[0] : range[1]])
+            tokens.append(sent[range[0]: range[1]])
 
         entlocs = [(a["start"], a["end"], a["label"]) for a in ents]
         labels = biluo_tags_from_offsets(doc, entlocs)

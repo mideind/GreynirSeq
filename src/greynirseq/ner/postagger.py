@@ -1,9 +1,5 @@
 import argparse
-import os
-import re
-from typing import Dict, List
-
-from reynir import NounPhrase
+from typing import List
 
 from greynirseq.ner.aligner import (
     NERAnalyser,
@@ -38,7 +34,7 @@ def tag_ner_pair(pos_model, p1: NERSentenceParse, p2: NERSentenceParse, pair_inf
     pos_tags = pos_model.predict_to_idf(p2.sent, device="cuda")
     for idx, alignment in enumerate(pair_info.pair_map):
         en_ner_marker, is_ner_marker, distance = alignment.marker_1, alignment.marker_2, alignment.distance
-        tags = pos_tags[is_ner_marker.start_idx : is_ner_marker.end_idx]
+        tags = pos_tags[is_ner_marker.start_idx: is_ner_marker.end_idx]
         if "e" in tags:
             # Since IDF for some reason uses "e" for foreign names, we ignore those
             continue

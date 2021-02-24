@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 try:
@@ -43,10 +42,6 @@ def main(basedir, destdir, train_size=None, valid_size=None, test_size=None):
 if __name__ == "__main__":
     import argparse
 
-    try:
-        import argcomplete
-    except ImportError as e:
-        pass
     parser = argparse.ArgumentParser("Description")
 
     parser.add_argument(

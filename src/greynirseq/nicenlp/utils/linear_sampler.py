@@ -59,10 +59,10 @@ class LinearSampler:
 
 
 def make_sampling_fn(weight_map, seed=1):
-    map = {
-        "pseudo": 1.0,
-        "gold": 10.0,
-    }
+    # map = {
+    #    "pseudo": 1.0,
+    #    "gold": 10.0,
+    # }
     rng = np.random.RandomState(seed)
     total = sum(weight_map.values())
 

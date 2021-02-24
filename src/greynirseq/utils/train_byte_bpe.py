@@ -3,8 +3,6 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import json
-import sys
-from pathlib import Path
 
 from tokenizers import ByteLevelBPETokenizer
 
@@ -20,7 +18,7 @@ def main(args):
         files=paths,
         vocab_size=args.vocab_size,
         min_frequency=args.min_freq,
-        special_tokens=["<s>", "<pad>", "</s>", "<unk>",],
+        special_tokens=["<s>", "<pad>", "</s>", "<unk>"],
     )
 
     # Save files to disk
@@ -36,10 +34,6 @@ def main(args):
 if __name__ == "__main__":
     import argparse
 
-    try:
-        import argcomplete
-    except ImportError as e:
-        pass
     parser = argparse.ArgumentParser("Description")
 
     parser.add_argument(

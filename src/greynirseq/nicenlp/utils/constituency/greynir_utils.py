@@ -1,3 +1,5 @@
+# flake8: noqa
+
 import json
 import re
 import time
@@ -560,7 +562,7 @@ class Node:
         return self._add_lemmas(self, lemmas, allow_partial=allow_partial)
 
     def num_leaves(self):
-        start, end = node.span
+        start, end = node.span  # pylint: disable=undefined-variable
         return end
 
     @classmethod

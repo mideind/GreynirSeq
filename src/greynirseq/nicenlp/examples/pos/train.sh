@@ -8,17 +8,17 @@ MAX_TOKENS=3000
 # Pretrained model
 #ICEBERT_MODEL_DIR=/data/models/icebert/icebert-base
 #ICEBERT_MODEL_DIR=/data/models/icebert-base-36k
-ICEBERT_MODEL_DIR=/data/models/icebert/icebert-nocc-base
+#ICEBERT_MODEL_DIR=/data/models/icebert/icebert-nocc-base
 #ICEBERT_MODEL=$ICEBERT_MODEL_DIR/ckpts/checkpoint_70_49000.pt
 #ICEBERT_MODEL=$ICEBERT_MODEL_DIR/model.pt
-ICEBERT_MODEL=$ICEBERT_MODEL_DIR/checkpoint28.pt
+#ICEBERT_MODEL=$ICEBERT_MODEL_DIR/checkpoint28.pt
 VOCAB_PATH=/data/models/icebert/bpe_vocab
 #VOCAB_PATH=$ICEBERT_MODEL_DIR
 #ENCODER_JSON=$VOCAB_PATH/icebert-bpe-vocab.json
 #MERGES_TXT=$VOCAB_PATH/icebert-bpe-merges.txt
 ENCODER_JSON=$VOCAB_PATH/vocab.json
 MERGES_TXT=$VOCAB_PATH/merges.txt
-LAB_DICT=labdict.txt
+#LAB_DICT=labdict.txt
 
 DATA_PATH=/data/datasets/MIM-GOLD-1_0_SETS/for_training #_noprepend_space_legacy_icebert
 
@@ -40,7 +40,7 @@ do
     IT_DATA_PATH=${DATA_PATH}/$ITERATION/bin
     
     CUDA_VISIBLE_DEVICES=0 fairseq-train "$IT_DATA_PATH" \
-    --save-dir "$SAVE_DIR"/checkpoints"_$ITERATION"\
+    --save-dir "$SAVE_DIR"/checkpoints_"$ITERATION"\
     --user-dir $GREYNIRSEQ_PATH \
     --max-positions 512 \
     --batch-size $MAX_SENTENCES \

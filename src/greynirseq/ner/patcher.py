@@ -5,9 +5,7 @@ import re
 import tqdm
 from reynir import NounPhrase
 
-from .aligner import NERParser
-
-NER_PATTERN = "<\s*e:([0-9]):([^:]*):>([^>]*?)<\s*/\s*e[0-9]+>"
+NER_PATTERN = "<\s*e:([0-9]):([^:]*):>([^>]*?)<\s*/\s*e[0-9]+>"  # noqa
 
 
 def parse_sentence(sentence):

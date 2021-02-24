@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -52,7 +51,7 @@ class NERAlignment:
     marker_2: NERMarker
 
     def __str__(self) -> str:
-        return f"{self.marker_1.start_idx}:{self.marker_1.end_idx}:{self.marker_1.tag}-{self.marker_2.start_idx}:{self.marker_2.end_idx}:{self.marker_2.tag}"
+        return f"{self.marker_1.start_idx}:{self.marker_1.end_idx}:{self.marker_1.tag}-{self.marker_2.start_idx}:{self.marker_2.end_idx}:{self.marker_2.tag}"  # noqa
 
 
 @dataclass(frozen=True)
@@ -268,7 +267,7 @@ class NERSentenceParse:
         return [NERMarkerIdx(*offset) for offset in offsets_from_biluo_tags(doc, ner)]
 
     @staticmethod
-    def parse_line(line: str, provenance: Optional[NERAnalyser]) -> NERSentenceParse:
+    def parse_line(line: str, provenance: Optional[NERAnalyser]) -> NERSentenceParse: # pylint: disable=unsubscriptable-object
         r"""Parse a line.
 
         Args:
@@ -304,7 +303,7 @@ class NERSentenceParse:
         return NERSentenceParse(sentence, ner_markers, mode, origins)
 
 
-def split_tag(tag: str) -> Tuple[str, Optional[str]]:
+def split_tag(tag: str) -> Tuple[str, Optional[str]]:  # pylint: disable=unsubscriptable-object
     """Split a NER tag to HEAD, TAIL."""
     if tag == NULL_TAG:
         return tag, None
@@ -389,13 +388,13 @@ class NERParser:
         )
         self.print_data_file.writelines(output)
 
-    def parse_files(self, print_data: str, analyser: Optional[NERAnalyser]):
+    def parse_files(self, print_data: str, analyser: Optional[NERAnalyser]): # pylint: disable=unsubscriptable-object
         """Parse all the files provided and print."""
         for p1, p2, pair_info in self.parse_files_gen(analyser):
             self.print_line(p1, p2, pair_info, print_data)
 
     def parse_files_gen(
-        self, analyser: Optional[NERAnalyser]
+        self, analyser: Optional[NERAnalyser] # pylint: disable=unsubscribeable-object  
     ) -> Generator[Tuple[NERSentenceParse, NERSentenceParse, PairInfo], None, None]:
         """Parse all the files provided."""
         for l1, l2 in tqdm.tqdm(zip(self.lang_1, self.lang_2)):
@@ -410,7 +409,7 @@ class NERParser:
         try:
             corp1 = p1.origins[0]
             corp2 = p2.origins[0]
-        except:
+        except:  # noqa
             corp1 = corp2 = "mixup"
 
         # Filter based on the tags we support.
@@ -425,18 +424,18 @@ class NERParser:
         # Get the NEs strings (i.e. the actual names)
         if p1.model == "sp":
             # Spacy returns character indices.
-            ner_markers_1 = [NERMarker.from_idx(t, p1.sent[t.start_idx : t.end_idx].lower()) for t in ner_markers_idx_1]
+            ner_markers_1 = [NERMarker.from_idx(t, p1.sent[t.start_idx: t.end_idx].lower()) for t in ner_markers_idx_1]
         else:
             # Other models return token indices.
             ner_markers_1 = [
                 NERMarker.from_idx(
-                    ner_marker_idx, " ".join(p1.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower()
+                    ner_marker_idx, " ".join(p1.sent.split()[ner_marker_idx.start_idx: ner_marker_idx.end_idx]).lower()
                 )
                 for ner_marker_idx in ner_markers_idx_1
             ]
         ner_markers_2 = [
             NERMarker.from_idx(
-                ner_marker_idx, " ".join(p2.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower()
+                ner_marker_idx, " ".join(p2.sent.split()[ner_marker_idx.start_idx: ner_marker_idx.end_idx]).lower()
             )
             for ner_marker_idx in ner_markers_idx_2
         ]

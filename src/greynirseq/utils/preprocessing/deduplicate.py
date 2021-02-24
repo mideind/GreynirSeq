@@ -2,7 +2,6 @@
 
 import argparse
 import hashlib
-import os
 
 from tokenizer import split_into_sentences
 from tokenizers import ByteLevelBPETokenizer
@@ -37,7 +36,7 @@ class Corpus:
     def add_pg_to_line_hashes(self, sentences):
         for wsz in range(self.min_lines, self.max_lines + 1):
             for i in range(0, len(sentences) + 1 - wsz):
-                window = " ".join(sentences[i * wsz : (i + 1) * wsz])
+                window = " ".join(sentences[i * wsz: (i + 1) * wsz])
                 wdw_hash = self.hash(window)
                 self.line_hashes[wsz].add(wdw_hash)
 
@@ -58,7 +57,7 @@ class Corpus:
                 if idx + j > n_sentences:
                     continue
 
-                sentence_batch = " ".join(sentences[idx : idx + j])
+                sentence_batch = " ".join(sentences[idx: idx + j])
                 sh = self.hash(sentence_batch)
                 if sh in self.line_hashes[j]:
                     idx += j

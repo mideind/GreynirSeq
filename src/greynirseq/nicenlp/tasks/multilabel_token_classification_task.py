@@ -19,7 +19,6 @@ from fairseq.data import (
     PrependTokenDataset,
     RightPadDataset,
     SortDataset,
-    TruncateDataset,
     data_utils,
     encoders,
 )
@@ -341,7 +340,6 @@ class MultiLabelTokenClassificationTask(FairseqTask):
                 pred_attrs.append(group_pred_dict_idxs)
 
             pred_attrs = torch.stack([p.squeeze() for p in pred_attrs]).t()
-            nwords_tup = tuple(nwords.tolist())
 
             batch_cats.append(pred_cats)
             batch_attrs.append(pred_attrs)
@@ -365,12 +363,7 @@ def _clean_cats_attrs(ldict: Dictionary, schema, pred_cats: torch.Tensor, pred_a
     else:
         split_pred_attrs = pred_attrs.split(1, dim=0)
     for (_cat_idx, attr_idxs) in zip(pred_cats.tolist(), split_pred_attrs):
-        try:
-            seq_attrs = [lbl for lbl in ldict.string((attr_idxs.squeeze())).split(" ")]
-        except:
-            import pdb
-
-            pdb.set_trace()
+        seq_attrs = [lbl for lbl in ldict.string((attr_idxs.squeeze())).split(" ")]
         if not any(it for it in seq_attrs):
             seq_attrs = []
         attrs.append(seq_attrs)

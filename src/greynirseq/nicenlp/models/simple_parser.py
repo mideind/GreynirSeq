@@ -1,3 +1,5 @@
+# flake8: noqa
+
 import itertools
 import logging
 
@@ -17,7 +19,7 @@ from fairseq.modules import LayerNorm
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
-import greynirseq.nicenlp.chart_parser as chart_parser
+import greynirseq.nicenlp.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.data.datasets import (
     LabelledSpanDataset,

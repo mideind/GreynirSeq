@@ -3,8 +3,6 @@ from typing import Tuple
 
 import pytest
 
-from greynirseq.ner.patcher import NER_PATTERN
-
 
 @pytest.fixture
 def ner_sentence_pair():
@@ -22,8 +20,8 @@ def ner_final():
             "<e:1:nvxn:>Guðrún</e1> fór í heimsókn til <e:0:nkxe:>Einars Jónssonar</e0> .",
         ),
         (
-            "<e:0:nvxn:>Anna</e0> got a gift from <e:1:nkxþ:>Pétur</e1> , <e:2:nkxþ:>Páll</e2> and <e:3:nkxþ:>Alexei</e3> .",
-            "<e:0:nvxn:>Anna</e0> fékk gjöf frá <e:3:nkxþ:>Alexei</e3> , <e:1:nkxþ:>Pétri</e1> og <e:2:nkxþ:>Páli</e2> .",
+            "<e:0:nvxn:>Anna</e0> got a gift from <e:1:nkxþ:>Pétur</e1> , <e:2:nkxþ:>Páll</e2> and <e:3:nkxþ:>Alexei</e3> .",  # noqa
+            "<e:0:nvxn:>Anna</e0> fékk gjöf frá <e:3:nkxþ:>Alexei</e3> , <e:1:nkxþ:>Pétri</e1> og <e:2:nkxþ:>Páli</e2> .",  # noqa
         ),
     )
 

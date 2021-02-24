@@ -2,6 +2,8 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+# flake8: noqa
+
 import argparse
 import json
 import logging

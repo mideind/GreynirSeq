@@ -1,2 +1,2 @@
-from .lookup_dataset import LookupDataset
-from .mutex_binary_dataset import MutexBinaryDataset, NestedDictionaryDatasetFix
+from .lookup_dataset import LookupDataset  # noqa
+from .mutex_binary_dataset import MutexBinaryDataset, NestedDictionaryDatasetFix  # noqa

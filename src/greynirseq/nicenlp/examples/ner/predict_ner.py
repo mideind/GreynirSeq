@@ -1,18 +1,8 @@
 import time
 
-import numpy as np
-import torch
-import tqdm
-
-import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
 from greynirseq.ner.utils.ner_f1_stats import EvalNER
-from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
-from greynirseq.nicenlp.data.datasets import *
-from greynirseq.nicenlp.models.multi_span_model import *
-from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
-from greynirseq.nicenlp.utils.greynir.greynir_utils import Node
 
-model = IcebertConstModel.from_pretrained(
+model = IcebertConstModel.from_pretrained(  # pylint: disable=undefined-variable
     "/media/hd/MIDEIND/data/models/icebert_ner/ner_slset",
     checkpoint_file="checkpoint_last.pt",
     data_name_or_path="/media/hd/MIDEIND/data/models/MIM-GOLD-NER/8_entity_types/bin/bin",

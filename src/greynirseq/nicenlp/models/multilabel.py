@@ -2,11 +2,9 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-import itertools
 import logging
 
 import torch
-import torch.nn.functional as F
 from fairseq import utils
 from fairseq.models import register_model, register_model_architecture
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
@@ -20,9 +18,6 @@ from fairseq.models.roberta.model import (
 from fairseq.modules import LayerNorm
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
-
-from greynirseq.nicenlp.utils.constituency import token_utils
-from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +120,6 @@ class MutliLabelRobertaModel(RobertaModel):
         mean_words = torch.stack(mean_words)
         words = mean_words
 
-        nwords = word_mask.sum(-1)
         (cat_logits, attr_logits) = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth

@@ -2,6 +2,8 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+# flake8: noqa
+
 import itertools
 import math
 import time
@@ -16,14 +18,14 @@ from fairseq.data import Dictionary
 from fairseq.models import FairseqModel
 from torch import LongTensor, Tensor
 
-import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser
+import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
-import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
+import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
-from greynirseq.types import Numeric
+from greynirseq.utils.types import Numeric
 
 
-def gen_2d_diags(chart_width: Union[int, LongTensor]):
+def gen_2d_diags(chart_width: Union[int, LongTensor]):  # pylint: disable=unsubscriptable-object
     """Generator for all diagonal positions in a 2d matrix, starting with right of center diagonal from pos (0,1),
        then diagonal starting at (0,2), etc."""
     for span_length in range(1, chart_width):
@@ -87,7 +89,7 @@ def f1_score(precision: Numeric, recall: Numeric):
     return safe_div(2 * precision * recall, precision + recall)
 
 
-def make_gold_label_mask(sample: Dict[str, Any], dict_to_vec: LongTensor, num_labels: Union[int, LongTensor]):
+def make_gold_label_mask(sample: Dict[str, Any], dict_to_vec: LongTensor, num_labels: Union[int, LongTensor]):  # pylint: disable=unsubscriptable-object
     bsz = sample["nsentences"]
     ntarget_span_labels = sample["ntarget_span_labels"]
     target_span_labels = sample["target_span_labels"]

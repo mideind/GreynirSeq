@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # Built on top of fairseqs fairseq_cli/preprocess.py
+# flake8: noqa
+
 """
 Data pre-processing: build vocabularies and binarize training data.
 """
@@ -18,7 +20,7 @@ from fairseq.binarizer import Binarizer
 from fairseq.data import Dictionary, indexed_dataset
 
 # from . import multi_span_prediction_task
-from greynirseq.nicenlp.tasks import multi_span_prediction_task
+from greynirseq.nicenlp.tasks import multi_span_prediction_task  # pylint: disable=no-name-in-module
 
 try:
     from icecream import ic

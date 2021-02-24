@@ -2,19 +2,15 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-import itertools
 import math
-import time
-from collections import namedtuple
 from typing import Any, Dict, List, Union
 
 import torch
 import torch.nn.functional as F
-from fairseq import utils
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.models import FairseqModel
 
-Numeric = Union[float, int]
+Numeric = Union[float, int]  # pylint: disable=unsubscriptable-object
 
 
 @register_criterion("multilabel_token_classification")
@@ -61,7 +57,6 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
             group_name_to_group_attr_vec_idxs[k] = v.clone().to(device)
         group_names = self.task.label_schema.group_names
         group_masks = self.task.group_mask.clone().to(device)
-        num_cats = len(self.task.label_schema.label_categories)
 
         missing_binary_targets = torch.zeros_like(target_attrs)
         cat_vec_idxs = cat_dict_to_vec_idx[target_cats.clone()]
@@ -130,7 +125,8 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
 
         correct_all = correct_attrs * correct_cat
 
-        # NOTE: Just target attrs does not suffice for the binary labels since 0 has a meaning, hence adding missing_binary_targets
+        # NOTE: Just target attrs does not suffice for the binary labels
+        # since 0 has a meaning, hence adding missing_binary_targets
         attrs_divisor = target_attrs.sum(-1) + missing_binary_targets.sum(-1)
 
         attrs_divisor[attrs_divisor == 0] = 1

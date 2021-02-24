@@ -2,7 +2,6 @@ import json
 from collections import namedtuple
 
 import torch
-import torch.nn.functional as F
 from fairseq.data import Dictionary
 
 

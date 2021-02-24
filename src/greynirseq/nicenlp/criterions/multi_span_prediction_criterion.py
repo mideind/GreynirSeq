@@ -2,6 +2,8 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+# flake8: noqa
+
 import math
 from collections import namedtuple
 
@@ -9,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from fairseq.criterions import FairseqCriterion, register_criterion
 
-from greynirseq.nicenlp.utils.constituency import greynir_utils, tree_dist
+from greynirseq.nicenlp.utils.constituency import greynir_utils, tree_dist  # pylint: disable=no-name-in-module
 
 
 def gen_2d_diags(chart_width):

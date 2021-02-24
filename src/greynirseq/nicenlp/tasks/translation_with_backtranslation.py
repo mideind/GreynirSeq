@@ -15,7 +15,7 @@ from functools import lru_cache
 
 import numpy as np
 import torch
-from fairseq import metrics, options, utils
+from fairseq import utils
 from fairseq.data import (
     AppendTokenDataset,
     BaseWrapperDataset,
@@ -37,8 +37,8 @@ from fairseq.data.noising import (
     WordNoising,
     WordShuffle,
 )
-from fairseq.tasks import FairseqTask, register_task
-from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
+from fairseq.tasks import register_task
+from fairseq.tasks.translation import TranslationTask
 
 EVAL_BLEU_ORDER = 4
 
@@ -441,7 +441,6 @@ def load_unpaired_langpair(
         src_dataset = AppendTokenDataset(src_dataset, src_dict.index("[{}]".format(src)))
         if tgt_dataset is not None:
             tgt_dataset = AppendTokenDataset(tgt_dataset, tgt_dict.index("[{}]".format(tgt)))
-        eos = tgt_dict.index("[{}]".format(tgt))
 
     return src_dataset, tgt_dataset
 
@@ -480,7 +479,7 @@ class TranslationWithBacktranslationTask(TranslationTask):
         parser.add_argument('--word-blanking-prob', default=0.1, type=float, metavar='N',
                             help='word blanking probability for denoising autoencoding data generation')
         parser.add_argument('--prepend-bos', action='store_true', help='prepend bos token to each sentence')
-        parser.add_argument('--tagged-backtranslation', action='store_true', help='do not append tag to backtranslated sentences during training')
+        parser.add_argument('--tagged-backtranslation', action='store_true', help='do not append tag to backtranslated sentences during training')  # noqa
         parser.add_argument('--bpe-dropout', type=float, default=0.0, metavar='N', help='Set GPT2-BPE dropout amount')
         # fmt: on
 
@@ -589,7 +588,6 @@ class TranslationWithBacktranslationTask(TranslationTask):
                     self.args.word_dropout_prob,
                     self.args.word_blanking_prob,
                 )
-                _bt_src_dataset = bt_src_dataset
                 bt_src_dataset = DynamicNoisingDataset(bt_src_dataset, self.src_dict, seed=1, noiser=noiser,)
 
                 # try:

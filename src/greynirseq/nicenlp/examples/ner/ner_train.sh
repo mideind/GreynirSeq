@@ -37,7 +37,7 @@ CUDA_VISIBLE_DEVICES=0 fairseq-train /home/vesteinn/data/MIM-GOLD-NER/8_entity_t
     --gpt2-encoder-json $ENCODER_JSON_PATH \
     --gpt2-vocab-bpe $VOCAB_BPE_PATH \
     --update-freq 1 \
-    --tensorboard-logdir ./tensorboard_logdir/$NAME \
+    --tensorboard-logdir ./tensorboard_logdir/"$NAME" \
     --max-update $TOTAL_NUM_UPDATES\
     --save-interval-updates 500 \
     --save-dir "/data/models/icebert_ner/ner_slset"

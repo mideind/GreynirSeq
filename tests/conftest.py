@@ -1,1 +1,1 @@
-from .ner.fixtures import *
+from .ner.fixtures import *  # noqa

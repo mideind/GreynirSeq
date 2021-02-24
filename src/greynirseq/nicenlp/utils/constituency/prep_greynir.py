@@ -1,3 +1,5 @@
+# flake8: noqa
+
 """
 Items:
 - POS and Constituency parsing

@@ -70,20 +70,20 @@ do
 
     fairseq-preprocess \
        --only-source \
-       --trainpref $SPLIT_PATH/train.input0.bpe \
-       --testpref $SPLIT_PATH/test.input0.bpe \
+       --trainpref "$SPLIT_PATH"/train.input0.bpe \
+       --testpref "$SPLIT_PATH"/test.input0.bpe \
        --workers 60 \
        --srcdict $DICT \
-       --validpref $SPLIT_PATH/valid.input0.bpe \
-       --destdir $SPLIT_PATH/bin
+       --validpref "$SPLIT_PATH"/valid.input0.bpe \
+       --destdir "$SPLIT_PATH"/bin
 
     fairseq-preprocess \
        --only-source \
-       --trainpref $SPLIT_PATH/train.label0 \
+       --trainpref "$SPLIT_PATH"/train.label0 \
        --workers 60 \
-       --validpref $SPLIT_PATH/valid.label0 \
-       --testpref $SPLIT_PATH/PM.label0 \
-       --destdir $SPLIT_PATH/bin/labels0 \
+       --validpref "$SPLIT_PATH"/valid.label0 \
+       --testpref "$SPLIT_PATH"/PM.label0 \
+       --destdir "$SPLIT_PATH"/bin/labels0 \
        --srcdict $LAB_DICT
 
 

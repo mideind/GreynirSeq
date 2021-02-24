@@ -49,7 +49,7 @@ class Encoder:
         try:
             self.encoder = encoder["model"]["vocab"]
             self.decoder = {v: k for k, v in self.encoder.items()}
-        except:
+        except KeyError:
             self.encoder = encoder
             self.decoder = {v: k for k, v in self.encoder.items()}
 
@@ -90,7 +90,7 @@ class Encoder:
                     j = word.index(first, i)
                     new_word.extend(word[i:j])
                     i = j
-                except:
+                except:  # noqa
                     new_word.extend(word[i:])
                     break
 
