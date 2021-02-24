@@ -70,6 +70,9 @@ import error_definitions as ed
 import json
 
 
+def generate_on_off_schema_v1():
+    return generate_from_categories_dict({"error":None}, False)
+
 
 def generate_supercategories_schema_v1():
     return generate_from_categories_dict(ed.SUPERCATEGORIES.keys())
@@ -79,13 +82,15 @@ def generate_simcategories_schema_v1():
     return generate_from_categories_dict(ed.SIMCATEGORIES.keys())
 
 
-def generate_from_categories_dict(categories):
-    categories = list(categories) + ["unknown"]
+def generate_from_categories_dict(categories, add_unknown=True):
+    if add_unknown:
+        categories = list(categories) + ["unknown"]
 
     schema_dict = {
         "null": None,
         "null_leaf": None,
         "separator": "<sep>",
+        "ignore_categories": [],
     }
 
     group_postfix = "-group"  # Need to fix names to fit the schema
@@ -119,7 +124,8 @@ if __name__ == "__main__":
 
     with open(args.output_file, "w") as f:
         #schema = generate_supercategories_schema_v1()
-        schema = generate_simcategories_schema_v1()
+        #schema = generate_simcategories_schema_v1()
+        schema = generate_on_off_schema_v1()
         f.write(json.dumps(schema, sort_keys=True, indent=4))
         f.write("\n")
 

@@ -225,6 +225,25 @@ def generate_label_line(per_token_labels: List[Set[str]], all_labels: List[str])
     return line
 
 
+def generate_label_line2(per_token_labels: List[Set[str]]):
+    """ Generate label line that has only categories (ie. no multilabel stuff)
+        There must only be one label per line!
+    """
+
+    first = True
+    line = ""
+    for this_token_labels in per_token_labels:
+        assert len(this_token_labels) == 0
+        if first:
+            first = False
+        else:
+            line += " <sep> "
+
+        line += this_token_labels[0]
+
+    return line
+
+
 def parse_all_per_token(dataset_name: str, path: str, category_mode: str) -> None:
     """ Parse all examples from the given path and save to `dataset_name`.
         Output error markings per token (per line) in the label files.
@@ -233,16 +252,20 @@ def parse_all_per_token(dataset_name: str, path: str, category_mode: str) -> Non
     if category_mode == "sim":
         category_func = to_simcategory
         all_labels = set(SIMCATEGORIES.keys())
+        all_labels.add("unknown")
     elif category_mode == "super":
         category_func = to_supercategory
         all_labels = set(SUPERCATEGORIES.keys())
+        all_labels.add("unknown")
+    elif category_mode == "onoff":
+        category_func = lambda x: "error"
+        all_labels = {"error"}
     elif category_mode == "default":
         category_func = lambda x: x
         all_labels = set(ERROR_NUMBERS.keys())
+        all_labels.add("unknown")
     else:
         raise Exception("Unknown category mode", category_mode)
-
-    all_labels.add("unknown")
 
     textfile = open(dataset_name + ".input0", "w")
     labelfile = open(dataset_name + ".tokenlabel", "w")
