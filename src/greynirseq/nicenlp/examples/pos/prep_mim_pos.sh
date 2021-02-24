@@ -44,7 +44,7 @@ do
         --seed $SEED \
         -p $VALIDATION_PROPORTION \
         --lines \
-        $SPLIT_PATH/TM.label0 "$SPLIT_PATH"/train.label0 "$SPLIT_PATH"/valid.label0
+        "$SPLIT_PATH"/TM.label0 "$SPLIT_PATH"/train.label0 "$SPLIT_PATH"/valid.label0
 
     
     for SPLIT in train valid

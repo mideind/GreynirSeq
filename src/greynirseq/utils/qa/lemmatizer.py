@@ -51,7 +51,7 @@ class Lemmatizer:
         # Split words to not hit 512 token limit in IceBERT
         # Consider making this smarter if dealing with a lot of long sentences.
         for i in range(0, len(tokens), self.SPLIT_WC):
-            p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100: (i + 1) * 100])
+            p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100 : (i + 1) * 100])
             a_lemmas += p_lemmas
             a_tokens += p_tokens
         return a_lemmas, a_tokens

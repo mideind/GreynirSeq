@@ -60,7 +60,7 @@ def max_tensor_by_bins(tensor, bins, softmax_by_bin=False):
     max_tensor = tensor.new_zeros(bsz, labels)
     for i in range(n_bins):
         bin_start, bin_end = bins[i][0], bins[i][-1]
-        bin_tensors = tensor[:, bin_start: bin_end + 1]
+        bin_tensors = tensor[:, bin_start : bin_end + 1]
         if softmax_by_bin:
             if bin_end - bin_start > 0:
                 bin_tensors = F.softmax(bin_tensors)

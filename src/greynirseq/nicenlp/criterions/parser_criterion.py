@@ -89,7 +89,9 @@ def f1_score(precision: Numeric, recall: Numeric):
     return safe_div(2 * precision * recall, precision + recall)
 
 
-def make_gold_label_mask(sample: Dict[str, Any], dict_to_vec: LongTensor, num_labels: Union[int, LongTensor]):  # pylint: disable=unsubscriptable-object
+def make_gold_label_mask(
+    sample: Dict[str, Any], dict_to_vec: LongTensor, num_labels: Union[int, LongTensor]
+):  # pylint: disable=unsubscriptable-object
     bsz = sample["nsentences"]
     ntarget_span_labels = sample["ntarget_span_labels"]
     target_span_labels = sample["target_span_labels"]

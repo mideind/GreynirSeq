@@ -267,7 +267,9 @@ class NERSentenceParse:
         return [NERMarkerIdx(*offset) for offset in offsets_from_biluo_tags(doc, ner)]
 
     @staticmethod
-    def parse_line(line: str, provenance: Optional[NERAnalyser]) -> NERSentenceParse: # pylint: disable=unsubscriptable-object
+    def parse_line(
+        line: str, provenance: Optional[NERAnalyser]
+    ) -> NERSentenceParse:  # pylint: disable=unsubscriptable-object
         r"""Parse a line.
 
         Args:
@@ -388,13 +390,13 @@ class NERParser:
         )
         self.print_data_file.writelines(output)
 
-    def parse_files(self, print_data: str, analyser: Optional[NERAnalyser]): # pylint: disable=unsubscriptable-object
+    def parse_files(self, print_data: str, analyser: Optional[NERAnalyser]):  # pylint: disable=unsubscriptable-object
         """Parse all the files provided and print."""
         for p1, p2, pair_info in self.parse_files_gen(analyser):
             self.print_line(p1, p2, pair_info, print_data)
 
     def parse_files_gen(
-        self, analyser: Optional[NERAnalyser] # pylint: disable=unsubscribeable-object  
+        self, analyser: Optional[NERAnalyser]  # pylint: disable=unsubscribeable-object
     ) -> Generator[Tuple[NERSentenceParse, NERSentenceParse, PairInfo], None, None]:
         """Parse all the files provided."""
         for l1, l2 in tqdm.tqdm(zip(self.lang_1, self.lang_2)):
@@ -424,18 +426,18 @@ class NERParser:
         # Get the NEs strings (i.e. the actual names)
         if p1.model == "sp":
             # Spacy returns character indices.
-            ner_markers_1 = [NERMarker.from_idx(t, p1.sent[t.start_idx: t.end_idx].lower()) for t in ner_markers_idx_1]
+            ner_markers_1 = [NERMarker.from_idx(t, p1.sent[t.start_idx : t.end_idx].lower()) for t in ner_markers_idx_1]
         else:
             # Other models return token indices.
             ner_markers_1 = [
                 NERMarker.from_idx(
-                    ner_marker_idx, " ".join(p1.sent.split()[ner_marker_idx.start_idx: ner_marker_idx.end_idx]).lower()
+                    ner_marker_idx, " ".join(p1.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower()
                 )
                 for ner_marker_idx in ner_markers_idx_1
             ]
         ner_markers_2 = [
             NERMarker.from_idx(
-                ner_marker_idx, " ".join(p2.sent.split()[ner_marker_idx.start_idx: ner_marker_idx.end_idx]).lower()
+                ner_marker_idx, " ".join(p2.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower()
             )
             for ner_marker_idx in ner_markers_idx_2
         ]

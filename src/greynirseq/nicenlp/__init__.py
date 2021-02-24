@@ -4,4 +4,4 @@ from greynirseq.nicenlp.models import multilabel  # noqa
 from greynirseq.nicenlp.tasks import (  # noqa
     multilabel_token_classification_task,  # noqa
     translation_with_backtranslation,  # noqa
-) # noqa
+)  # noqa
