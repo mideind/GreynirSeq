@@ -427,8 +427,8 @@ class NERParser:
         if p1.model == "sp":
             # Spacy returns character indices.
             ner_markers_1 = [
-                NERMarker.from_idx(t, p1.sent[t.start_idx : t.end_idx].lower()) for t in ner_markers_idx_1
-            ]  # noqa
+                NERMarker.from_idx(t, p1.sent[t.start_idx : t.end_idx].lower()) for t in ner_markers_idx_1  # noqa
+            ]
         else:
             # Other models return token indices.
             ner_markers_1 = [
