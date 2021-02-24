@@ -28,3 +28,5 @@ jobs:
           PYTHON_FLAKE8_CONFIG_FILE: .flake8
           PYTHON_ISORT_CONFIG_FILE: pyproject.toml
           PYTHON_PYLINT_CONFIG_FILE: .python-lint
+          VALIDATE_JSCPD: false
+          VALIDATE_MARKDOWN: false

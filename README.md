@@ -8,14 +8,14 @@ The modeling part (nicenlp) of GreynirSeq is built on top of the excellent [fair
 
 GreynirSeq is licensed under the GNU GPLv3 license unless otherwise stated at the top of a file.
 
-### What's on the horizon?
+## What's on the horizon?
 * Cleanup and configuration of data / model loading -- currently unavailable for download
 * More fine tuning tasks for Icelandic
 * General cleanup and CI config
 * Icelandic - English translation example
 * Improved documentation and examples for training and preprocessing pipelines
 
-### What's new?
+## What's new?
 * This repository!
 * An Icelandic RoBERTa model, **IceBERT** with NER, POS tagging and constituency parsing fine tuning options.
 * Simple Docker setup to serve models
@@ -38,7 +38,7 @@ The following fine tuning tasks are available
 
 To install GreynirSeq in development mode add the `-e` as shown below
 
-``` bash
+```bash
 pip install -e .
 ```
 
@@ -46,7 +46,7 @@ pip install -e .
 
 To build the container
 
-``` bash
+```bash
 docker build -t greynirseq .
 ```
 
@@ -58,7 +58,7 @@ Assuming you have the models and other files necessary you can then run `serve/p
 
 All code is checked with [Super-Linter](https://github.com/github/super-linter) in a *GitHub Action*, we recommend running it locally before pushing
 
-``` bash
+```bash
 docker run -e RUN_LOCAL=true -v /path/to/local/GreynirSeq:/tmp/lint github/super-linter
 ```
 

@@ -248,9 +248,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         # TODO remove or refactor
         from argparse import Namespace
 
-        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import (
-            MultiprocessingEncoder,
-        )
+        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
 
         enc = MultiprocessingEncoder(
             Namespace(
@@ -265,9 +263,7 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         # TODO remove or refactor
         from argparse import Namespace
 
-        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import (
-            MultiprocessingEncoder,
-        )
+        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
 
         enc = MultiprocessingEncoder(
             Namespace(

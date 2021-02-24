@@ -1,8 +1,10 @@
+#!/usr/bin/env bash
+
 TOTAL_NUM_UPDATES=18000  #
 WARMUP_UPDATES=500      #  percent of the number of updates
 LR=1e-05                # Peak LR for polynomial LR scheduler.
 MAX_SENTENCES=8         # Batch size.
-SAVE_INTERVAL=250
+#SAVE_INTERVAL=250
 LOG_INTERVAL=5
 
 # Pretrained model

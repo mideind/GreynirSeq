@@ -26,9 +26,6 @@ except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
 
-
-
-
 class IceBERTRunner:
     def __init__(self):
         self.model = RobertaModel.from_pretrained(
@@ -152,7 +149,6 @@ class TranslationRunnerIsEn(TranslationRunner):
         self.model.eval()
 
 
-
 application = Flask(__name__)
 cors = CORS(application)
 application.config["CORS_HEADERS"] = "Content-Type"
@@ -173,8 +169,6 @@ def ner():
 
     labels, sentence = ner_runner.infer([text])
     return {"ok": True, "text": text, "labels": labels, "sentence": sentence}
-
-
 
 
 @application.route("/translate", methods=["POST"])

@@ -1,7 +1,7 @@
 #!/bin/sh
 
-SCRIPT_NAME=$0
-SCRIPT_DIR=`realpath $(dirname "$0")`
+#SCRIPT_NAME=$0
+SCRIPT_DIR=$(realpath "$(dirname "$0")")
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 echo "Using project directory: $PROJECT_DIR"
 echo ""
@@ -10,12 +10,12 @@ echo ""
 # ENCODED_DIR="$HOME/sandbox/simple_trees/fresh"
 # SPLITS_DIR="$HOME/sandbox/simple_trees/splits"
 CORPUS_DIR="/data/datasets/greynir_corpus"
-RAW_DIR="/data/datasets/greynir_corpus/jsonl"
+# RAW_DIR="/data/datasets/greynir_corpus/jsonl"
 ENCODED_DIR="/data/datasets/greynir_corpus/raw"
 SPLITS_DIR="/data/datasets/greynir_corpus/splits"
 DATA_BIN="$PROJECT_DIR/data-bin"
-ICEBERT=/data/models/icebert-base-36k
-FAIRSEQ=$HOME/github/fairseq
+# ICEBERT=/data/models/icebert-base-36k
+# FAIRSEQ=$HOME/github/fairseq
 TMP_DIR=/tmp/icebert_tmp
 
 # exit on any error
@@ -32,9 +32,9 @@ if [ -f  $CORPUS_DIR/cfg/greynircorpus.psd ]; then
     mv $CORPUS_DIR/cfg/greynircorpus.psd $CORPUS_DIR/cfg/greynir_corpus.psd
 fi
 if [ ! -f $CORPUS_DIR/gold/all.gld ]; then
-    for GLDFILE in $CORPUS_DIR/gold/greynir_corpus_0*.gld ; do
-        cat $GLDFILE >> $CORPUS_DIR/gold/all.gld
-        echo "" >> $CORPUS_DIR/gold/all.gld
+    for GLDFILE in "$CORPUS_DIR"/gold/greynir_corpus_0*.gld ; do
+        cat "$GLDFILE" >> "$CORPUS_DIR"/gold/all.gld
+        echo "" >> "$CORPUS_DIR"/gold/all.gld
     done
 fi
 
@@ -73,7 +73,7 @@ fi
 
 
 mkdir -p $TMP_DIR $ENCODED_DIR/gold $ENCODED_DIR/cfg $SPLITS_DIR/gold $SPLITS_DIR/cfg
-cd $PROJECT_DIR
+cd "$PROJECT_DIR"
 
 # cythonize "$PROJECT_DIR/nicenlp/utils/greynir/tree_distance.pyx"
 

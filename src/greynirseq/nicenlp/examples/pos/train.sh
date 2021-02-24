@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 TOTAL_NUM_UPDATES=1000000  # 
 WARMUP_UPDATES=200      #  percent of the number of updates
 LR=5e-05                # Peak LR for polynomial LR scheduler.
@@ -38,8 +39,8 @@ do
     NAME=multilabel_split_$ITERATION
     IT_DATA_PATH=${DATA_PATH}/$ITERATION/bin
     
-    CUDA_VISIBLE_DEVICES=0 fairseq-train $IT_DATA_PATH \
-    --save-dir $SAVE_DIR/checkpoints_$ITERATION\
+    CUDA_VISIBLE_DEVICES=0 fairseq-train "$IT_DATA_PATH" \
+    --save-dir "$SAVE_DIR"/checkpoints"_$ITERATION"\
     --user-dir $GREYNIRSEQ_PATH \
     --max-positions 512 \
     --batch-size $MAX_SENTENCES \
@@ -60,7 +61,7 @@ do
     --gpt2-encoder-json $ENCODER_JSON \
     --gpt2-vocab-bpe $MERGES_TXT \
     --update-freq $UPDATE_FREQ \
-    --tensorboard-logdir ./tensorboard_logdir/$NAME \
+    --tensorboard-logdir ./tensorboard_logdir/"$NAME" \
     --max-update $TOTAL_NUM_UPDATES\
     --save-interval-updates 10000\
     --n-trans-layers-to-freeze 0\
