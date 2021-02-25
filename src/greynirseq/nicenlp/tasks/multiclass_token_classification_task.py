@@ -42,7 +42,7 @@ class MultiClassTokenClassificationTask(FairseqTask):
         args: argparse.Namespace,
         data_dictionary: Dictionary,
         label_dictionary: Dictionary,
-        is_word_initial: dict[str, int],
+        is_word_initial: dict,
     ):
         super().__init__(args)
         self.dictionary = data_dictionary
