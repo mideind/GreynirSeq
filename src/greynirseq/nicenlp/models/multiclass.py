@@ -39,7 +39,7 @@ class MultiClassTokenClassificationHead(nn.Module):
         self.out_features = out_features  # num_labels
 
         self.dense = nn.Linear(self.in_features, self.in_features)
-        self.activation_fn = utils.get_activation_fn("relu")
+        self.activation_fn = F.relu
         self.dropout = nn.Dropout(p=pooler_dropout)
         self.layer_norm = LayerNorm(self.in_features)
         self.out_proj = nn.Linear(self.in_features, self.out_features)
@@ -112,17 +112,17 @@ class MultiClassRobertaModel(RobertaModel):
         word_mask = kwargs["word_mask"]
 
         # use first bpe token of word as representation
-        x = x[:, 1:-1]
-        starts = word_mask[:, 1:-1]  # remove bos, eos
+        x = x[:, 1:-1, :]
+        starts = word_mask[:, 1:-1, :]  # remove bos, eos
         ends = starts.roll(-1, dims=[-1]).nonzero()[:, -1] + 1
         starts = starts.nonzero().tolist()
         mean_words = []
         for (seq_idx, token_idx), end in zip(starts, ends):
-            mean_words.append(x[seq_idx, token_idx:end].mean(dim=0))
+            mean_words.append(x[seq_idx, token_idx:end, :].mean(dim=0))
         mean_words = torch.stack(mean_words)
         words = mean_words
-
-        nwords = word_mask.sum(-1)
+        # Innermost dimension has 1s if they represent the start of a word, zeros otherwise.
+        nwords = word_mask.sum(dim=-1)
         attr_logits = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
@@ -160,20 +160,20 @@ class MultiClassRobertaModel(RobertaModel):
 
 class MultiClassRobertaHubInterface(RobertaHubInterface):
     def encode(self, sentence):
+        # Space added if needed to ensure encoding of words at the front
+        # of a sentences is no different from those further back.
         if sentence[0] != " ":
             sentence = " " + sentence
         return super().encode(sentence)
 
-    def decode(self, tokens, no_cut_space=False):
-        if no_cut_space:
-            return super().decode(tokens)
+    def decode(self, tokens):
+        # Remove the leading space, see 'encode' comment.
         return super().decode(tokens)[1:]
 
     def predict_labels(self, sentence):
-
         word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
         tokens = self.encode(sentence)
-        word_mask = torch.tensor([word_start_dict[t.item()] for t in tokens])
+        word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
         word_mask[0] = 0
         word_mask[-1] = 0
         word_mask = word_mask.unsqueeze(0)

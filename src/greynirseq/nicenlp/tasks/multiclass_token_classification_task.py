@@ -57,7 +57,7 @@ class MultiClassTokenClassificationTask(FairseqTask):
         args: argparse.Namespace,
         data_dictionary: Dictionary,
         label_dictionary: Dictionary,
-        is_word_initial: torch.Tensor,
+        is_word_initial: dict[str, int],
     ):
         super().__init__(args)
         self.dictionary = data_dictionary
@@ -94,11 +94,7 @@ class MultiClassTokenClassificationTask(FairseqTask):
         )
         assert src_tokens is not None, "could not find dataset: {}".format(inputs_path)
 
-        with data_utils.numpy_seed(self.args.seed):
-            shuffle = np.random.permutation(len(src_tokens))
         src_tokens = PrependTokenDataset(src_tokens, self.source_dictionary.bos())
-
-        shuffle = np.random.permutation(len(src_tokens))
         targets_path = Path(self.args.data) / "{}.term".format(split)
         labels = data_utils.load_indexed_dataset(
             str(targets_path), self._label_dictionary, self.args.dataset_impl, combine=combine,
@@ -111,15 +107,18 @@ class MultiClassTokenClassificationTask(FairseqTask):
             "net_input": {
                 "src_tokens": RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad()),
                 "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask": RightPadDataset(word_mask, pad_idx=0),
+                "word_mask": RightPadDataset(word_mask, pad_idx=0),  # pad is zero since mask
             },
-            "target_attrs": RightPadDataset(clean_labels, pad_idx=1),
+            "target_attrs": RightPadDataset(clean_labels, pad_idx=self.label_dictionary.pad()),
             "nsentences": NumSamplesDataset(),
             "ntokens": NumelDataset(src_tokens, reduce=True),
             "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
         }
 
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
+
+        with data_utils.numpy_seed(self.args.seed):
+            shuffle = np.random.permutation(len(src_tokens))
 
         dataset = SortDataset(nested_dataset, sort_order=[shuffle])
 

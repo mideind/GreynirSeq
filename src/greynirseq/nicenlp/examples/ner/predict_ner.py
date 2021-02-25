@@ -5,25 +5,20 @@ import time
 from greynirseq.ner.ner_f1_stats import EvalNER
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
 
+from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 
-model = MultiClassRobertaModel.from_pretrained(
-    "/data/datasets/MIM-GOLD-NER/8_entity_types/8_entity_types/prep_space_rmh_vocab/bin",
-    checkpoint_file="/home/vesteinn/work/GreynirSeq/src/greynirseq/nicenlp/examples/ner/ner_out/chkpts/checkpoint_best.pt",
-    gpt2_encoder_json="/data/models/icebert-base-36k/icebert-bpe-vocab.json",
-    gpt2_vocab_bpe="/data/models/icebert-base-36k/icebert-bpe-merges.txt",
-)
+
+model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
 model.to("cpu")
 model.eval()
 
-dataset_name = "test"
+dataset_name = "valid"
 dataset = model.task.load_dataset(dataset_name)
 dataset_size = dataset.sizes[0].shape[0]
 ldict = model.task.label_dictionary
 lbl_shift = ldict.nspecial
 batch_size = 1
-
 symbols = model.task.label_dictionary.symbols[model.task.label_dictionary.nspecial :]
-
 eval_ner = EvalNER(symbols)
 
 for dataset_offset in range(dataset_size):

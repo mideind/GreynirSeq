@@ -9,10 +9,7 @@ def load_file(input, output_folder, prefix, sep="<SEP>"):
     o_d = open("{}/{}.input0".format(output_folder, prefix), "w")
     o_l = open("{}/{}.label0".format(output_folder, prefix), "w")
 
-    if sep:
-        sep = f" {sep} "
-    else:
-        sep = " "
+    sep = f" {sep} "
 
     with open(input) as fp:
         line = fp.readline()
@@ -22,25 +19,16 @@ def load_file(input, output_folder, prefix, sep="<SEP>"):
             if inp is not None:
                 o_d.writelines("{}\n".format(" ".join(inp)))
             if lab is not None:
-                if sep != " ":
-                    o_l.writelines(
-                        "{}\n".format(
-                            " <SEP> ".join([" ".join(slab) for slab in lab])
-                        )  # pylint: disable=not-an-iterable
-                    )
-                else:
-                    o_l.writelines("{}\n".format(sep.join(lab)))
+                o_l.writelines(
+                    "{}\n".format(" <SEP> ".join([" ".join(slab) for slab in lab]))  # pylint: disable=not-an-iterable
+                )
             inp = []
             lab = []
             while line and line != "\n":
                 line = line.strip().split()
                 if len(line):
                     inp.append(line[0])
-                    # Hard-coded for NER..
-                    if sep != " ":
-                        lab.append(ifd2labels(line[1]))
-                    else:
-                        lab.append(line[1])
+                    lab.append(ifd2labels(line[1]))
                 line = fp.readline()
             line = fp.readline()
 

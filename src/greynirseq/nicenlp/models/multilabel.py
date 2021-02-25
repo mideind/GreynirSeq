@@ -32,7 +32,7 @@ class MultiLabelTokenClassificationHead(nn.Module):
         self.num_cats = num_cats
 
         self.dense = nn.Linear(self.in_features, self.in_features)
-        self.activation_fn = utils.get_activation_fn("relu")
+        self.activation_fn = F.relu
         self.dropout = nn.Dropout(p=pooler_dropout)
         self.layer_norm = LayerNorm(self.in_features)
         self.cat_proj = nn.Linear(self.in_features, self.num_cats)
@@ -110,16 +110,17 @@ class MultiLabelRobertaModel(RobertaModel):
         word_mask = kwargs["word_mask"]
 
         # use first bpe token of word as representation
-        x = x[:, 1:-1]
-        starts = word_mask[:, 1:-1]  # remove bos, eos
+        x = x[:, 1:-1, :]
+        starts = word_mask[:, 1:-1, :]  # remove bos, eos
         ends = starts.roll(-1, dims=[-1]).nonzero()[:, -1] + 1
         starts = starts.nonzero().tolist()
         mean_words = []
         for (seq_idx, token_idx), end in zip(starts, ends):
-            mean_words.append(x[seq_idx, token_idx:end].mean(dim=0))
+            mean_words.append(x[seq_idx, token_idx:end, :].mean(dim=0))
         mean_words = torch.stack(mean_words)
         words = mean_words
-        nwords = word_mask.sum(-1)
+        # Innermost dimension is mask for tokens at head of word.
+        nwords = word_mask.sum(dim=-1)
         (cat_logits, attr_logits) = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
@@ -155,9 +156,6 @@ class MultiLabelRobertaModel(RobertaModel):
             if path not in state_dict:
                 state_dict[path] = value
 
-    # def max_decoder_positions(self):
-    #    return 512
-
 
 class MultiLabelRobertaHubInterface(RobertaHubInterface):
     def predict_sample(self, sample):
@@ -180,13 +178,12 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
         return self.predict_sample(sample)
 
     def encode(self, sentence):
+        # We add a space to treat word encoding the same at the front and back of a sentence.
         if sentence[0] != " ":
             sentence = " " + sentence
         return super().encode(sentence)
 
     def decode(self, tokens, no_cut_space=False):
-        if no_cut_space:
-            return super().decode(tokens)
         return super().decode(tokens)[1:]
 
     def predict_labels(self, sentence):
@@ -195,7 +192,7 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
         word_start_dict = self.task.get_word_beginnings(self.args, self.task.dictionary)
 
         tokens = self.encode(sentence)
-        word_mask = torch.tensor([word_start_dict[t.item()] for t in tokens])
+        word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
         word_mask[0] = 0
         word_mask[-1] = 0
         word_mask = word_mask.unsqueeze(0)

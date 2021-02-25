@@ -230,9 +230,8 @@ class NoBosEosDataset(BaseWrapperDataset):
     def __getitem__(self, index: int):
         item = self.dataset[index]
         start = 1 if self.has_bos else 0
-        if self.has_eos:
-            return item[start:-1]
-        return item[start:]
+        end = -1 if self.has_eos else None
+        return item[start:end]
 
 
 class WordEndMaskDataset(BaseWrapperDataset):
