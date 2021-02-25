@@ -1,6 +1,6 @@
-from greynirseq.settings import IceBERT_POS_PATH, IceBERT_POS_CONFIG
-from greynirseq.nicenlp.models.multilabel import MutliLabelRobertaModel
 from greynirseq.ner import aligner
+from greynirseq.nicenlp.models.multilabel import MutliLabelRobertaModel
+from greynirseq.settings import IceBERT_POS_CONFIG, IceBERT_POS_PATH
 
 
 def test_pos_tagging(ner_tagged_sentences_en, ner_tagged_sentences_is, is_pos_tags):

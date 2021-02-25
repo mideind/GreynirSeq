@@ -1,9 +1,17 @@
-from collections import Counter, namedtuple, OrderedDict
+# flake8: noqa
+
 import json
-from operator import itemgetter
-import time
-from pprint import pprint
 import re
+import time
+from collections import Counter, OrderedDict, namedtuple
+from operator import itemgetter
+from pprint import pprint
+
+import nltk
+import numpy as np
+from nltk.tree import Tree as NltkTree
+
+from . import unary_branch_labels
 
 try:
     from icecream import ic
@@ -12,11 +20,6 @@ try:
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
-import numpy as np
-from nltk.tree import Tree as NltkTree
-import nltk
-
-from . import unary_branch_labels
 
 HTML_LPAREN = "&#40;"
 HTML_RPAREN = "&#41;"
@@ -143,10 +146,7 @@ class Node:
         if obj.get("tree") is not None:
             obj = obj["tree"]
         if obj.get("terminal") is not None:
-            node = TerminalNode(
-                obj["text"],
-                obj["terminal"],
-            )
+            node = TerminalNode(obj["text"], obj["terminal"],)
             return node
         node = NonterminalNode(obj["nonterminal"])
         for child in obj.get("children", []):
@@ -562,7 +562,7 @@ class Node:
         return self._add_lemmas(self, lemmas, allow_partial=allow_partial)
 
     def num_leaves(self):
-        start, end = node.span
+        start, end = node.span  # pylint: disable=undefined-variable
         return end
 
     @classmethod
@@ -904,11 +904,7 @@ class TerminalNode(Node):
         for idx, token in enumerate(self.text.split(" ")):
             term = self.terminal if idx == 0 else CAT_INSIDE_MW_TOKEN
             cat = self.category if idx == 0 else CAT_INSIDE_MW_TOKEN
-            new_node = TerminalNode(
-                token,
-                term,
-                category=cat,
-            )
+            new_node = TerminalNode(token, term, category=cat,)
             new_terminals.append(new_node)
         return new_terminals
 
@@ -1069,17 +1065,7 @@ NONTERM_SUFFIX = {
         "NP-COMPANY",
     ],
     "S0": ["S0", "S0-X"],
-    "S": [
-        "S",
-        "S-COND",
-        "S-CONS",
-        "S-EXPLAIN",
-        "S-HEADING",
-        "S-MAIN",
-        "S-PREFIX",
-        "S-QUE",
-        "S-QUOTE",
-    ],
+    "S": ["S", "S-COND", "S-CONS", "S-EXPLAIN", "S-HEADING", "S-MAIN", "S-PREFIX", "S-QUE", "S-QUOTE",],
     "VP": ["VP", "VP-AUX"],
     # "C": ["C"],
     # "FOREIGN": ["FOREIGN"],

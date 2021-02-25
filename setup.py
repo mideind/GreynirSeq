@@ -1,8 +1,8 @@
-from setuptools import setup, find_packages, Extension
 import sys
-from Cython.Build import cythonize, build_ext
-import numpy
 
+import numpy
+from Cython.Build import build_ext, cythonize
+from setuptools import Extension, find_packages, setup
 
 ############
 # Source: https://bit.ly/2NLVsgE

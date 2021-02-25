@@ -1,4 +1,6 @@
 #! /usr/bin/env sh
+# shellcheck source=/dev/null
+
 set -e
 
 if [ -f /app/app/main.py ]; then

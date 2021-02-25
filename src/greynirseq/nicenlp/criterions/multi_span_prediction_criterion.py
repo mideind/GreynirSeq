@@ -2,15 +2,16 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+# flake8: noqa
+
 import math
 from collections import namedtuple
 
-from fairseq.criterions import FairseqCriterion, register_criterion
-
 import torch
 import torch.nn.functional as F
+from fairseq.criterions import FairseqCriterion, register_criterion
 
-from greynirseq.nicenlp.utils.constituency import greynir_utils, tree_dist
+from greynirseq.nicenlp.utils.constituency import greynir_utils, tree_dist  # pylint: disable=no-name-in-module
 
 
 def gen_2d_diags(chart_width):
@@ -126,9 +127,7 @@ class MultiSpanCriterion(FairseqCriterion):
         jj = tspans[:, 1, :]
 
         (logits, cat_logits), _extra = model(
-            **sample["net_input"],
-            features_only=True,
-            classification_head_name="multi_span_classification",
+            **sample["net_input"], features_only=True, classification_head_name="multi_span_classification",
         )
 
         scores = logits
@@ -200,10 +199,7 @@ class MultiSpanCriterion(FairseqCriterion):
         # parsing constructs a high scoring bad tree
         # tree_scores_bad, tree_spans_bad, tree_labels_bad = parse_from_chart(
         tree_scores_bad, results_bad = parse_from_chart(
-            chart_scores,
-            nswidths,
-            scores_only=model.training,
-            score_shift=chart_mask_not_gold,
+            chart_scores, nswidths, scores_only=model.training, score_shift=chart_mask_not_gold,
         )
 
         def parse_result_to_tree(parse_result):

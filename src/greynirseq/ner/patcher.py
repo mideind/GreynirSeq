@@ -2,13 +2,10 @@ import argparse
 import random
 import re
 
-from reynir import NounPhrase
 import tqdm
+from reynir import NounPhrase
 
-from .aligner import NERParser
-
-
-NER_PATTERN = "<\s*e:([0-9]):([^:]*):>([^>]*?)<\s*/\s*e[0-9]+>"
+NER_PATTERN = "<\s*e:([0-9]):([^:]*):>([^>]*?)<\s*/\s*e[0-9]+>"  # noqa
 
 
 def parse_sentence(sentence):
@@ -87,7 +84,7 @@ def patch_sentence(sentence, names, force=None):
                 kasus = force
             try:
                 decl = decline_np(names[int(neridx)], kasus)
-            except:
+            except:  # noqa
                 # TODO FIX!!
                 return None
             if decl is None:

@@ -18,14 +18,13 @@
 
 
 import argparse
+from typing import List, Tuple
 
 from reynir import Greynir, _Sentence
 from reynir.bintokenizer import TokenList
 from reynir.ifdtagger import IFD_Tagset
 
-from greynirseq.nicenlp.models.icebert import IcebertModel
-
-from typing import List, Tuple
+from greynirseq.nicenlp.models.icebert import IcebertModel  # pylint: disable=no-name-in-module
 
 TokLem = Tuple[List[str], List[str]]
 
@@ -52,7 +51,7 @@ class Lemmatizer:
         # Split words to not hit 512 token limit in IceBERT
         # Consider making this smarter if dealing with a lot of long sentences.
         for i in range(0, len(tokens), self.SPLIT_WC):
-            p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100 : (i + 1) * 100])
+            p_lemmas, p_tokens = self.ib_lemmatize(tokens[i * 100 : (i + 1) * 100])  # noqa
             a_lemmas += p_lemmas
             a_tokens += p_tokens
         return a_lemmas, a_tokens
@@ -62,7 +61,7 @@ class Lemmatizer:
         parsed = self.parse(text)
         for sentence in parsed:
             lemmas, tokens = self.lemmatize_sentence(sentence)
-            lemmatized.append(([l for l in lemmas], tokens, sentence.tidy_text))
+            lemmatized.append(([l for l in lemmas], tokens, sentence.tidy_text))  # noqa
         return lemmatized
 
     def lemmatize_pretty(self, text: str) -> None:
@@ -93,11 +92,7 @@ class Lemmatizer:
                 # Number
                 lemmas.append(tok.txt)
                 continue
-            if (
-                cands
-                and len(cands) > 1
-                and (isinstance(cands[0], int) or isinstance(cands[0], float))
-            ):
+            if cands and len(cands) > 1 and (isinstance(cands[0], int) or isinstance(cands[0], float)):
                 # Punctuation
                 lemmas.append(tok.txt)
                 continue
@@ -122,16 +117,8 @@ class Lemmatizer:
                     found = True
                     break
                 try:
-                    ifd = IFD_Tagset(
-                        k=tok.kind,
-                        c=c.ordfl,
-                        t=c.ordfl,
-                        f=c.fl,
-                        txt=tok.txt,
-                        s=c.stofn,
-                        b=c.beyging,
-                    )
-                except:
+                    ifd = IFD_Tagset(k=tok.kind, c=c.ordfl, t=c.ordfl, f=c.fl, txt=tok.txt, s=c.stofn, b=c.beyging,)
+                except:  # noqa
                     lemmas.append(tok.txt)
                     found = True
                     break
@@ -162,8 +149,8 @@ def main() -> None:
     args = parser.parse_args()
     sentence = args.sentence
 
-    l = Lemmatizer()
-    l.lemmatize_pretty(sentence)
+    lem = Lemmatizer()
+    lem.lemmatize_pretty(sentence)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
+#!/usr/bin/env bash
+
 TOTAL_NUM_UPDATES=18000  #
 WARMUP_UPDATES=500      #  percent of the number of updates
 LR=1e-05                # Peak LR for polynomial LR scheduler.
 MAX_SENTENCES=8         # Batch size.
-SAVE_INTERVAL=250
+#SAVE_INTERVAL=250
 LOG_INTERVAL=5
 
 # Pretrained model
@@ -35,7 +37,7 @@ CUDA_VISIBLE_DEVICES=0 fairseq-train /home/vesteinn/data/MIM-GOLD-NER/8_entity_t
     --gpt2-encoder-json $ENCODER_JSON_PATH \
     --gpt2-vocab-bpe $VOCAB_BPE_PATH \
     --update-freq 1 \
-    --tensorboard-logdir ./tensorboard_logdir/$NAME \
+    --tensorboard-logdir ./tensorboard_logdir/"$NAME" \
     --max-update $TOTAL_NUM_UPDATES\
     --save-interval-updates 500 \
     --save-dir "/data/models/icebert_ner/ner_slset"

@@ -4,8 +4,6 @@
 
 import unittest
 
-import torch
-
 from greynirseq.nicenlp.data.lookup_dataset import LookupDataset
 from greynirseq.nicenlp.data.mutex_binary_dataset import MutexBinaryDataset
 
@@ -30,9 +28,7 @@ class TestMutexBinaryDataset(unittest.TestCase):
             data.append(num_mutex_classes + 2 * i)
             data.append(num_mutex_classes - i)
 
-        dataset = MutexBinaryDataset(
-            [data], num_mutex_classes=num_mutex_classes, separator=-1
-        )
+        dataset = MutexBinaryDataset([data], num_mutex_classes=num_mutex_classes, separator=-1)
 
         expected = [
             33.0,
