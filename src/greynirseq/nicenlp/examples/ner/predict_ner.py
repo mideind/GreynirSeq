@@ -6,7 +6,6 @@ from greynirseq.ner.ner_f1_stats import EvalNER
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
 
 
-
 model = MultiClassRobertaModel.from_pretrained(
     "/data/datasets/MIM-GOLD-NER/8_entity_types/8_entity_types/prep_space_rmh_vocab/bin",
     checkpoint_file="/home/vesteinn/work/GreynirSeq/src/greynirseq/nicenlp/examples/ner/ner_out/chkpts/checkpoint_best.pt",
@@ -23,7 +22,7 @@ ldict = model.task.label_dictionary
 lbl_shift = ldict.nspecial
 batch_size = 1
 
-symbols = model.task.label_dictionary.symbols[model.task.label_dictionary.nspecial:]
+symbols = model.task.label_dictionary.symbols[model.task.label_dictionary.nspecial :]
 
 eval_ner = EvalNER(symbols)
 

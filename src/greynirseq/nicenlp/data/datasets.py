@@ -220,9 +220,7 @@ class POSDataset(BaseWrapperDataset):
 
 class NoBosEosDataset(BaseWrapperDataset):
     def __init__(
-        self,
-        dataset: Dataset,
-        dictionary: Dictionary,
+        self, dataset: Dataset, dictionary: Dictionary,
     ):
         super().__init__(dataset)
         self.dictionary = dictionary

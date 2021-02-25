@@ -5,9 +5,7 @@ import argparse
 from greynirseq.utils.ifd_utils import ifd2labels
 
 
-def load_file(
-    input, output_folder, prefix, sep="<SEP>"
-):
+def load_file(input, output_folder, prefix, sep="<SEP>"):
     o_d = open("{}/{}.input0".format(output_folder, prefix), "w")
     o_l = open("{}/{}.label0".format(output_folder, prefix), "w")
 
@@ -26,7 +24,9 @@ def load_file(
             if lab is not None:
                 if sep != " ":
                     o_l.writelines(
-                        "{}\n".format(" <SEP> ".join([" ".join(slab) for slab in lab]))  # pylint: disable=not-an-iterable
+                        "{}\n".format(
+                            " <SEP> ".join([" ".join(slab) for slab in lab])
+                        )  # pylint: disable=not-an-iterable
                     )
                 else:
                     o_l.writelines("{}\n".format(sep.join(lab)))
