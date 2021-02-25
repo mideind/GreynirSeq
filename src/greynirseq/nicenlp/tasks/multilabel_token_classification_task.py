@@ -20,11 +20,9 @@ from fairseq.data import (
     RightPadDataset,
     SortDataset,
     data_utils,
-    encoders,
 )
 from fairseq.tasks import FairseqTask, register_task
 
-from greynirseq.nicenlp.data.encoding import get_word_beginnings
 from greynirseq.nicenlp.data.datasets import (
     IgnoreLabelsDataset,
     NestedDictionaryDatasetFix,
@@ -33,6 +31,7 @@ from greynirseq.nicenlp.data.datasets import (
     RightPad2dDataset,
     WordEndMaskDataset,
 )
+from greynirseq.nicenlp.data.encoding import get_word_beginnings
 from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
     label_schema_as_dictionary,

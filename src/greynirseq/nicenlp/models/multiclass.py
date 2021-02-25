@@ -2,30 +2,24 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-import itertools
 import logging
 
 import torch
-from torch import nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
-
-from fairseq import utils
+from fairseq.models import register_model, register_model_architecture
+from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import (
+    RobertaEncoder,
+    RobertaModel,
     base_architecture,
     roberta_base_architecture,
     roberta_large_architecture,
-    RobertaModel,
 )
-from fairseq.models.roberta.hub_interface import RobertaHubInterface
-from fairseq.models.roberta.model import RobertaEncoder
-from fairseq.models import register_model, register_model_architecture
 from fairseq.modules import LayerNorm
+from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 
-from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
-from greynirseq.nicenlp.utils.constituency import token_utils
-
 
 logger = logging.getLogger(__name__)
 

@@ -2,20 +2,14 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from typing import List, Union, Dict, Any
-import itertools
 import math
-import time
-from collections import namedtuple
+from typing import Any, Dict, List, Union
 
+import torch.nn.functional as F
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.models import FairseqModel
-from fairseq import utils
 
-import torch
-import torch.nn.functional as F
-
-Numeric = Union[float, int]
+Numeric = Union[float, int]  # pylint: disable=unsubscriptable-object
 
 
 @register_criterion("multi_class_token_classification")

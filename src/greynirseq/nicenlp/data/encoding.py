@@ -1,4 +1,5 @@
 import argparse
+
 from fairseq.data import Dictionary, encoders
 
 

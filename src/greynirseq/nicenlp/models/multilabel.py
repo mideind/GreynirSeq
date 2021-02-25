@@ -5,7 +5,7 @@
 import logging
 
 import torch
-from fairseq import utils
+import torch.nn.functional as F
 from fairseq.models import register_model, register_model_architecture
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models.roberta.model import (

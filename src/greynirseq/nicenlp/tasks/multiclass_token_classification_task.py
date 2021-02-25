@@ -2,49 +2,34 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from typing import List
+import argparse
 import logging
 import os
 from pathlib import Path
-import argparse
+from typing import List
 
 import numpy as np
-
 import torch
 from fairseq.data import (
-    data_utils,
     Dictionary,
     IdDataset,
-    NumSamplesDataset,
+    ListDataset,
     NumelDataset,
+    NumSamplesDataset,
+    PrependTokenDataset,
     RightPadDataset,
     SortDataset,
-    TruncateDataset,
-    PrependTokenDataset,
-    ListDataset,
+    data_utils,
 )
-from fairseq.data import encoders
 from fairseq.tasks import FairseqTask, register_task
 
 from greynirseq.nicenlp.data.datasets import (
-    NoBosEosDataset,
-    WordEndMaskDataset,
-    IgnoreLabelsDataset,
-    RightPad2dDataset,
     NestedDictionaryDatasetFix,
+    NoBosEosDataset,
     NumWordsDataset,
+    WordEndMaskDataset,
 )
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    label_schema_as_dictionary,
-    parse_label_schema,
-    make_dict_idx_to_vec_idx,
-    make_vec_idx_to_dict_idx,
-    make_group_name_to_group_attr_vec_idxs,
-    make_group_masks,
-)
-
-
 from greynirseq.nicenlp.utils.constituency import token_utils
 
 logger = logging.getLogger(__name__)
@@ -71,6 +56,7 @@ class MultiClassTokenClassificationTask(FairseqTask):
         self.is_word_initial = is_word_initial
         self.num_labels = len(self._label_dictionary.symbols)
 
+    @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
         parser.add_argument("data", metavar="FILE", help="file prefix for data")

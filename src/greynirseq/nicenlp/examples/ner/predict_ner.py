@@ -4,9 +4,7 @@ import time
 
 from greynirseq.ner.ner_f1_stats import EvalNER
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
-
 from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
-
 
 model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
 model.to("cpu")
