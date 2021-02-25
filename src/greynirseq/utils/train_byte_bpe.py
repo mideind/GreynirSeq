@@ -2,11 +2,9 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from pathlib import Path
-import sys
+import json
 
 from tokenizers import ByteLevelBPETokenizer
-import json
 
 
 def main(args):
@@ -20,12 +18,7 @@ def main(args):
         files=paths,
         vocab_size=args.vocab_size,
         min_frequency=args.min_freq,
-        special_tokens=[
-            "<s>",
-            "<pad>",
-            "</s>",
-            "<unk>"
-            ,]
+        special_tokens=["<s>", "<pad>", "</s>", "<unk>"],
     )
 
     # Save files to disk
@@ -35,32 +28,19 @@ def main(args):
     with open("{}-vocab.json".format(args.name), "w") as fp:
         json.dump(tok_spec["model"]["vocab"], fp, indent=4)
     with open("{}-merges.txt".format(args.name), "w") as fp:
-        fp.write(
-            "\n".join(tok_spec["model"]["merges"])
-        )
+        fp.write("\n".join(tok_spec["model"]["merges"]))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
-    try:
-        import argcomplete
-    except ImportError as e:
-        pass
+
     parser = argparse.ArgumentParser("Description")
 
     parser.add_argument(
-        "-i",
-        "--input",
-        type=str,
-        help="Input file",
-        metavar="FILE",
+        "-i", "--input", type=str, help="Input file", metavar="FILE",
     )
     parser.add_argument(
-        "-n",
-        "--name",
-        type=str,
-        help="File prefix",
-        metavar="NAME",
+        "-n", "--name", type=str, help="File prefix", metavar="NAME",
     )
     parser.add_argument(
         "-s",
@@ -71,11 +51,7 @@ if __name__ == '__main__':
         help="Total vocabulary size (not merge operations)",
     )
     parser.add_argument(
-        "--min-freq",
-        type=int,
-        default=3,
-        metavar="N",
-        help="Ignore tokens with lower frequency than this",
+        "--min-freq", type=int, default=3, metavar="N", help="Ignore tokens with lower frequency than this",
     )
 
     args = parser.parse_args()

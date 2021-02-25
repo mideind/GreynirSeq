@@ -7,7 +7,6 @@ from functools import lru_cache
 
 import numpy as np
 import torch
-
 from fairseq.data import FairseqDataset
 
 
@@ -29,7 +28,7 @@ class LazyMMapIndexedTextDataset(FairseqDataset):
         self._len = None
 
     def read_data(self, path):
-        self.memmap_buffer = np.memmap(path, mode='r', order='C')
+        self.memmap_buffer = np.memmap(path, mode="r", order="C")
         self.offsets = [0]
         self._sizes = []
         fp = self.memmap_buffer._mmap
@@ -51,7 +50,7 @@ class LazyMMapIndexedTextDataset(FairseqDataset):
 
     def check_index(self, i):
         if i < 0 or i >= self._len:
-            raise IndexError('index out of range')
+            raise IndexError("index out of range")
 
     def __del__(self):
         if self.memmap_buffer is not None:
@@ -86,5 +85,3 @@ class LazyMMapIndexedTextDataset(FairseqDataset):
     @property
     def supports_prefetch(self):
         return False
-
-

@@ -9,7 +9,7 @@ MAX_SENTENCES=8         # Batch size.
 # Pretrained model
 # ICEBERT_DIR='/mnt/windows/data/models/icebert-base-36k
 ICEBERT_DIR=/data/models/icebert-base-36k
-ROBERTA_PATH="$ICEBERT_DIR/model.pt"
+#ROBERTA_PATH="$ICEBERT_DIR/model.pt"
 ENCODER_JSON_PATH="$ICEBERT_DIR/icebert-bpe-vocab.json"
 VOCAB_BPE_PATH="$ICEBERT_DIR/icebert-bpe-merges.txt"
 # DATA_DIR=/mnt/windows/data/icebert-data-bin

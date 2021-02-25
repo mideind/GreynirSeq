@@ -4,17 +4,14 @@
 
 from collections import OrderedDict
 
+import torch
 from fairseq.data import BaseWrapperDataset, NestedDictionaryDataset
 from fairseq.data.nested_dictionary_dataset import _unflatten
-
-import torch
 from torch.utils.data.dataloader import default_collate
 
 
 class MutexBinaryDataset(BaseWrapperDataset):
-    def __init__(
-        self, dataset, default=1, num_mutex_classes=34, skip_n=5, separator=-1
-    ):
+    def __init__(self, dataset, default=1, num_mutex_classes=34, skip_n=5, separator=-1):
         super().__init__(dataset)
         self.default = default
         self.num_mutex_classes = num_mutex_classes
@@ -59,7 +56,7 @@ class NestedDictionaryDatasetFix(NestedDictionaryDataset):
         for k, ds in self.defn.items():
             try:
                 sample[k] = ds.collater([s[k] for s in samples])
-            except (NotImplementedError, AttributeError) as e:
+            except (NotImplementedError, AttributeError) as e:  # noqa
                 sample[k] = default_collate([s[k] for s in samples])
         return _unflatten(sample)
 

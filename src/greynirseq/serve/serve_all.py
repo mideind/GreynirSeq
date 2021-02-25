@@ -1,27 +1,15 @@
-import os
-import re
+# flake8: noqa
+
 import torch
-import numpy as np
-import time
-
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
-from greynirseq.nicenlp.data.datasets import *
-from greynirseq.nicenlp.models.multi_span_model import *
-from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
-from greynirseq.nicenlp.tasks.translation_with_backtranslation import *
-from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
-
-from greynirseq.nicenlp.utils.greynir.greynir_utils import Node
-import greynirseq.nicenlp.utils.greynir.tree_dist as tree_dist
-
-from fairseq.models.roberta import RobertaModel, RobertaHubInterface
+from fairseq.models.roberta import RobertaModel
 from fairseq.models.transformer import TransformerModel
+from flask import Flask, escape, request
+from flask_cors import CORS, cross_origin
+
+from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
+from greynirseq.nicenlp.data.datasets import *
+from greynirseq.nicenlp.tasks.translation_with_backtranslation import *
+from greynirseq.utils.tokenize_splitter import index_text
 
 
 class IceBERTRunner:
@@ -42,10 +30,7 @@ class IceBERTRunner:
 
 class RoBERTaRunner:
     def __init__(self):
-        self.model = RobertaModel.from_pretrained(
-            "/data/models/roberta.large",
-            checkpoint_file="model.pt",
-        )
+        self.model = RobertaModel.from_pretrained("/data/models/roberta.large", checkpoint_file="model.pt",)
         self.model.to("cpu")
         self.model.eval()
 
@@ -55,7 +40,7 @@ class RoBERTaRunner:
 
 class NERRunner:
     def __init__(self):
-        self.model = IcebertConstModel.from_pretrained(
+        self.model = IcebertConstModel.from_pretrained(  # pylint: disable=undefined-variable
             "/data/models/icebert_ner/ner_slset",
             checkpoint_file="checkpoint_last.pt",
             data_name_or_path="/data/models/MIM-GOLD-NER_split/8_entity_types/bin/bin",
@@ -74,7 +59,7 @@ class NERRunner:
 class TranslationRunner:
 
     add_bos = False
-    
+
     def __init__(self):
 
         self.model = TransformerModel.from_pretrained(
@@ -88,7 +73,7 @@ class TranslationRunner:
             bpe="gpt2",
             beam=5,
             len_penalty=0.6,
-            task="translation_with_backtranslation"
+            task="translation_with_backtranslation",
         )
 
         self.model.to("cpu")
@@ -101,7 +86,7 @@ class TranslationRunner:
             return self.infer([sentences], [prefixes])
 
         bos_idx_tensor = torch.tensor([self.model.task.src_dict.bos()])
-        
+
         prefix_args = {}
         if prefixes is not None:
             # prefix = self.model.encode(prefixes)[:-1].unsqueeze(0)
@@ -120,9 +105,7 @@ class TranslationRunner:
             tokenized_sentences = [torch.cat([bos_idx_tensor, self.model.encode(sentence)]) for sentence in sentences]
         else:
             tokenized_sentences = [self.model.encode(" " + sentence) for sentence in sentences]
-        batched_hypos = self.model.generate(
-            tokenized_sentences, 10, inference_step_args=prefix_args
-        )
+        batched_hypos = self.model.generate(tokenized_sentences, 10, inference_step_args=prefix_args)
         hypos = []
         for s_hypos in batched_hypos:
             hypos.append([self.model.decode(hypo["tokens"]) for hypo in s_hypos])
@@ -131,7 +114,7 @@ class TranslationRunner:
 
 class TranslationRunnerIsEn(TranslationRunner):
     add_bos = True
-    
+
     def __init__(self):
 
         self.model = TransformerModel.from_pretrained(
@@ -145,15 +128,12 @@ class TranslationRunnerIsEn(TranslationRunner):
             bpe="gpt2",
             beam=5,
             len_penalty=0.6,
-            task="translation_with_backtranslation"
+            task="translation_with_backtranslation",
         )
 
         self.model.to("cpu")
         self.model.eval()
 
-
-from flask import Flask, escape, request
-from flask_cors import CORS, cross_origin
 
 application = Flask(__name__)
 cors = CORS(application)
@@ -177,9 +157,6 @@ def ner():
     return {"ok": True, "text": text, "labels": labels, "sentence": sentence}
 
 
-from greynirseq.utils.tokenize_splitter import index_text
-
-
 @application.route("/translate", methods=["POST"])
 def translate():
     if request.json is None or "contents" not in request.json:
@@ -192,8 +169,8 @@ def translate():
 
     batched = [pair for pair in zip(sentences, prefixes)]
 
-    src_lang = request.json.get('sourceLanguageCode', 'en')
-    if src_lang == 'en':
+    src_lang = request.json.get("sourceLanguageCode", "en")
+    if src_lang == "en":
         translation_hypos = [translation_runner.infer(pair[0], pair[1]) for pair in batched]
     else:
         translation_hypos = [translation_runner_isen.infer(pair[0], pair[1]) for pair in batched]

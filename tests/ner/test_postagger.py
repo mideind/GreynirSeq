@@ -1,5 +1,4 @@
-from greynirseq.ner import postagger
-from greynirseq.ner import aligner
+from greynirseq.ner import aligner, postagger
 
 
 def test_add_mark(ner_tagged_sentences_en, ner_tagged_sentences_is, ner_final_simple):

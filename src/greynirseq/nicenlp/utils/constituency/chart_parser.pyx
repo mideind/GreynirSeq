@@ -2,19 +2,20 @@
 #cython: language_level=3
 import cython
 from cython.parallel import parallel, prange
-from cython.view cimport array as cvarray
-# from cython cimport integral, floating, numeric
-from libc.stdlib cimport malloc, free
 
 cimport openmp
+from cython.view cimport array as cvarray
+
+# from cython cimport integral, floating, numeric
+from libc.stdlib cimport free, malloc
 
 import numpy as np
-cimport numpy as np
 
-import torch
+cimport numpy as np
 
 from collections import namedtuple
 
+import torch
 
 NP_BOOLTYPE = np.uint8
 

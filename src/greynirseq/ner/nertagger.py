@@ -1,24 +1,17 @@
 import argparse
-import time
 
-import torch
-import numpy as np
-import tqdm
-
-from greynirseq.nicenlp.data.datasets import *
-from greynirseq.nicenlp.models.multi_span_model import *
-from greynirseq.nicenlp.tasks.multi_span_prediction_task import *
-from greynirseq.nicenlp.criterions.multi_span_prediction_criterion import *
-from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
-
-from transformers import AutoModelForTokenClassification, AutoTokenizer
-from transformers import pipeline
 import spacy
+import torch
+import tqdm
 from spacy.gold import biluo_tags_from_offsets
+from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
+
+from greynirseq.nicenlp.models.multilabel import MultiLabelRobertaModel
+from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 
 
 def icelandic_ner(input_file, tagged_file):
-    model = IcebertConstModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
+    model = MultiLabelRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
     model.to("cpu")
     model.eval()
 
@@ -35,11 +28,11 @@ def icelandic_ner(input_file, tagged_file):
 def english_ner(input_file, output_file):
 
     nlp = spacy.load("en_core_web_lg")
-    hnlp = pipeline("ner")
+    hnlp = pipeline("ner")  # noqa
 
-    model = AutoModelForTokenClassification.from_pretrained(
-        "dbmdz/bert-large-cased-finetuned-conll03-english"
-    ).to("cuda")
+    model = AutoModelForTokenClassification.from_pretrained("dbmdz/bert-large-cased-finetuned-conll03-english").to(
+        "cuda"
+    )
     tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
     label_list = [
         "O",  # Outside of a named entity
@@ -62,7 +55,7 @@ def english_ner(input_file, output_file):
 
         tokens = []
         for range in ranges:
-            tokens.append(sent[range[0] : range[1]])
+            tokens.append(sent[range[0] : range[1]])  # noqa
 
         entlocs = [(a["start"], a["end"], a["label"]) for a in ents]
         labels = biluo_tags_from_offsets(doc, entlocs)
@@ -75,10 +68,9 @@ def english_ner(input_file, output_file):
         inputs = tokenizer.encode(sequence, return_tensors="pt").to("cuda")
         outputs = model(inputs)[0]
         predictions = torch.argmax(outputs, dim=2)
-        bert_tokens = [
-            (token, label_list[prediction])
-            for token, prediction in zip(tokens, predictions[0].tolist())
-        ][1:-1]
+        bert_tokens = [(token, label_list[prediction]) for token, prediction in zip(tokens, predictions[0].tolist())][
+            1:-1
+        ]
         tokens = " ".join([t[0] for t in bert_tokens]).replace(" ##", "").split(" ")
         labels = [t[1] for t in bert_tokens if len(t[0]) < 2 or t[0][:2] != "##"]
         return tokens, labels
@@ -93,9 +85,7 @@ def english_ner(input_file, output_file):
             else:
                 using = "sp"
                 tokens, ents = spacy_tok_ner(source)
-            ofile.writelines(
-                "{}\t{}\t{}\n".format(" ".join(tokens), " ".join(ents), using)
-            )
+            ofile.writelines("{}\t{}\t{}\n".format(" ".join(tokens), " ".join(ents), using))
 
 
 def main():

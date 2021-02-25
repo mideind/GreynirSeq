@@ -1,1 +1,1 @@
-import greynirseq.nicenlp
+import greynirseq.nicenlp  # noqa

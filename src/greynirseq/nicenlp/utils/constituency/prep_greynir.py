@@ -1,3 +1,5 @@
+# flake8: noqa
+
 """
 Items:
 - POS and Constituency parsing
@@ -20,22 +22,20 @@ Probing task
 
 """
 
-from pathlib import Path
-import os
-import json
-from pprint import pprint
-import random
-import json
-import sys
 import code
-from pprint import pprint as pp
+import json
+import os
+import random
 import readline
+import sys
+from pathlib import Path
+from pprint import pprint as pp
 
-
+import click
 import reynir
 import tokenizer
 
-import click
+import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 
 try:
     from icecream import ic
@@ -43,8 +43,6 @@ try:
     ic.configureOutput(includeContext=True)
 except ImportError:  # Graceful fallback if IceCream isn't installed.
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
-import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 
 
 @click.group()

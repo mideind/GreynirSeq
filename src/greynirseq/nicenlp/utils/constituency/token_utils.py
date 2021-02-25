@@ -13,5 +13,3 @@ def tokenize(text, allow_multiword=False):
 
 def tokenize_to_string(text):
     return " ".join(tokenize(text))
-
-

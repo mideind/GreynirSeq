@@ -1,14 +1,14 @@
 """Align NER tags (with enumeration) in a parallel corpus."""
 from __future__ import annotations
+
 import argparse
-import copy
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Generator, Iterable, List, Optional, Tuple
+
 import spacy
 import tqdm
-
-from collections import defaultdict
 from pyjarowinkler import distance
 from scipy.optimize import linear_sum_assignment
 from spacy.gold import offsets_from_biluo_tags
@@ -51,7 +51,7 @@ class NERAlignment:
     marker_2: NERMarker
 
     def __str__(self) -> str:
-        return f"{self.marker_1.start_idx}:{self.marker_1.end_idx}:{self.marker_1.tag}-{self.marker_2.start_idx}:{self.marker_2.end_idx}:{self.marker_2.tag}"
+        return f"{self.marker_1.start_idx}:{self.marker_1.end_idx}:{self.marker_1.tag}-{self.marker_2.start_idx}:{self.marker_2.end_idx}:{self.marker_2.tag}"  # noqa
 
 
 @dataclass(frozen=True)
@@ -168,17 +168,7 @@ class NERAnalyser:
         """Print statistics."""
         tbl_string = "{:>13}   {:>10}    {:>10}    {:>10}    {:>10}    {:>10}    {:>10}"
         tbl_num_string = "{:>13}   {:>10}    {:>10}    {:>10}    {:>10}    {:>10}    {:>10.6f}"
-        print(
-            tbl_string.format(
-                "Origin",
-                "Lines",
-                "LWPers",
-                "LWMultiPers",
-                "Mism",
-                "LWPersMatch",
-                "Avg.Dist",
-            )
-        )
+        print(tbl_string.format("Origin", "Lines", "LWPers", "LWMultiPers", "Mism", "LWPersMatch", "Avg.Dist",))
         for origin in self.stats:
             st = self.stats[origin]
             print(
@@ -277,7 +267,9 @@ class NERSentenceParse:
         return [NERMarkerIdx(*offset) for offset in offsets_from_biluo_tags(doc, ner)]
 
     @staticmethod
-    def parse_line(line: str, provenance: Optional[NERAnalyser]) -> NERSentenceParse:
+    def parse_line(
+        line: str, provenance: Optional[NERAnalyser]  # pylint: disable=unsubscriptable-object
+    ) -> NERSentenceParse:
         r"""Parse a line.
 
         Args:
@@ -313,7 +305,7 @@ class NERSentenceParse:
         return NERSentenceParse(sentence, ner_markers, mode, origins)
 
 
-def split_tag(tag: str) -> Tuple[str, Optional[str]]:
+def split_tag(tag: str) -> Tuple[str, Optional[str]]:  # pylint: disable=unsubscriptable-object
     """Split a NER tag to HEAD, TAIL."""
     if tag == NULL_TAG:
         return tag, None
@@ -394,23 +386,17 @@ class NERParser:
             max_dist = max([p[-1] for p in pair_info.pair_map])  # type: ignore
 
         output = "{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(
-            p1.model,
-            ",".join(p1.origins),
-            p2.model,
-            ",".join(p2.origins),
-            match,
-            max_dist,
-            " ".join(alignments),
+            p1.model, ",".join(p1.origins), p2.model, ",".join(p2.origins), match, max_dist, " ".join(alignments),
         )
         self.print_data_file.writelines(output)
 
-    def parse_files(self, print_data: str, analyser: Optional[NERAnalyser]):
+    def parse_files(self, print_data: str, analyser: Optional[NERAnalyser]):  # pylint: disable=unsubscriptable-object
         """Parse all the files provided and print."""
         for p1, p2, pair_info in self.parse_files_gen(analyser):
             self.print_line(p1, p2, pair_info, print_data)
 
     def parse_files_gen(
-        self, analyser: Optional[NERAnalyser]
+        self, analyser: Optional[NERAnalyser]  # pylint: disable=unsubscriptable-object
     ) -> Generator[Tuple[NERSentenceParse, NERSentenceParse, PairInfo], None, None]:
         """Parse all the files provided."""
         for l1, l2 in tqdm.tqdm(zip(self.lang_1, self.lang_2)):
@@ -425,7 +411,7 @@ class NERParser:
         try:
             corp1 = p1.origins[0]
             corp2 = p2.origins[0]
-        except:
+        except:  # noqa
             corp1 = corp2 = "mixup"
 
         # Filter based on the tags we support.
@@ -440,18 +426,22 @@ class NERParser:
         # Get the NEs strings (i.e. the actual names)
         if p1.model == "sp":
             # Spacy returns character indices.
-            ner_markers_1 = [NERMarker.from_idx(t, p1.sent[t.start_idx : t.end_idx].lower()) for t in ner_markers_idx_1]
+            ner_markers_1 = [
+                NERMarker.from_idx(t, p1.sent[t.start_idx : t.end_idx].lower()) for t in ner_markers_idx_1  # noqa
+            ]
         else:
             # Other models return token indices.
             ner_markers_1 = [
                 NERMarker.from_idx(
-                    ner_marker_idx, " ".join(p1.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower()
+                    ner_marker_idx,
+                    " ".join(p1.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower(),  # noqa
                 )
                 for ner_marker_idx in ner_markers_idx_1
             ]
         ner_markers_2 = [
             NERMarker.from_idx(
-                ner_marker_idx, " ".join(p2.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower()
+                ner_marker_idx,
+                " ".join(p2.sent.split()[ner_marker_idx.start_idx : ner_marker_idx.end_idx]).lower(),  # noqa
             )
             for ner_marker_idx in ner_markers_idx_2
         ]
@@ -466,14 +456,7 @@ class NERParser:
             if hits:
                 for hit_1, hit_2, cost in hits:
                     pair_map.append(NERAlignment(cost, ner_markers_1[hit_1], ner_markers_2[hit_2]))
-        return PairInfo(
-            ner_markers_1,
-            ner_markers_2,
-            min_dist,
-            corp1,
-            corp2,
-            pair_map,
-        )
+        return PairInfo(ner_markers_1, ner_markers_2, min_dist, corp1, corp2, pair_map,)
 
 
 def main():

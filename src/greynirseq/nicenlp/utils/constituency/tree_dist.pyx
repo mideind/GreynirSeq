@@ -2,13 +2,13 @@
 #cython: language_level=3
 import cython
 from cython.parallel import parallel, prange
-from cython.view cimport array as cvarray
-
-from libc.stdlib cimport malloc, free
 
 cimport openmp
+from cython.view cimport array as cvarray
+from libc.stdlib cimport free, malloc
 
 import numpy as np
+
 cimport numpy as np
 
 try:

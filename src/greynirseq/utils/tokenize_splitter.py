@@ -3,9 +3,8 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import tokenizer
-
-from reynir.binparser import BIN_Token
 from reynir import bintokenizer
+from reynir.binparser import BIN_Token
 
 
 def prep_text_for_tokenizer(text):

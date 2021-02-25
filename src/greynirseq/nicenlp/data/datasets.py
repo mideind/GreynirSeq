@@ -2,18 +2,15 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from typing import List, Union, Dict, Any, Callable, Tuple
 from collections import OrderedDict
 from functools import lru_cache
-
-from fairseq.data import BaseWrapperDataset, NestedDictionaryDataset, LRUCacheDataset
-from fairseq.data.nested_dictionary_dataset import _unflatten
-from fairseq.data import data_utils, Dictionary
+from typing import Callable, Dict, List, Tuple
 
 import torch
+from fairseq.data import BaseWrapperDataset, Dictionary, LRUCacheDataset, NestedDictionaryDataset, data_utils
+from fairseq.data.nested_dictionary_dataset import _unflatten
 from torch import LongTensor, Tensor
 from torch.utils.data import Dataset
-from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data.dataloader import default_collate
 
 
@@ -43,27 +40,15 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
 
     @classmethod
     def make_both(
-        cls,
-        dataset: Dataset,
-        label_dictionary: Dictionary,
-        rebinarize_fn=None,
-        seed: int = 1,
+        cls, dataset: Dataset, label_dictionary: Dictionary, rebinarize_fn=None, seed: int = 1,
     ):
         dataset = LRUCacheDataset(dataset)
         return (
             DynamicLabelledSpanDataset(
-                dataset,
-                label_dictionary,
-                return_spans=True,
-                rebinarize_fn=rebinarize_fn,
-                seed=seed,
+                dataset, label_dictionary, return_spans=True, rebinarize_fn=rebinarize_fn, seed=seed,
             ),
             DynamicLabelledSpanDataset(
-                dataset,
-                label_dictionary,
-                return_spans=False,
-                rebinarize_fn=rebinarize_fn,
-                seed=seed,
+                dataset, label_dictionary, return_spans=False, rebinarize_fn=rebinarize_fn, seed=seed,
             ),
         )
 
@@ -133,9 +118,6 @@ class ProductSpanDataset(BaseWrapperDataset):
     def __getitem__(self, index: int):
         seq_spans = self.dataset[index].reshape(-1, 2)
         span_start = seq_spans[:, 0]
-        offset = 0
-        if self.end_is_fence_post:
-            offset = 1
         span_end = seq_spans[:, 1]
         nwords = len(span_start)
         tiled_starts = span_start.unsqueeze(0).repeat(nwords, 1).permute(1, 0)
@@ -153,7 +135,6 @@ def split_tensor_on(tensor: Tensor, sep_value: int):
     numel = tensor.shape[0]
     items = []
     for idx, val in enumerate(tensor):
-        val_ = val.item()
         if val == sep_value:
             end = idx
             items.append(tensor[start:end])
@@ -216,7 +197,7 @@ class POSDataset(BaseWrapperDataset):
     def __getitem__(self, index: int):
         item = self.dataset[index]
         end = item.numel() - 1 if self.has_eos else item.numel()
-        word_items = split_tensor_on(item[self.start_offset : end], self.label_dict.sep())
+        word_items = split_tensor_on(item[self.start_offset : end], self.label_dict.sep())  # noqa
         assert all(subseq.numel() > 0 for subseq in word_items)
         assert len(word_items) == (item.eq(self.label_dict.sep()).sum() + 1)
         num_words = len(word_items)
@@ -291,7 +272,6 @@ class IgnoreLabelsDataset(BaseWrapperDataset):
         self.ignore_labels = ignore_labels
 
     def __getitem__(self, index):
-        item = self.dataset[index]
         labels = self.labels[index]
         mask = [int(label not in self.ignore_labels) for label in labels]
         return torch.tensor(mask)
@@ -305,10 +285,7 @@ class NumWordsDataset(BaseWrapperDataset):
         self.start_offset = 1 if dataset[0][0] == self.dictionary.bos() else 0
 
     def __getitem__(self, index: int):
-        word_starts = [
-            self.is_word_initial.get(int(v), 1)
-            for v in self.dataset[index][self.start_offset : -1]  # ignore bos and eos
-        ]
+        word_starts = [self.is_word_initial.get(int(v), 1) for v in self.dataset[index][self.start_offset : -1]]  # noqa
 
         # LEGACY hack
         # try:
@@ -348,7 +325,7 @@ class NestedDictionaryDatasetFix(NestedDictionaryDataset):
         for k, ds in self.defn.items():
             try:
                 sample[k] = ds.collater([s[k] for s in samples])
-            except (NotImplementedError, AttributeError) as e:
+            except (NotImplementedError, AttributeError) as e:  # noqa
                 sample[k] = default_collate([s[k] for s in samples])
         return _unflatten(sample)
 
@@ -367,7 +344,7 @@ class NestedDictionaryDatasetFix2(NestedDictionaryDatasetFix):
         for k, ds in samples[0].items():
             try:
                 sample[k] = ds.collater([s[k] for s in samples])
-            except (NotImplementedError, AttributeError) as e:
+            except (NotImplementedError, AttributeError) as e:  # noqa
                 sample[k] = default_collate([s[k] for s in samples])
         return _unflatten(sample)
 

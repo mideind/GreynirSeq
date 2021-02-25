@@ -1,3 +1,5 @@
+# flake8: noqa
+
 from greynirseq.nicenlp.tasks import (
     multilabel_token_classification_task,
     multiclass_token_classification_task,

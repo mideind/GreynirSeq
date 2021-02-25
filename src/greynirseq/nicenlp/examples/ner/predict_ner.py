@@ -1,7 +1,6 @@
-import torch
-import numpy as np
+# flake8: noqa
+
 import time
-import tqdm
 
 from greynirseq.ner.ner_f1_stats import EvalNER
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
@@ -30,18 +29,12 @@ eval_ner = EvalNER(symbols)
 
 for dataset_offset in range(dataset_size):
     start = time.time()
-    sample = dataset.collater(
-        [dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)]
-    )
+    sample = dataset.collater([dataset[idx_] for idx_ in range(dataset_offset, dataset_offset + batch_size)])
     ntokens = sample["net_input"]["nsrc_tokens"]
     tokens = [tokens for tokens in sample["net_input"]["src_tokens"]]
-    sentences = [
-        model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)
-    ]
+    sentences = [model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)]
     seq_idx = 0
     target_idxs = sample["target_attrs"][seq_idx]
-    pred_labels, pred_idxs = model.predict_labels(
-       sentences[0]
-    )
+    pred_labels, pred_idxs = model.predict_labels(sentences[0])
     eval_ner.compare(pred_idxs, target_idxs)
     eval_ner.print_all_stats()
