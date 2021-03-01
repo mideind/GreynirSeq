@@ -16,6 +16,7 @@ from fairseq.models.roberta.model import (
     roberta_large_architecture,
 )
 from fairseq.modules import LayerNorm
+from fairseq.tasks import FairseqTask
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
@@ -50,7 +51,7 @@ class MultiClassTokenClassificationHead(nn.Module):
 
 @register_model("multiclass_roberta")
 class MultiClassRobertaModel(RobertaModel):
-    def __init__(self, args, encoder, task):
+    def __init__(self, args, encoder: RobertaEncoder, task: FairseqTask):
         super().__init__(args, encoder)
 
         def freeze_module_params(m):

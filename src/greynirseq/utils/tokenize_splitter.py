@@ -11,7 +11,7 @@ def prep_text_for_tokenizer(text):
     return "[[ " + " ]] [[ ".join(text.split("\n\n")) + " ]]"
 
 
-def index_text(text):
+def index_text(text, correct_spaces: bool = False):
     """Segments contiguous (Icelandic) text into paragraphs and sentences
     and returns:
         dictionary of sentence indices to sentences
@@ -30,6 +30,8 @@ def index_text(text):
         for _, sent in pg:
             curr_sent = list(filter(BIN_Token.is_understood, sent))
             curr_sent = tokenizer.normalized_text_from_tokens(curr_sent)
+            if correct_spaces:
+                curr_sent = tokenizer.correct_spaces(curr_sent)
             sent_idxs.append(curr_sent_idx)
             sent_idx_to_sent[curr_sent_idx] = curr_sent
             curr_sent_idx += 1
