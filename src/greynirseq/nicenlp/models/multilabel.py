@@ -111,7 +111,7 @@ class MultiLabelRobertaModel(RobertaModel):
 
         # use first bpe token of word as representation
         x = x[:, 1:-1, :]
-        starts = word_mask[:, 1:-1, :]  # remove bos, eos
+        starts = word_mask[:, 1:-1]  # remove bos, eos
         ends = starts.roll(-1, dims=[-1]).nonzero()[:, -1] + 1
         starts = starts.nonzero().tolist()
         mean_words = []

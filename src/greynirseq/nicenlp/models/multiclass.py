@@ -107,7 +107,8 @@ class MultiClassRobertaModel(RobertaModel):
 
         # use first bpe token of word as representation
         x = x[:, 1:-1, :]
-        starts = word_mask[:, 1:-1, :]  # remove bos, eos
+        starts = word_mask[:, 1:-1]  # remove bos, eos
+
         ends = starts.roll(-1, dims=[-1]).nonzero()[:, -1] + 1
         starts = starts.nonzero().tolist()
         mean_words = []
@@ -153,6 +154,10 @@ class MultiClassRobertaModel(RobertaModel):
 
 
 class MultiClassRobertaHubInterface(RobertaHubInterface):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
+
     def encode(self, sentence):
         # Space added if needed to ensure encoding of words at the front
         # of a sentences is no different from those further back.
@@ -165,14 +170,13 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         return super().decode(tokens)[1:]
 
     def predict_labels(self, sentence):
-        word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
         tokens = self.encode(sentence)
-        word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
+        word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
         word_mask[0] = 0
         word_mask[-1] = 0
         word_mask = word_mask.unsqueeze(0)
         tokens = tokens.unsqueeze(0)
-        attr_logits, extra = self.model(tokens, features_only=True, word_mask=word_mask)
+        attr_logits, extra = self.model(tokens, word_mask=word_mask, features_only=True)
         pred_idxs = attr_logits.max(dim=-1).indices[0]
         labels = [self.model.task.label_dictionary.symbols[i] for i in pred_idxs]
         return labels, pred_idxs
