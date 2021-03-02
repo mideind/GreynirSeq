@@ -19,6 +19,8 @@ from fairseq.modules import LayerNorm
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
+from greynirseq.nicenlp.data.encoding import get_word_beginnings
+
 logger = logging.getLogger(__name__)
 
 
@@ -189,7 +191,7 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
     def predict_labels(self, sentence):
         # assert task is set
 
-        word_start_dict = self.task.get_word_beginnings(self.args, self.task.dictionary)
+        word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
 
         tokens = self.encode(sentence)
         word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
