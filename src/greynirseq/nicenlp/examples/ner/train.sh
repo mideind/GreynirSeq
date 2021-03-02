@@ -1,18 +1,19 @@
+#!/usr/bin/env bash
+
 TOTAL_NUM_UPDATES=50000  #
 WARMUP_UPDATES=500      #  percent of the number of updates
 LR=1e-05                # Peak LR for polynomial LR scheduler.
 MAX_SENTENCES=8         # Batch size.
-SAVE_INTERVAL=250
 LOG_INTERVAL=5
 MAX_TOKENS=3000
 
 # Pretrained model
-ROBERTA_PATH=
-ENCODER_JSON_PATH=
-VOCAB_BPE_PATH=
+ROBERTA_PATH=/path/model.pt
+ENCODER_JSON_PATH=/path/vocab.json
+VOCAB_BPE_PATH=/path/merges.txt
 
-DATA_PATH=
-GREYNIRSEQ_PATH=
+DATA_PATH=/path/data
+GREYNIRSEQ_PATH=/path/GreynirSeq
 ARC=multiclass_roberta_base
 CRITERION=multi_class_token_classification
 TASK=multi_class_token_classification_task
@@ -20,7 +21,7 @@ UPDATE_FREQ=2
 OUT_DIR=./ner_out
 
 fairseq-train $DATA_PATH \
-    --save-dir $OUT_DIR/chkpts \
+    --save-dir "$OUT_DIR"/chkpts \
     --user-dir $GREYNIRSEQ_PATH \
     --update-freq $UPDATE_FREQ \
     --log-interval 10\
@@ -44,7 +45,7 @@ fairseq-train $DATA_PATH \
     --gpt2-encoder-json $ENCODER_JSON_PATH \
     --gpt2-vocab-bpe $VOCAB_BPE_PATH \
     --update-freq 1 \
-    --tensorboard-logdir $OUT_DIR/tensorboard_logdir/$NAME \
+    --tensorboard-logdir "$OUT_DIR"/tensorboard_logdir/"$NAME" \
     --max-update $TOTAL_NUM_UPDATES\
     --save-interval-updates 5000 \
     --n-trans-layers-to-freeze 0\
