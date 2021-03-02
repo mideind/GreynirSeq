@@ -100,10 +100,9 @@ class MultiClassRobertaModel(RobertaModel):
         encoder = RobertaEncoder(args, task.source_dictionary)
         return cls(args, encoder, task)
 
-    def forward(self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs):
+    def forward(self, src_tokens, features_only=False, **kwargs):
         x, _extra = self.encoder(src_tokens, features_only, return_all_hiddens=True, **kwargs)
 
-        _, _, inner_dim = x.shape
         word_mask = kwargs["word_mask"]
 
         # use first bpe token of word as representation
