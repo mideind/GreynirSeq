@@ -65,6 +65,9 @@ class BPEEncoderDataset(BaseWrapperDataset):
     @lru_cache(maxsize=_CACHE_SIZE)
     def __getitem__(self, index: int) -> ByteSequence:
         str_seq: str = self.dataset[index]
+        if not str_seq:
+            empty = torch.tensor([]).long()
+            return ByteSequence("", empty, bpe_lens=empty, bpe_mask=empty, bpe_ids=empty, word_lens=empty, word_mask=empty)
         word_byte_offsets = self.word_byte_offsets[index]
         byte_seq = str_seq.encode()
         assert len(byte_seq) >= 1, "empty lines are currently not supported"

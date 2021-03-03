@@ -28,10 +28,10 @@ from greynirseq.nicenlp.utils.data_utils import lengths_to_begin_mask
 
 class Actions(IntEnum):
     NOOP = 0
-    MASK = 2
-    REPLACE = 4
-    DELETE = 1
-    INSERT = 3
+    MASK = 1
+    REPLACE = 2
+    DELETE = 3
+    INSERT = 4
 
 
 class ByteNoising(BaseWrapperDataset):

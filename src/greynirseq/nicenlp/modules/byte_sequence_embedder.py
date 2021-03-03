@@ -10,12 +10,6 @@ from fairseq.data import Dictionary, BaseWrapperDataset, FairseqDataset
 from greynirseq.nicenlp.modules.conv_highway import ConvHighwayBlock
 
 
-class ByteDataset(BaseWrapperDataset):
-    def __init__(self, dataset: FairseqDataset):
-        self.dataset = dataset
-
-    def __getitem__(self, index):
-        item = self.dataset[index]
 
 
 class ByteSequenceEmbedder(nn.Module):
@@ -74,9 +68,9 @@ class ByteSequenceEmbedder(nn.Module):
         x = self.token_embeddings(byte_tokens)  # BxTxC
         assert not (bpe_mask is None and word_mask is None)
         if bpe_mask is not None:
-            x += self.embed_bpe_markers(bpe_mask.long())
+            x += self.embed_bpe_markers(bpe_mask)
         if word_mask is not None:
-            x += self.embed_word_markers(word_mask.long())
+            x += self.embed_word_markers(word_mask)
         # (Batch x Time x Features)
         for layer_idx, conv_highway_layer in enumerate(self.layers):
             x = conv_highway_layer(x)

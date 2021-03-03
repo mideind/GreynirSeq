@@ -11,7 +11,6 @@ from fairseq import utils
 from fairseq.models import FairseqEncoder, FairseqEncoderModel, BaseFairseqModel
 from fairseq.models.roberta.model import base_architecture, RobertaModel, RobertaEncoder
 import fairseq.models.roberta as roberta
-from fairseq.models.roberta.hub_interface import RobertaHubInterface
 from fairseq.models import register_model, register_model_architecture
 from fairseq.modules import (
     FairseqDropout,

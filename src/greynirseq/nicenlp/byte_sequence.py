@@ -67,14 +67,14 @@ class ByteSequence:
         return new_seq
 
     @classmethod
-    def cat(cls, seqs):
+    def cat(cls, seqs, str_sep="\n"):
         byteseq = {}
         for key in cls.__dataclass_fields__.keys():
             if getattr(seqs[0], key) is None:
                 continue
             values = [getattr(seq, key) for seq in seqs]
             if key == "str_seq":
-                byteseq[key] = "\n".join(values)
+                byteseq[key] = str_sep.join(values)
             else:
                 byteseq[key] = torch.cat(values)
 
