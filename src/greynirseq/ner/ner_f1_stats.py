@@ -1,8 +1,8 @@
 class EvalNER:
     EMPTY_SPAN = ["", 0, 0]
 
-    def __init__(self, model, ignore=["O", "<sep>"]):
-        self.labels = [lbl[2:] for lbl in model.task.label_schema.labels if lbl not in ignore]
+    def __init__(self, symbols, ignore=["O", "<sep>"]):
+        self.labels = [lbl[2:] for lbl in symbols if lbl not in ignore]
         self.true_positive = {lbl: 0 for lbl in self.labels}
         self.false_positive = {lbl: 0 for lbl in self.labels}
         self.true_negative = {lbl: 0 for lbl in self.labels}

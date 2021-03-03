@@ -2,27 +2,22 @@
 
 import time
 
-from greynirseq.ner.utils.ner_f1_stats import EvalNER
+from greynirseq.ner.ner_f1_stats import EvalNER
+from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
+from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 
-model = IcebertConstModel.from_pretrained(  # pylint: disable=undefined-variable
-    "/media/hd/MIDEIND/data/models/icebert_ner/ner_slset",
-    checkpoint_file="checkpoint_last.pt",
-    data_name_or_path="/media/hd/MIDEIND/data/models/MIM-GOLD-NER/8_entity_types/bin/bin",
-    gpt2_encoder_json="/media/hd/MIDEIND/data/models/icebert-base-36k/icebert-bpe-vocab.json",
-    gpt2_vocab_bpe="/media/hd/MIDEIND/data/models/icebert-base-36k/icebert-bpe-merges.txt",
-    term_schema="/media/hd/MIDEIND/data/models/MIM-GOLD-NER_split/term.json",
-)
+model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
 model.to("cpu")
 model.eval()
 
-dataset_name = "test"
+dataset_name = "valid"
 dataset = model.task.load_dataset(dataset_name)
 dataset_size = dataset.sizes[0].shape[0]
 ldict = model.task.label_dictionary
 lbl_shift = ldict.nspecial
 batch_size = 1
-
-eval_ner = EvalNER(model)
+symbols = model.task.label_dictionary.symbols[model.task.label_dictionary.nspecial :]
+eval_ner = EvalNER(symbols)
 
 for dataset_offset in range(dataset_size):
     start = time.time()
@@ -31,7 +26,7 @@ for dataset_offset in range(dataset_size):
     tokens = [tokens for tokens in sample["net_input"]["src_tokens"]]
     sentences = [model.decode(seq[: ntokens[seq_idx]]) for seq_idx, seq in enumerate(tokens)]
     seq_idx = 0
-    target_cats = sample["target_cats"][seq_idx]
-    pred_cats, labels, tokenized = model.predict_sample_pos(sample, sentences, device="cpu")
-    eval_ner.compare(pred_cats, target_cats)
+    target_idxs = sample["target_attrs"][seq_idx]
+    pred_labels, pred_idxs = model.predict_labels(sentences[0])
+    eval_ner.compare(pred_idxs, target_idxs)
     eval_ner.print_all_stats()

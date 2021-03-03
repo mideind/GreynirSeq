@@ -16,6 +16,7 @@ from fairseq.models.roberta.model import (
     roberta_large_architecture,
 )
 from fairseq.modules import LayerNorm
+from fairseq.tasks import FairseqTask
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
@@ -24,21 +25,19 @@ from greynirseq.nicenlp.data.encoding import get_word_beginnings
 logger = logging.getLogger(__name__)
 
 
-class MultiLabelTokenClassificationHead(nn.Module):
+class MultiClassTokenClassificationHead(nn.Module):
     """Head for word-level classification tasks."""
 
-    def __init__(self, in_features, out_features, num_cats, pooler_dropout):
+    def __init__(self, in_features, out_features, pooler_dropout):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features  # num_labels
-        self.num_cats = num_cats
 
         self.dense = nn.Linear(self.in_features, self.in_features)
         self.activation_fn = F.relu
         self.dropout = nn.Dropout(p=pooler_dropout)
         self.layer_norm = LayerNorm(self.in_features)
-        self.cat_proj = nn.Linear(self.in_features, self.num_cats)
-        self.out_proj = nn.Linear(self.in_features + self.num_cats, self.out_features)
+        self.out_proj = nn.Linear(self.in_features, self.out_features)
 
     def forward(self, x, **kwargs):
         x = self.dropout(x)
@@ -46,16 +45,13 @@ class MultiLabelTokenClassificationHead(nn.Module):
         x = self.layer_norm(x)
         x = self.activation_fn(x)
 
-        cat_logits = self.cat_proj(x)
-        cat_probits = torch.softmax(cat_logits, dim=-1)
-        attr_logits = self.out_proj(torch.cat((cat_probits, x), -1))
-
-        return cat_logits, attr_logits
+        attr_logits = self.out_proj(x)
+        return attr_logits
 
 
-@register_model("multilabel_roberta")
-class MultiLabelRobertaModel(RobertaModel):
-    def __init__(self, args, encoder, task):
+@register_model("multiclass_roberta")
+class MultiClassRobertaModel(RobertaModel):
+    def __init__(self, args, encoder: RobertaEncoder, task: FairseqTask):
         super().__init__(args, encoder)
 
         def freeze_module_params(m):
@@ -74,10 +70,9 @@ class MultiLabelRobertaModel(RobertaModel):
             freeze_module_params(sentence_encoder.layers[layer])
 
         self.task = task
-        self.task_head = MultiLabelTokenClassificationHead(
+        self.task_head = MultiClassTokenClassificationHead(
             in_features=sentence_encoder.embedding_dim,
             out_features=self.task.num_labels,
-            num_cats=self.task.num_cats,
             pooler_dropout=self.args.pooler_dropout,
         )
 
@@ -105,15 +100,15 @@ class MultiLabelRobertaModel(RobertaModel):
         encoder = RobertaEncoder(args, task.source_dictionary)
         return cls(args, encoder, task)
 
-    def forward(self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs):
+    def forward(self, src_tokens, features_only=False, **kwargs):
         x, _extra = self.encoder(src_tokens, features_only, return_all_hiddens=True, **kwargs)
 
-        _, _, inner_dim = x.shape
         word_mask = kwargs["word_mask"]
 
         # use first bpe token of word as representation
         x = x[:, 1:-1, :]
         starts = word_mask[:, 1:-1]  # remove bos, eos
+
         ends = starts.roll(-1, dims=[-1]).nonzero()[:, -1] + 1
         starts = starts.nonzero().tolist()
         mean_words = []
@@ -121,14 +116,13 @@ class MultiLabelRobertaModel(RobertaModel):
             mean_words.append(x[seq_idx, token_idx:end, :].mean(dim=0))
         mean_words = torch.stack(mean_words)
         words = mean_words
-        # Innermost dimension is mask for tokens at head of word.
+        # Innermost dimension has 1s if they represent the start of a word, zeros otherwise.
         nwords = word_mask.sum(dim=-1)
-        (cat_logits, attr_logits) = self.task_head(words)
+        attr_logits = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
-        cat_logits = pad_sequence(cat_logits.split((nwords).tolist()), padding_value=0, batch_first=True)
         attr_logits = pad_sequence(attr_logits.split((nwords).tolist()), padding_value=0, batch_first=True,)
-        return (cat_logits, attr_logits), _extra
+        return attr_logits, _extra
 
     @classmethod
     def from_pretrained(
@@ -145,7 +139,7 @@ class MultiLabelRobertaModel(RobertaModel):
             load_checkpoint_heads=True,
             **kwargs,
         )
-        return MultiLabelRobertaHubInterface(x["args"], x["task"], x["models"][0])
+        return MultiClassRobertaHubInterface(x["args"], x["task"], x["models"][0])
 
     def upgrade_state_dict_named(self, state_dict, name):
         super().upgrade_state_dict_named(state_dict, name)
@@ -159,58 +153,40 @@ class MultiLabelRobertaModel(RobertaModel):
                 state_dict[path] = value
 
 
-class MultiLabelRobertaHubInterface(RobertaHubInterface):
-    def predict_sample(self, sample):
-        net_input = sample["net_input"]
-        tokens = net_input["src_tokens"]
-
-        word_mask = sample["net_input"]["word_mask"]
-
-        (cat_logits, attr_logits), _extra = self.model(tokens, word_mask=word_mask)
-
-        return self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
-
-    def predict(self, sentences, device="cuda"):
-        device = torch.device(device)
-        num_sentences = len(sentences)
-
-        dataset = self.task.prepare_sentences(sentences)
-        sample = dataset.collater([dataset[i] for i in range(num_sentences)])
-
-        return self.predict_sample(sample)
+class MultiClassRobertaHubInterface(RobertaHubInterface):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
 
     def encode(self, sentence):
-        # We add a space to treat word encoding the same at the front and back of a sentence.
+        # Space added if needed to ensure encoding of words at the front
+        # of a sentences is no different from those further back.
         if sentence[0] != " ":
             sentence = " " + sentence
         return super().encode(sentence)
 
-    def decode(self, tokens, no_cut_space=False):
+    def decode(self, tokens):
+        # Remove the leading space, see 'encode' comment.
         return super().decode(tokens)[1:]
 
     def predict_labels(self, sentence):
-        # assert task is set
-
-        word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
-
         tokens = self.encode(sentence)
-        word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
+        word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
         word_mask[0] = 0
         word_mask[-1] = 0
         word_mask = word_mask.unsqueeze(0)
         tokens = tokens.unsqueeze(0)
-        (cat_logits, attr_logits), _extra = self.model(tokens, features_only=True, word_mask=word_mask)
+        attr_logits, extra = self.model(tokens, word_mask=word_mask, features_only=True)
+        pred_idxs = attr_logits.max(dim=-1).indices[0]
+        labels = [self.model.task.label_dictionary.symbols[i] for i in pred_idxs]
+        return labels, pred_idxs
 
-        labels = self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
 
-        return labels
-
-
-@register_model_architecture("multilabel_roberta", "multilabel_roberta_base")
-def multilabel_roberta_base_architecture(args):
+@register_model_architecture("multiclass_roberta", "multiclass_roberta_base")
+def multiclass_roberta_base_architecture(args):
     roberta_base_architecture(args)
 
 
-@register_model_architecture("multilabel_roberta", "multilabel_roberta_large")
-def multilabel_roberta_large_architecture(args):
+@register_model_architecture("multiclass_roberta", "multiclass_roberta_large")
+def multiclass_roberta_large_architecture(args):
     roberta_large_architecture(args)

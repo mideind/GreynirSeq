@@ -13,15 +13,26 @@ See `./train.sh` which trains all ten sets for crossvalidation.
 Point the model class to the checkpoint (any of the splits or an averaged checkpoint) and auxiliary data as e.g.
 
 ```python
-from greynirseq.nicenlp.models.icebert import IcebertModel
-ib = IcebertModel.from_pretrained(
-    '/data/models/icebert_pos',
-    checkpoint_file='checkpoint_last.pt',
-    gpt2_encoder_json="/data/models/icebert-base-36k/icebert-bpe-vocab.json",  
-    gpt2_vocab_bpe="/data/models/icebert-base-36k/icebert-bpe-merges.txt",
-)
-ib.predict_to_idf("Ég veit að þú kemur í kvöld til mín.", device="cpu")
+from greynirseq.nicenlp.models.multilabel import MultiLabelRobertaMode
+from greynirseq.settings import IceBERT_POS_PATH, IceBERT_POS_CONFIG
+model = MultiLabelRobertaModel.from_pretrained(IceBERT_POS_PATH, **IceBERT_POS_CONFIG)
+
+sentence = "Ég veit að þú kemur í kvöld til mín ."
+model.predict_labels(sentence)
 ```
 
-which returns `['fp1en', 'sfg1en', 'c', 'fp2en', 'sfg2en', 'ao', 'nheo', 'ae', 'fphee', 'p']`.
+which returns the following
+
+```python
+[[('fp', ['1', 'sing', 'nom']),
+  ('sf', ['sing', 'act', '1', 'pres']),
+  ('c', []),
+  ('fp', ['2', 'sing', 'nom']),
+  ('sf', ['sing', 'act', '2', 'pres']),
+  ('af', ['pos']),
+  ('n', ['neut', 'sing', 'acc']),
+  ('af', ['pos']),
+  ('fp', ['1', 'sing', 'gen']),
+  ('pl', [])]]
+```
 

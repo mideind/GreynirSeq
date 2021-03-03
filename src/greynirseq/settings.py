@@ -12,7 +12,6 @@ IceBERT_NER_CONFIG = {
     "data_name_or_path": os.path.join(DATASET_DIR, "MIM-GOLD-NER/8_entity_types/bin/bin"),
     "gpt2_encoder_json": os.path.join(MODEL_DIR, "icebert-base-36k/icebert-bpe-vocab.json"),
     "gpt2_vocab_bpe": os.path.join(MODEL_DIR, "icebert-base-36k/icebert-bpe-merges.txt"),
-    "term_schema": os.path.join(MODEL_DIR, "MIM-GOLD-NER_split/term.json"),
 }
 
 IceBERT_POS_PATH = os.path.join(MODEL_DIR, "icebert_pos")
