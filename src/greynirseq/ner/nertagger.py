@@ -6,12 +6,12 @@ import tqdm
 from spacy.gold import biluo_tags_from_offsets
 from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
 
-from greynirseq.nicenlp.models.multilabel import MultiLabelRobertaModel
+from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel, MultiClassRobertaHubInterface
 from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 
 
 def icelandic_ner(input_file, tagged_file):
-    model = MultiLabelRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
+    model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
     model.to("cpu")
     model.eval()
 
@@ -21,8 +21,8 @@ def icelandic_ner(input_file, tagged_file):
     for sentence in tqdm.tqdm(infile.readlines()):
         sentence = sentence.strip().split("\t")[1]
         # Todo, update for batching when predict_pos fixed
-        cat_idx, labels, sentence = model.predict_pos([sentence], device="cpu")
-        ofile.writelines("{}\t{}\n".format(" ".join(sentence), " ".join(labels)))
+        labels, _ = model.predict_labels(sentence)
+        ofile.writelines(f"{sentence}\t{' '.join(labels)}\n")
 
 
 def english_ner(input_file, output_file):
