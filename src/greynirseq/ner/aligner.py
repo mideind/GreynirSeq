@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import argparse
-import re
-from collections import defaultdict
-from dataclasses import dataclass
-from typing import Generator, Iterable, List, Optional, Tuple
 import logging
 import os
+import re
+from collections import defaultdict
+from dataclasses import asdict, dataclass
+from typing import Generator, Iterable, List, Optional, Tuple
 
 import spacy
 import tqdm
@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 NULL_TAG = "O"
 
 
-@dataclass(frozen=True)
+@dataclass
 class NERMarkerIdx:
     """Hold a NER marker."""
 
@@ -33,16 +33,16 @@ class NERMarkerIdx:
         return f"{self.start_idx}:{self.end_idx}:{self.tag}"
 
 
-@dataclass(frozen=True)
+@dataclass
 class NERMarker(NERMarkerIdx):
     """Hold a NER marker along with the NEs."""
 
-    ne: str
+    named_entity: str
 
     @staticmethod
-    def from_idx(ner_marker_idx: NERMarkerIdx, ne: str):
+    def from_idx(ner_marker_idx: NERMarkerIdx, named_entity: str):
         """Create from idx."""
-        return NERMarker(ner_marker_idx.start_idx, ner_marker_idx.end_idx, ner_marker_idx.tag, ne)
+        return NERMarker(**asdict(ner_marker_idx), named_entity=named_entity)
 
 
 @dataclass(frozen=True)
@@ -151,13 +151,16 @@ class NERAnalyser:
         for pair in pair_info.pair_map:
             self.ner_pair_hist[
                 "{}\t{}\t{}\t{}".format(
-                    pair.marker_1.ne, pair.marker_2.ne, pair.marker_1.ne == pair.marker_2.ne, pair.distance
+                    pair.marker_1.named_entity,
+                    pair.marker_2.named_entity,
+                    pair.marker_1.named_entity == pair.marker_2.named_entity,
+                    pair.distance,
                 )
             ] += 1
         for per in pair_info.per_tags_1:
-            self.ner_hist_1[per.ne] += 1
+            self.ner_hist_1[per.named_entity] += 1
         for per in pair_info.per_tags_2:
-            self.ner_hist_2[per.ne] += 1
+            self.ner_hist_2[per.named_entity] += 1
         self.stats[origin]["sum_per_1"] += len(pair_info.per_tags_1)
         self.stats[origin]["sum_per_2"] += len(pair_info.per_tags_2)
         self.stats[origin]["number_lines"] += 1
@@ -458,7 +461,8 @@ class NERParser:
         min_dist = 1
         if ner_markers_1 and ner_markers_2:
             min_dist, hits = get_min_hun_distance(
-                [ner_marker.ne for ner_marker in ner_markers_1], [ner_marker.ne for ner_marker in ner_markers_2]
+                [ner_marker.named_entity for ner_marker in ner_markers_1],
+                [ner_marker.named_entity for ner_marker in ner_markers_2],
             )
             if hits:
                 for hit_1, hit_2, cost in hits:
