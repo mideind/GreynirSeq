@@ -6,6 +6,8 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Generator, Iterable, List, Optional, Tuple
+import logging
+import os
 
 import spacy
 import tqdm
@@ -14,6 +16,7 @@ from scipy.optimize import linear_sum_assignment
 from spacy.gold import offsets_from_biluo_tags
 
 nlp = spacy.load("en_core_web_lg")
+log = logging.getLogger(__name__)
 
 NULL_TAG = "O"
 
@@ -122,7 +125,11 @@ class NERAnalyser:
 
     def load_provenance(self):
         """Load the provenance set, i.e. for each dataset we clean the sentences and store uniques."""
+        log.info("Loading provenance sets.")
         for path in self.provenance_sets:
+            if not os.path.exists(path):
+                log.warning(f"{path} does not exist. Provenance incorrectly configured.")
+                continue
             with open(path) as fp:
                 for line in fp.readlines():
                     self.provenance_sets[path].add(self.preprocess_sentence(line))
@@ -168,7 +175,7 @@ class NERAnalyser:
         """Print statistics."""
         tbl_string = "{:>13}   {:>10}    {:>10}    {:>10}    {:>10}    {:>10}    {:>10}"
         tbl_num_string = "{:>13}   {:>10}    {:>10}    {:>10}    {:>10}    {:>10}    {:>10.6f}"
-        print(tbl_string.format("Origin", "Lines", "LWPers", "LWMultiPers", "Mism", "LWPersMatch", "Avg.Dist",))
+        print(tbl_string.format("Origin", "Lines", "LWPers", "LWMultiPers", "Mism", "LWPersMatch", "Avg.Dist"))
         for origin in self.stats:
             st = self.stats[origin]
             print(
@@ -383,10 +390,10 @@ class NERParser:
             alignments.append(f"{pair}")
 
         if alignments:
-            max_dist = max([p[-1] for p in pair_info.pair_map])  # type: ignore
+            max_dist = max([p.distance for p in pair_info.pair_map])
 
         output = "{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(
-            p1.model, ",".join(p1.origins), p2.model, ",".join(p2.origins), match, max_dist, " ".join(alignments),
+            p1.model, ",".join(p1.origins), p2.model, ",".join(p2.origins), match, max_dist, " ".join(alignments)
         )
         self.print_data_file.writelines(output)
 
@@ -456,7 +463,7 @@ class NERParser:
             if hits:
                 for hit_1, hit_2, cost in hits:
                     pair_map.append(NERAlignment(cost, ner_markers_1[hit_1], ner_markers_2[hit_2]))
-        return PairInfo(ner_markers_1, ner_markers_2, min_dist, corp1, corp2, pair_map,)
+        return PairInfo(ner_markers_1, ner_markers_2, min_dist, corp1, corp2, pair_map)
 
 
 def main():
