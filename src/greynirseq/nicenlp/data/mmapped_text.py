@@ -32,7 +32,7 @@ class MmappedTextDataset(FairseqDataset):
             if not line:
                 break
             self.offsets.append(offset)
-            self._sizes.append(len(line))
+            self._sizes.append(len(line.rstrip(b"\n")))
         mmap.seek(0)
         self._len = len(self._sizes)
         self._sizes = torch.tensor(self.sizes)

@@ -66,8 +66,15 @@ class BPEEncoderDataset(BaseWrapperDataset):
     def __getitem__(self, index: int) -> ByteSequence:
         str_seq: str = self.dataset[index]
         if not str_seq:
+        if not str_seq and self.append_eos:
+            byte_eos_t = torch.tensor([self.byte_dictionary.eos()]).long()
+            bpe_eos_t = torch.tensor([self.dictionary.eos()]).long()
+            one_t = torch.tensor([1]).long()
+            return ByteSequence("", byte_eos_t, bpe_lens=one_t, bpe_mask=one_t, bpe_ids=bpe_eos_t, word_lens=one_t, word_mask=one_t)
+        elif not str_seq:
             empty = torch.tensor([]).long()
             return ByteSequence("", empty, bpe_lens=empty, bpe_mask=empty, bpe_ids=empty, word_lens=empty, word_mask=empty)
+
         word_byte_offsets = self.word_byte_offsets[index]
         byte_seq = str_seq.encode()
         assert len(byte_seq) >= 1, "empty lines are currently not supported"

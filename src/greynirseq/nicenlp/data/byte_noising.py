@@ -93,6 +93,8 @@ class ByteNoising(BaseWrapperDataset):
     @lru_cache(maxsize=_CACHE_SIZE)
     def __getitem__(self, index):
         seq = self.dataset[index].clone()
+        if seq.byte_seq.numel() <= 1:
+            return seq
         byte_seq = seq.byte_seq
         bpe_lens = seq.bpe_lens
         word_lens = seq.word_lens
@@ -209,11 +211,14 @@ class ByteNoising(BaseWrapperDataset):
         # Since we use dynamic word segmentation, this size is not known before runtime.
         # However, we dont really need exact estimates of size (except when it is 0 or 1)
         # so we can provide an upper bound on sentence length (sequence size)
+        keep = self.dataset.sizes <= 1
         sizes = self.dataset.sizes
 
         num_deletions = (sizes * self.delete_prob).long() + 1
         num_insertions = (sizes * self.insert_prob).long()
-        return sizes + num_deletions + num_insertions
+        ret = sizes + num_deletions + num_insertions
+        ret[keep] = sizes[keep]
+        return ret
 
     @property
     def supports_prefetch(self):

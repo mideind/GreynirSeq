@@ -34,9 +34,9 @@ from greynirseq.nicenlp.data.token_offsets_dataset import TokenOffsetsDataset
 from greynirseq.nicenlp.data.map_dataset import MapDataset
 from greynirseq.nicenlp.data.byte_noising import ByteNoising
 from greynirseq.nicenlp.data.byte_dictionary import ByteDictionary
-from greynirseq.nicenlp.data.icelandic_character_noising import (
-    IcelandicCharacterNoising
-)
+# from greynirseq.nicenlp.data.icelandic_character_noising import (
+#     IcelandicCharacterNoising
+# )
 from greynirseq.nicenlp.data.masked_byte_sequence import MaskedByteSequenceDataset
 from greynirseq.nicenlp.data.mmapped_text import MmappedTextDataset
 from greynirseq.nicenlp.data.byte_token_blocks import ByteTokenBlockDataset
@@ -214,9 +214,9 @@ class ByteMaskedLMTask(FairseqTask):
         byte_bos_tensor = torch.tensor([self.byte_dictionary.bos()], dtype=torch.long)
         bpe_bos_tensor = torch.tensor([self.bpe_dictionary.bos()], dtype=torch.long)
 
-        seq_dataset = IcelandicCharacterNoising(
-            seq_dataset, case_prob=self.args.case_switch_prob
-        )
+        # seq_dataset = IcelandicCharacterNoising(
+        #     seq_dataset, case_prob=self.args.case_switch_prob
+        # )
 
         seq_dataset = ByteNoising(
             seq_dataset,
