@@ -6,12 +6,12 @@ import tqdm
 from spacy.gold import biluo_tags_from_offsets
 from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
 
-from greynirseq.nicenlp.models.multilabel import MultiLabelRobertaModel
+from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
 from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 
 
 def icelandic_ner(input_file, tagged_file):
-    model = MultiLabelRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
+    model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
     model.to("cpu")
     model.eval()
 
@@ -21,8 +21,8 @@ def icelandic_ner(input_file, tagged_file):
     for sentence in tqdm.tqdm(infile.readlines()):
         sentence = sentence.strip().split("\t")[1]
         # Todo, update for batching when predict_pos fixed
-        cat_idx, labels, sentence = model.predict_pos([sentence], device="cpu")
-        ofile.writelines("{}\t{}\n".format(" ".join(sentence), " ".join(labels)))
+        labels, _ = model.predict_labels(sentence)  # type: ignore
+        ofile.writelines(f"{sentence}\t{' '.join(labels)}\n")
 
 
 def english_ner(input_file, output_file):
@@ -30,7 +30,9 @@ def english_ner(input_file, output_file):
     nlp = spacy.load("en_core_web_lg")
     hnlp = pipeline("ner")  # noqa
 
-    model = AutoModelForTokenClassification.from_pretrained("dbmdz/bert-large-cased-finetuned-conll03-english").to(
+    model = AutoModelForTokenClassification.from_pretrained(
+        "dbmdz/bert-large-cased-finetuned-conll03-english"
+    ).to(  # type: ignore
         "cuda"
     )
     tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
@@ -64,8 +66,8 @@ def english_ner(input_file, output_file):
 
     def hugface_tok_ner(sequence):
         # Bit of a hack to get the tokens with the special tokens
-        tokens = tokenizer.tokenize(tokenizer.decode(tokenizer.encode(sequence)))
-        inputs = tokenizer.encode(sequence, return_tensors="pt").to("cuda")
+        tokens = tokenizer.tokenize(tokenizer.decode(tokenizer.encode(sequence)))  # type: ignore
+        inputs = tokenizer.encode(sequence, return_tensors="pt").to("cuda")  # type: ignore
         outputs = model(inputs)[0]
         predictions = torch.argmax(outputs, dim=2)
         bert_tokens = [(token, label_list[prediction]) for token, prediction in zip(tokens, predictions[0].tolist())][

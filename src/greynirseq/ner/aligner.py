@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import os
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Generator, Iterable, List, Optional, Tuple
 
 import spacy
@@ -14,11 +16,12 @@ from scipy.optimize import linear_sum_assignment
 from spacy.gold import offsets_from_biluo_tags
 
 nlp = spacy.load("en_core_web_lg")
+log = logging.getLogger(__name__)
 
 NULL_TAG = "O"
 
 
-@dataclass(frozen=True)
+@dataclass
 class NERMarkerIdx:
     """Hold a NER marker."""
 
@@ -30,16 +33,16 @@ class NERMarkerIdx:
         return f"{self.start_idx}:{self.end_idx}:{self.tag}"
 
 
-@dataclass(frozen=True)
+@dataclass
 class NERMarker(NERMarkerIdx):
     """Hold a NER marker along with the NEs."""
 
-    ne: str
+    named_entity: str
 
     @staticmethod
-    def from_idx(ner_marker_idx: NERMarkerIdx, ne: str):
+    def from_idx(ner_marker_idx: NERMarkerIdx, named_entity: str):
         """Create from idx."""
-        return NERMarker(ner_marker_idx.start_idx, ner_marker_idx.end_idx, ner_marker_idx.tag, ne)
+        return NERMarker(**asdict(ner_marker_idx), named_entity=named_entity)
 
 
 @dataclass(frozen=True)
@@ -122,7 +125,11 @@ class NERAnalyser:
 
     def load_provenance(self):
         """Load the provenance set, i.e. for each dataset we clean the sentences and store uniques."""
+        log.info("Loading provenance sets.")
         for path in self.provenance_sets:
+            if not os.path.exists(path):
+                log.warning(f"{path} does not exist. Provenance incorrectly configured.")
+                continue
             with open(path) as fp:
                 for line in fp.readlines():
                     self.provenance_sets[path].add(self.preprocess_sentence(line))
@@ -144,13 +151,16 @@ class NERAnalyser:
         for pair in pair_info.pair_map:
             self.ner_pair_hist[
                 "{}\t{}\t{}\t{}".format(
-                    pair.marker_1.ne, pair.marker_2.ne, pair.marker_1.ne == pair.marker_2.ne, pair.distance
+                    pair.marker_1.named_entity,
+                    pair.marker_2.named_entity,
+                    pair.marker_1.named_entity == pair.marker_2.named_entity,
+                    pair.distance,
                 )
             ] += 1
         for per in pair_info.per_tags_1:
-            self.ner_hist_1[per.ne] += 1
+            self.ner_hist_1[per.named_entity] += 1
         for per in pair_info.per_tags_2:
-            self.ner_hist_2[per.ne] += 1
+            self.ner_hist_2[per.named_entity] += 1
         self.stats[origin]["sum_per_1"] += len(pair_info.per_tags_1)
         self.stats[origin]["sum_per_2"] += len(pair_info.per_tags_2)
         self.stats[origin]["number_lines"] += 1
@@ -168,7 +178,7 @@ class NERAnalyser:
         """Print statistics."""
         tbl_string = "{:>13}   {:>10}    {:>10}    {:>10}    {:>10}    {:>10}    {:>10}"
         tbl_num_string = "{:>13}   {:>10}    {:>10}    {:>10}    {:>10}    {:>10}    {:>10.6f}"
-        print(tbl_string.format("Origin", "Lines", "LWPers", "LWMultiPers", "Mism", "LWPersMatch", "Avg.Dist",))
+        print(tbl_string.format("Origin", "Lines", "LWPers", "LWMultiPers", "Mism", "LWPersMatch", "Avg.Dist"))
         for origin in self.stats:
             st = self.stats[origin]
             print(
@@ -383,10 +393,10 @@ class NERParser:
             alignments.append(f"{pair}")
 
         if alignments:
-            max_dist = max([p[-1] for p in pair_info.pair_map])  # type: ignore
+            max_dist = max([p.distance for p in pair_info.pair_map])
 
         output = "{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(
-            p1.model, ",".join(p1.origins), p2.model, ",".join(p2.origins), match, max_dist, " ".join(alignments),
+            p1.model, ",".join(p1.origins), p2.model, ",".join(p2.origins), match, max_dist, " ".join(alignments)
         )
         self.print_data_file.writelines(output)
 
@@ -451,12 +461,13 @@ class NERParser:
         min_dist = 1
         if ner_markers_1 and ner_markers_2:
             min_dist, hits = get_min_hun_distance(
-                [ner_marker.ne for ner_marker in ner_markers_1], [ner_marker.ne for ner_marker in ner_markers_2]
+                [ner_marker.named_entity for ner_marker in ner_markers_1],
+                [ner_marker.named_entity for ner_marker in ner_markers_2],
             )
             if hits:
                 for hit_1, hit_2, cost in hits:
                     pair_map.append(NERAlignment(cost, ner_markers_1[hit_1], ner_markers_2[hit_2]))
-        return PairInfo(ner_markers_1, ner_markers_2, min_dist, corp1, corp2, pair_map,)
+        return PairInfo(ner_markers_1, ner_markers_2, min_dist, corp1, corp2, pair_map)
 
 
 def main():
