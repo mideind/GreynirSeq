@@ -2,40 +2,45 @@
 
 In training data for NMT (neural machine translation) systems it is of benefit to have a large and varried corpus. Unfortunately this is not often the case. This submodule implements a pipeline for tagging, filtering, matching and substituing named entities in a parallel English to Icelandic corpus. Currently it only support Persons but it should not be much work to extend this to other label sets.
 
-### Name Tagging
+## Name Tagging
 
 For Icelandic NER the included IceBERT-NER model is used. For english a NER model fine tuned on BERT large from huggingface is used with spacy as fallback (`python -m spacy download en_core_web_lg`) if sentence length is too long for the model to process. Note that this results in downloading of data beyond 1Gb.
 
-The script accepts a tab separated English to Icelandic file, e.g.
+The script accepts a file in English or Icelandic in which each line contains a pretokenized sentence (with tokens join with spaces: ' ').
 
+In later stages we assume that the English and Icelandic sentences are translations of each other.
+
+```example.is
+Guðrún fór í heimsókn til Einars Jónssonar.
+Anna fékk gjöf frá Alexei, Pétri og Páli.
 ```
-Einar Jónsson was visited by Guðrún.	Guðrún fór í heimsókn til Einars Jónssonar.
-Anna got a gift from Pétur, Páll and Alexei.    Anna fékk gjöf frá Alexei, Pétri og Páli.
+```example.en
+Einar Jónsson was visited by Guðrún.
+Anna got a gift from Pétur, Páll and Alexei.
 ```
 
 ```bash
-python nertagger.py --language is --input testdata/en_is.tsv --output testdata/is.ner
-python nertagger.py --language en --input testdata/en_is.tsv --output testdata/en.ner
+python nertagger.py --language is --input testdata/example.is --output testdata/example.ner.is
+python nertagger.py --language en --input testdata/example.en --output testdata/example.ner.en
 ```
 
-Which writes to file
-
+Which writes to file the original sentence, labels and a tag for the NER model used.
 ```
-Guðrún fór í heimsókn til Einars Jónssonar .	B-Person O O O O B-Person I-Person O
-Anna fékk gjöf frá Alexei , Pétri og Páli .	B-Person O O O B-Person O B-Person O B-Person O
+Guðrún fór í heimsókn til Einars Jónssonar .	B-Person O O O O B-Person I-Person O	is
+Anna fékk gjöf frá Alexei , Pétri og Páli .	B-Person O O O B-Person O B-Person O B-Person O	is
 ```
 
 and for English (the last column is sp if the spacy fallback was used)
 
 ```
 Einar Jónsson was visited by Guðrún .	I-PER I-PER O O O I-PER O	hf
-Anna got a gift from Pétur , Páll and Alexei .  I-PER O O O O I-PER O I-PER O I-PER O I-PER O O O I-PER O I-PER O I-PER O	hf
+Anna got a gift from Pétur , Páll and Alexei .	I-PER O O O O I-PER O I-PER O I-PER O	hf
 ```
 
 Note the different tagsets used, this is dealt with by the aligner.
 
 
-### Analyzing and pairing
+## Analyzing and pairing
 
 (This can be skipped) The next step aligns the two tagged files, and optionally prints some statistics. This step is run automatically by the filtering but can be ran on its own.
 
@@ -50,7 +55,7 @@ is		hf		1	0.06999999999999995	0:1:Person-5:6:PER 5:7:Person-0:2:PER
 is		hf		1	0.12	0:1:Person-0:1:PER 4:5:Person-9:10:PER 6:7:Person-5:6:PER 8:9:Person-7:8:PER
 ```
 
-### Filtering and POS tagging
+## Filtering and POS tagging
 This step parses the named files, aligns entities and pos tags them.
 
 ```bash
@@ -64,7 +69,7 @@ The resulting file contains tags indicating which entity ID and part of speech (
 <e:0:nven-s:>Anna</e0> got a gift from <e:1:nkeþ-s:>Pétur</e1> , <e:2:nkeþ-s:>Páll</e2> and <e:3:nkeþ-s:>Alexei</e3> .	<e:0:nven-s:>Anna</e0> fékk gjöf frá <e:3:nkeþ-s:>Alexei</e3> , <e:1:nkeþ-s:>Pétri</e1> og <e:2:nkeþ-s:>Páli</e2> .
 ```
 
-### Substituting
+## Substituting
 
 Finally, given a list of tab separated genders (kk and kvk) and sufficient names such as 
 
