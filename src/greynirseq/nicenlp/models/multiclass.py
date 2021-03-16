@@ -3,6 +3,7 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
+from typing import Iterable, List, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -121,12 +122,12 @@ class MultiClassRobertaModel(RobertaModel):
         attr_logits = self.task_head(words)
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
-        attr_logits = pad_sequence(attr_logits.split((nwords).tolist()), padding_value=0, batch_first=True,)
+        attr_logits = pad_sequence(attr_logits.split((nwords).tolist()), padding_value=0, batch_first=True)
         return attr_logits, _extra
 
     @classmethod
     def from_pretrained(
-        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs,
+        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs
     ):
         from fairseq import hub_utils
 
@@ -158,7 +159,7 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         super().__init__(*args, **kwargs)
         self.word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
 
-    def encode(self, sentence):
+    def encode(self, sentence) -> torch.LongTensor:
         # Space added if needed to ensure encoding of words at the front
         # of a sentences is no different from those further back.
         if sentence[0] != " ":
@@ -169,16 +170,45 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         # Remove the leading space, see 'encode' comment.
         return super().decode(tokens)[1:]
 
-    def predict_labels(self, sentence):
-        tokens = self.encode(sentence)
-        word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
-        word_mask[0] = 0
-        word_mask[-1] = 0
-        word_mask = word_mask.unsqueeze(0)
-        tokens = tokens.unsqueeze(0)
+    def predict_labels(self, sentences: List[str], batch_size=1) -> Iterable[List[str]]:
+        """Predicts NER labels of the given sentences.
+
+        Args:
+            sentences: An list of the rule-based tokenized sentences.
+            batch_size: The number of sentences to process in parallel.
+        Returns:
+            An iterable of the labels.
+        """
+        length = len(sentences)
+        for ndx in range(0, length, batch_size):
+            batch = sentences[ndx : min(ndx + batch_size, length)]
+            labels, pred_idx = self._predict_labels(batch)
+            yield from labels
+
+    def _predict_labels(self, sentences: List[str]) -> Tuple[List[List[str]], torch.Tensor]:
+        tokens_batch = []
+        word_mask_batch = []
+        for sentence in sentences:
+            tokens = self.encode(sentence)
+            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
+            word_mask[0] = 0
+            word_mask[-1] = 0
+            tokens_batch.append(tokens)
+            word_mask_batch.append(word_mask)
+        tokens = pad_sequence(tokens_batch, batch_first=True, padding_value=self.task.source_dictionary.pad())
+        # We need to use 0 to pad with for word_masks
+        word_mask = pad_sequence(word_mask_batch, batch_first=True, padding_value=0)
         attr_logits, extra = self.model(tokens, word_mask=word_mask, features_only=True)
-        pred_idxs = attr_logits.max(dim=-1).indices[0]
-        labels = [self.model.task.label_dictionary.symbols[i] for i in pred_idxs]
+        pred_idxs = attr_logits.max(dim=-1).indices
+        labels = [
+            [
+                self.model.task.label_dictionary.symbols[label_idx]
+                for label_idx in sent
+                if label_idx
+                >= self.task.label_dictionary.nspecial  # We assume the special tokens are at the beginning.
+            ]
+            for sent in pred_idxs.tolist()
+        ]
         return labels, pred_idxs
 
 
