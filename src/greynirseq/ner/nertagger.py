@@ -1,15 +1,18 @@
 import argparse
+import logging
 from typing import Generator, Iterable, List, Tuple
 
 import spacy
 import torch
 import tqdm
 from spacy.gold import biluo_tags_from_offsets
+from tokenizer import split_into_sentences, tokenizer
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
 from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 
+log = logging.getLogger(__name__)
 NER_RESULTS = Generator[Tuple[List[str], List[str], str], None, None]
 
 
@@ -17,20 +20,31 @@ def icelandic_ner(lines_in: Iterable[str]) -> NER_RESULTS:
     """NER tags a given collection sentences.
 
     Args:
-        lines_in: The sentences should be given as a pretokenized string (joined by ' ').
+        lines_in: The sentences should be given as a string, we will tokenize them and join by ' ' as the model expects.
 
     Returns:
         An iterable of a list of tokens, labels and a string representing the model used to NER tagging.
     """
     model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
-    model.to("cpu")
+    model.to("cuda")
     model.eval()
 
-    for sentence in lines_in:
+    for idx, sentence in enumerate(lines_in):
         sentence = sentence.strip()
+        # We ignore empty lines - this can be dangerous with parallel data.
+        if not sentence:
+            log.warning(f"Found empty line at index={idx}")
+            continue
+
+        # We make sure that the Icelandic text is pretokenized.
+        to_model = " ".join(list(split_into_sentences(sentence)))
         # Todo, update for batching when predict_pos fixed
-        labels, _ = model.predict_labels(sentence)  # type: ignore
-        yield sentence.split(), labels, "is"
+        labels, _ = model.predict_labels(to_model)  # type: ignore
+        toks = to_model.split(" ")
+        assert len(labels) == len(
+            toks
+        ), f"We expect the tokens to be of equal length to the labels: {len(toks)}, {len(labels)}, {toks}, {labels}"
+        yield toks, labels, "is"
 
 
 def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
@@ -92,18 +106,24 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
         labels = [t[1] for t in bert_tokens if len(t[0]) < 2 or t[0][:2] != "##"]
         return tokens, labels
 
-    for line in lines_in:
+    for idx, line in enumerate(lines_in):
         source = line.strip()
+        # We ignore empty lines - this can be dangerous with parallel data.
+        if not source:
+            log.warning(f"Found empty line at index={idx}")
+            continue
         using = "hf"
         if len(source) < 512:
             tokens, ents = hugface_tok_ner(source)
         else:
             using = "sp"
             tokens, ents = spacy_tok_ner(source)
+        assert len(ents) == len(tokens), "We expect the tokens to be of equal length to the labels"
         yield tokens, ents, using
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument("--language", choices=["is", "en"])
     parser.add_argument("--input")
@@ -111,6 +131,7 @@ def main():
 
     args = parser.parse_args()
 
+    log.info(f"NER tagging {args.input}->{args.output}")
     with open(args.input) as f_in, open(args.output, "w") as f_out:
         lines_iter = tqdm.tqdm(f_in.readlines())
         if args.language == "is":
