@@ -27,7 +27,6 @@ from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
 )
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
-from greynirseq.nicenlp.utils.constituency import token_utils
 
 logger = logging.getLogger(__name__)
 
