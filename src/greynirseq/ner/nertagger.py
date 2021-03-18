@@ -6,7 +6,7 @@ import spacy
 import torch
 import tqdm
 from spacy.gold import biluo_tags_from_offsets
-from tokenizer import split_into_sentences, tokenizer
+from tokenizer import split_into_sentences
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
@@ -122,6 +122,16 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
         yield tokens, ents, using
 
 
+def ner(lang: str, lines_iter: Iterable[str]) -> NER_RESULTS:
+    """Apply NER tagging on a collection of lines."""
+    if lang == "is":
+        return icelandic_ner(lines_iter)
+    elif lang == "en":
+        return english_ner(lines_iter)
+    else:
+        raise ValueError(f"Unsupported language={lang}")
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
@@ -134,12 +144,7 @@ def main():
     log.info(f"NER tagging {args.input}->{args.output}")
     with open(args.input) as f_in, open(args.output, "w") as f_out:
         lines_iter = tqdm.tqdm(f_in.readlines())
-        if args.language == "is":
-            tagged_iter = icelandic_ner(lines_iter)
-        elif args.language == "en":
-            tagged_iter = english_ner(lines_iter)
-        else:
-            raise ValueError(f"Unsupported language={args.language}")
+        tagged_iter = ner(lang=args.language, lines_iter=lines_iter)
         for tokens, labels, using in tagged_iter:
             f_out.write(f"{' '.join(tokens)}\t{' '.join(labels)}\t{using}\n")
 
