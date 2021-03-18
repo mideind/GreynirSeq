@@ -73,6 +73,14 @@ class NERMarker:
     def __str__(self) -> str:
         return f"{self.start_idx}:{self.end_idx}:{self.tag}:{self.named_entity}"
 
+    @staticmethod
+    def from_line(line: str):
+        the_split = line.split(":")
+        if len(the_split) != 4:
+            return None
+        start_idx, end_idx, tag, named_entity = the_split
+        return NERMarker(int(start_idx), int(end_idx), tag, named_entity)
+
 
 def split_tag(tag: str) -> Tuple[str, Optional[str]]:  # pylint: disable=unsubscriptable-object
     """Split a NER tag to HEAD, TAIL."""
@@ -144,7 +152,7 @@ def main():
             if stats is not None:
                 for ner_marker in ner_markers:
                     stats[ner_marker.tag] += 1
-            f_out.write(f"{model}\t{','.join([str(ner_marker) for ner_marker in ner_markers])}\n")
+            f_out.write("\t".join([model] + [str(ner_marker) for ner_marker in ner_markers]) + "\n")
     if stats is not None:
         stats = dict(stats)
         stats = sorted(stats.items())
