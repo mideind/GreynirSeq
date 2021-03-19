@@ -77,13 +77,22 @@ CATS_W_LABELS = [
     ("c", []),
     # adverbs, adpositions, interjections, misc
     ("aa", [DEG]),  # no case governing
+    ("af", [DEG]),  #
     ("au", [DEG]),  # interjections
     ("ao", [DEG]),  # govern acc
     ("aþ", [DEG]),  # govern dat
     ("ae", [DEG]),  # govern gen
     ("as", [DEG]),  # abbreviation
+    ("ks", []),
+    ("kt", []),
     # punctuation
     ("p", []),
+    ("pl", []),
+    ("pk", []),
+    ("pg", []),
+    ("pa", []),
+    ("ns", []),
+    ("m", []),
 ]
 CATS = [c[0] for c in CATS_W_LABELS]
 CAT_GROUPS = [groups_to_label(c[1]) for c in CATS_W_LABELS]
@@ -92,7 +101,7 @@ FEATS = [
     "masc",
     "fem",
     "neut",
-    "gender_undet",
+    "gender_x",
     "1",  # person
     "2",
     "3",
@@ -342,10 +351,10 @@ def ifd2vec(tag):
     return vec, labels
 
 
-def vec2idf(vec):
+def vec2ifd(vec):
     cat_idx = np.argmax(vec[: len(CATS)])
     cat = CATS[cat_idx]
-    idxs = list(np.where(vec == 1)[1])
+    idxs = list(np.where(vec == 1)[0])
     features = [LABELS[int(idx)] for idx in idxs if int(idx) >= len(CATS)]
     if not features:
         return cat
