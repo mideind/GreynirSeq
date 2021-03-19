@@ -6,7 +6,6 @@ import argparse
 import logging
 import os
 from pathlib import Path
-from typing import List
 
 import numpy as np
 import torch
@@ -32,7 +31,6 @@ from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
 )
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
-from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
     label_schema_as_dictionary,
     make_dict_idx_to_vec_idx,
