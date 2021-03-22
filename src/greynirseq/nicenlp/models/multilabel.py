@@ -181,7 +181,7 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
     def get_logits(self, sentences: List[str]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         tokens, word_masks = self.prepare_batch(sentences)
         (cat_logits, attr_logits), _extra = self.model(
-            tokens.to("cuda"), features_only=True, word_mask=word_masks.to("cuda")
+            tokens.to(self.device), features_only=True, word_mask=word_masks.to(self.device)
         )
         return cat_logits, attr_logits, word_masks
 
