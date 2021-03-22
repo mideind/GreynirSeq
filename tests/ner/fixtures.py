@@ -7,8 +7,8 @@ import pytest
 @pytest.fixture
 def ner_sentence_pair():
     return (
-        "Um <e:0:nvxo:>Guðrúnu Helgadóttur</e0> hefur <e:1:nkxn:>Einar</e1> ort .",
-        "<e:1:nkxn:>Einar</e1> has written about <e:0:nvxo:>Guðrún Helgadóttir</e0> .",
+        "Um <e:0:nvxo>Guðrúnu Helgadóttur</e:0> hefur <e:1:nkxn>Einar</e:1> ort .",
+        "<e:1:nkxn>Einar</e:1> has written about <e:0:nvxo>Guðrún Helgadóttir</e:0> .",
     )
 
 
@@ -16,12 +16,12 @@ def ner_sentence_pair():
 def ner_final():
     return (
         (
-            "<e:0:nkxe:>Einar Jónsson</e0> was visited by <e:1:nvxn:>Guðrún</e1> .",
-            "<e:1:nvxn:>Guðrún</e1> fór í heimsókn til <e:0:nkxe:>Einars Jónssonar</e0> .",
+            "<e:0:nkxe>Einar Jónsson</e:0> was visited by <e:1:nvxn>Guðrún</e:1> .",
+            "<e:1:nvxn>Guðrún</e:1> fór í heimsókn til <e:0:nkxe>Einars Jónssonar</e:0> .",
         ),
         (
-            "<e:0:nvxn:>Anna</e0> got a gift from <e:1:nkxþ:>Pétur</e1> , <e:2:nkxþ:>Páll</e2> and <e:3:nkxþ:>Alexei</e3> .",  # noqa
-            "<e:0:nvxn:>Anna</e0> fékk gjöf frá <e:3:nkxþ:>Alexei</e3> , <e:1:nkxþ:>Pétri</e1> og <e:2:nkxþ:>Páli</e2> .",  # noqa
+            "<e:0:nvxn>Anna</e:0> got a gift from <e:1:nkxþ>Pétur</e:1> , <e:2:nkxþ>Páll</e:2> and <e:3:nkxþ>Alexei</e:3> .",  # noqa
+            "<e:0:nvxn>Anna</e:0> fékk gjöf frá <e:3:nkxþ>Alexei</e:3> , <e:1:nkxþ>Pétri</e:1> og <e:2:nkxþ>Páli</e:2> .",  # noqa
         ),
     )
 
@@ -29,8 +29,8 @@ def ner_final():
 @pytest.fixture
 def ner_final_simple(ner_final: Tuple[Tuple[str, str], ...]):
     simplified = []
-    pos_tag_pattern = ":n.*?:>"
-    replacement_pattern = ":x:>"
+    pos_tag_pattern = ":n.*?>"
+    replacement_pattern = ":x>"
     for en_sent, is_sent in ner_final:
         simplified.append(
             (
