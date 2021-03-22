@@ -6,14 +6,11 @@ import argparse
 import logging
 import os
 from pathlib import Path
-from typing import List
 
 import numpy as np
-import torch
 from fairseq.data import (
     Dictionary,
     IdDataset,
-    ListDataset,
     NumelDataset,
     NumSamplesDataset,
     PrependTokenDataset,
@@ -30,7 +27,6 @@ from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
 )
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
-from greynirseq.nicenlp.utils.constituency import token_utils
 
 logger = logging.getLogger(__name__)
 
@@ -76,14 +72,14 @@ class MultiClassTokenClassificationTask(FairseqTask):
 
         inputs_path = Path(self.args.data) / "{split}".format(split=split)
         src_tokens = data_utils.load_indexed_dataset(
-            str(inputs_path), self.source_dictionary, self.args.dataset_impl, combine=combine,
+            str(inputs_path), self.source_dictionary, self.args.dataset_impl, combine=combine
         )
         assert src_tokens is not None, "could not find dataset: {}".format(inputs_path)
 
         src_tokens = PrependTokenDataset(src_tokens, self.source_dictionary.bos())
         targets_path = Path(self.args.data) / "{}.term".format(split)
         labels = data_utils.load_indexed_dataset(
-            str(targets_path), self._label_dictionary, self.args.dataset_impl, combine=combine,
+            str(targets_path), self._label_dictionary, self.args.dataset_impl, combine=combine
         )
         assert labels is not None, "could not find labels: {}".format(targets_path)
         clean_labels = NoBosEosDataset(labels, self.label_dictionary)
@@ -111,31 +107,6 @@ class MultiClassTokenClassificationTask(FairseqTask):
         logger.info("Loaded {0} with #samples: {1}".format(split, len(dataset)))
         self.datasets[split] = dataset
         return self.datasets[split]
-
-    def prepare_tokens(self, tokens: torch.Tensor):
-        sizes = [len(seq) for seq in tokens]
-        src_tokens = ListDataset(tokens, sizes=sizes)
-        src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
-
-        word_mask = WordEndMaskDataset(src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0)
-
-        dataset = {
-            "id": IdDataset(),
-            "net_input": {
-                "src_tokens": src_tokens,
-                "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask": RightPadDataset(word_mask, pad_idx=0),
-            },
-            "ntokens": NumelDataset(src_tokens, reduce=True),
-            "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
-            "nsentences": NumSamplesDataset(),
-        }
-        dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
-        return dataset
-
-    def prepare_sentences(self, sentences: List[str]):
-        tokens = [self.encode(token_utils.tokenize_to_string(sentence)) for sentence in sentences]
-        return self.prepare_tokens(torch.tensor(tokens))
 
     @property
     def source_dictionary(self):
