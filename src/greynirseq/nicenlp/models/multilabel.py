@@ -3,6 +3,7 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
+from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -161,7 +162,7 @@ class MultiLabelRobertaModel(RobertaModel):
 
 
 class MultiLabelRobertaHubInterface(RobertaHubInterface):
-    def prepare_batch(self, sentences):
+    def prepare_batch(self, sentences: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
         # Note, this assumes sensible batch size
         sentences_encoded = []
         word_masks = []
@@ -177,27 +178,29 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
         word_mask = pad_sequence(word_masks, batch_first=True, padding_value=0)
         return tokens, word_mask
 
-    def get_logits(self, sentences):
+    def get_logits(self, sentences: List[str]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         tokens, word_masks = self.prepare_batch(sentences)
-        (cat_logits, attr_logits), _extra = self.model(tokens, features_only=True, word_mask=word_masks)
+        (cat_logits, attr_logits), _extra = self.model(
+            tokens.to("cuda"), features_only=True, word_mask=word_masks.to("cuda")
+        )
         return cat_logits, attr_logits, word_masks
 
-    def encode(self, sentence):
+    def encode(self, sentence: str) -> str:
         # We add a space to treat word encoding the same at the front and back of a sentence.
         if sentence[0] != " ":
             sentence = " " + sentence
         return super().encode(sentence)
 
-    def decode(self, tokens, no_cut_space=False):
+    def decode(self, tokens: List[str], no_cut_space: bool = False) -> List[str]:
         return super().decode(tokens)[1:]
 
-    def predict_labels(self, sentences):
+    def predict_labels(self, sentences: List[str]) -> List[Tuple[str, List[str]]]:
         cat_logits, attr_logits, word_mask = self.get_logits(sentences)
         labels = self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
         return labels
 
-    def predict_ifd_labels(self, sentences):
-        # Only for POS
+    def predict_ifd_labels(self, sentences: List[str]) -> List[List[str]]:
+        # Only for POS, maps predictions to IFD labels
         labdict = self.model.task.label_dictionary
         labels = self.predict_labels(sentences)
         ifd_labels_batch = []
@@ -207,6 +210,7 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
                 cat, feats = labelset
                 idxs = [labdict.symbols.index(label) for label in [cat] + feats]
                 oh = nn.functional.one_hot(torch.tensor(idxs), num_classes=len(labdict.symbols)).sum(dim=0)
+                # Add one since the sep token is not treated as a special token in the label dictionary
                 oh = oh[labdict.nspecial + 1 :]
                 ifd_labels.append(vec2ifd(oh.numpy()))
             ifd_labels_batch.append(ifd_labels)
