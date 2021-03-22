@@ -191,7 +191,7 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
             sentence = " " + sentence
         return super().encode(sentence)
 
-    def decode(self, tokens: List[str], no_cut_space: bool = False) -> List[str]:
+    def decode(self, tokens: List[str]) -> List[str]:
         return super().decode(tokens)[1:]
 
     def predict_labels(self, sentences: List[str]) -> List[Tuple[str, List[str]]]:
