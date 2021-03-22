@@ -82,9 +82,14 @@ def main():
             sys_markers = read_markers(lines_iter=tqdm(f_sys.readlines()))
     log.info(f"Ref NER markers: {get_markers_stats(ref_markers)}")
     log.info(f"Sys NER markers: {get_markers_stats(sys_markers)}")
+    upper_bound_ner_alignments = min(
+        sum(len(markers) for markers in ref_markers), sum(len(markers) for markers in sys_markers)
+    )
     alignments = [align_markers(ref_marker, sys_marker) for ref_marker, sys_marker in zip(ref_markers, sys_markers)]
     dists = [alignment.distance for line_alignment in alignments for alignment in line_alignment]
-    log.info(f"Aligment count: {len(dists)}, avg_dist:{sum(dists)/len(dists)}")
+    log.info(
+        f"Aligment count: {len(dists)}, aligment_coverage={len(dists)/upper_bound_ner_alignments}, avg_dist:{sum(dists)/len(dists)}"
+    )
 
 
 if __name__ == "__main__":
