@@ -6,7 +6,6 @@ import argparse
 import logging
 import os
 from pathlib import Path
-from typing import List
 
 import numpy as np
 import torch
@@ -32,7 +31,6 @@ from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
 )
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
-from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
     label_schema_as_dictionary,
     make_dict_idx_to_vec_idx,
@@ -220,40 +218,6 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         }
         dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
         return dataset
-
-    def encode(self, sentence: str):
-        # TODO remove or refactor
-        from argparse import Namespace
-
-        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
-
-        enc = MultiprocessingEncoder(
-            Namespace(
-                encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True
-            )
-        )
-        enc.initializer()
-        bpe_ids = enc.encode(sentence)
-        return [int(self.dictionary[int(t)]) for t in bpe_ids]
-
-    def decode(self, src_tokens):
-        # TODO remove or refactor
-        from argparse import Namespace
-
-        from greynirseq.utils.bpe.multiprocessing_bpe_encoder import MultiprocessingEncoder
-
-        enc = MultiprocessingEncoder(
-            Namespace(
-                encoder_json=self.args.gpt2_encoder_json, vocab_bpe=self.args.gpt2_vocab_bpe, add_prefix_space=True
-            )
-        )
-        enc.initializer()
-        bpe_ids = [self.dictionary.symbols[t] for t in src_tokens]
-        return enc.decode([int(i) for i in bpe_ids if i.isnumeric()])
-
-    def prepare_sentences(self, sentences: List[str]):
-        tokens = [self.encode(token_utils.tokenize_to_string(sentence)) for sentence in sentences]
-        return self.prepare_tokens(torch.tensor(tokens))
 
     @property
     def source_dictionary(self):

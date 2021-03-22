@@ -3,6 +3,7 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
+from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -20,6 +21,7 @@ from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
+from greynirseq.utils.ifd_utils import vec2ifd
 
 logger = logging.getLogger(__name__)
 
@@ -160,50 +162,59 @@ class MultiLabelRobertaModel(RobertaModel):
 
 
 class MultiLabelRobertaHubInterface(RobertaHubInterface):
-    def predict_sample(self, sample):
-        net_input = sample["net_input"]
-        tokens = net_input["src_tokens"]
+    def prepare_batch(self, sentences: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Note, this assumes sensible batch size
+        sentences_encoded = []
+        word_masks = []
+        word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
+        for sentence in sentences:
+            tokens = self.encode(sentence)
+            word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
+            word_mask[0] = 0
+            word_mask[-1] = 0
+            sentences_encoded.append(tokens)
+            word_masks.append(word_mask)
+        tokens = pad_sequence(sentences_encoded, batch_first=True, padding_value=self.task.source_dictionary.pad())
+        word_mask = pad_sequence(word_masks, batch_first=True, padding_value=0)
+        return tokens, word_mask
 
-        word_mask = sample["net_input"]["word_mask"]
+    def get_logits(self, sentences: List[str]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tokens, word_masks = self.prepare_batch(sentences)
+        (cat_logits, attr_logits), _extra = self.model(
+            tokens.to(self.device), features_only=True, word_mask=word_masks.to(self.device)
+        )
+        return cat_logits, attr_logits, word_masks
 
-        (cat_logits, attr_logits), _extra = self.model(tokens, word_mask=word_mask)
-
-        return self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
-
-    def predict(self, sentences, device="cuda"):
-        device = torch.device(device)
-        num_sentences = len(sentences)
-
-        dataset = self.task.prepare_sentences(sentences)
-        sample = dataset.collater([dataset[i] for i in range(num_sentences)])
-
-        return self.predict_sample(sample)
-
-    def encode(self, sentence):
+    def encode(self, sentence: str) -> str:
         # We add a space to treat word encoding the same at the front and back of a sentence.
         if sentence[0] != " ":
             sentence = " " + sentence
         return super().encode(sentence)
 
-    def decode(self, tokens, no_cut_space=False):
+    def decode(self, tokens: List[str]) -> List[str]:
         return super().decode(tokens)[1:]
 
-    def predict_labels(self, sentence):
-        # assert task is set
-
-        word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
-
-        tokens = self.encode(sentence)
-        word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
-        word_mask[0] = 0
-        word_mask[-1] = 0
-        word_mask = word_mask.unsqueeze(0)
-        tokens = tokens.unsqueeze(0)
-        (cat_logits, attr_logits), _extra = self.model(tokens, features_only=True, word_mask=word_mask)
-
+    def predict_labels(self, sentences: List[str]) -> List[Tuple[str, List[str]]]:
+        cat_logits, attr_logits, word_mask = self.get_logits(sentences)
         labels = self.task.logits_to_labels(cat_logits, attr_logits, word_mask)
-
         return labels
+
+    def predict_ifd_labels(self, sentences: List[str]) -> List[List[str]]:
+        # Only for POS, maps predictions to IFD labels
+        labdict = self.model.task.label_dictionary
+        labels = self.predict_labels(sentences)
+        ifd_labels_batch = []
+        for sentence_labels in labels:
+            ifd_labels = []
+            for labelset in sentence_labels:
+                cat, feats = labelset
+                idxs = [labdict.symbols.index(label) for label in [cat] + feats]
+                oh = nn.functional.one_hot(torch.tensor(idxs), num_classes=len(labdict.symbols)).sum(dim=0)
+                # Add one since the sep token is not treated as a special token in the label dictionary
+                oh = oh[labdict.nspecial + 1 :]
+                ifd_labels.append(vec2ifd(oh.numpy()))
+            ifd_labels_batch.append(ifd_labels)
+        return ifd_labels_batch
 
 
 @register_model_architecture("multilabel_roberta", "multilabel_roberta_base")
