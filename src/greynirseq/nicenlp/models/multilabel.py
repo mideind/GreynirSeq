@@ -21,6 +21,7 @@ from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
+from greynirseq.utils.greynir_pos import TERM2GREYNIR_POS
 from greynirseq.utils.ifd_utils import vec2ifd
 
 logger = logging.getLogger(__name__)
@@ -215,6 +216,22 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
                 ifd_labels.append(vec2ifd(oh.numpy()))
             ifd_labels_batch.append(ifd_labels)
         return ifd_labels_batch
+
+    def predict_greynir_pos(self, sentences: List[str]) -> List[List[str]]:
+        labels = self.predict_labels(sentences)
+        greynir_labels_batch = []
+        for sentence_labels in labels:
+            greynir_labels = []
+            for labelset in sentence_labels:
+                word_labels = []
+                cat, feats = labelset
+                all_labels = [cat] + feats
+                for label in all_labels:
+                    for greynir_label in TERM2GREYNIR_POS[label]:
+                        word_labels.append(greynir_label)
+                greynir_labels.append("_".join(word_labels))
+            greynir_labels_batch.append(greynir_labels)
+        return greynir_labels_batch
 
 
 @register_model_architecture("multilabel_roberta", "multilabel_roberta_base")
