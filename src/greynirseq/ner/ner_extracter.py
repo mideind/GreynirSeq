@@ -1,9 +1,9 @@
 """Extract NEs."""
 import argparse
 import logging
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
-from pprint import pformat
 from typing import List, Optional, Tuple
 
 from tqdm import tqdm
@@ -12,14 +12,14 @@ log = logging.getLogger(__name__)
 
 NULL_TAG = "O"
 # Uses BIO and all entities start with B.
-PER = "PER"
-LOC = "LOC"
-ORG = "ORG"
-MISC = "MISC"
-DATE = "DATE"
-TIME = "TIME"
-MON = "MON"
-PERC = "PERC"
+PER = "P"
+LOC = "L"
+ORG = "O"
+MISC = "M"
+DATE = "D"
+TIME = "T"
+MON = "$"
+PERC = "%"
 BIO_MAPPER = {NULL_TAG: NULL_TAG, "B": "B", "I": "I", "U": "B", "L": "I"}
 IS_TAGS = {
     "Person": PER,
@@ -132,31 +132,42 @@ def parse_line(sentence: List[str], labels: List[str], model: str) -> List[NERMa
     return result
 
 
+def wrap_tokens(markers: List[NERMarker], tokens: List[str]) -> List[str]:
+    """Wrap NER marker around NEs."""
+    tokens = tokens[:]
+    for marker in markers:
+        tokens[marker.start_idx] = f"<{marker.tag}>{tokens[marker.start_idx]}"
+        tokens[marker.end_idx - 1] = f"{tokens[marker.end_idx - 1]}</{marker.tag}>"
+    return tokens
+
+
 def main():
     """Extract NEs given the tokenized sentence, labels and tagger information. Maps the tags to a unified format."""
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input")
-    parser.add_argument("--output")
-    parser.add_argument("--statistics", action="store_true")
+    parser.add_argument("--input", nargs="?", type=argparse.FileType("r"), default=sys.stdin)
+    parser.add_argument("--output", nargs="?", type=argparse.FileType("w"), default=sys.stdout)
+    parser.add_argument(
+        "--wrap_sentence", default=False, action="store_true", help="Should we write the NER tags around the tokens."
+    )
 
     args = parser.parse_args()
-    stats = None
-    if args.statistics:
-        stats = defaultdict(int)
-
-    with open(args.input) as f_in, open(args.output, "w") as f_out:
-        for line in tqdm(f_in):
-            sent, labels, model = line.strip().split("\t")
-            ner_markers = parse_line(sent.split(), labels.split(), model)
-            if stats is not None:
-                for ner_marker in ner_markers:
-                    stats[ner_marker.tag] += 1
+    stats = defaultdict(int)
+    f_in = args.input
+    f_out = args.output
+    for line in tqdm(f_in):
+        sent, labels, model = line.strip().split("\t")
+        ner_markers = parse_line(sent.split(), labels.split(), model)
+        for ner_marker in ner_markers:
+            stats[ner_marker.tag] += 1
+        if not args.wrap_sentence:
             f_out.write("\t".join([model] + [str(ner_marker) for ner_marker in ner_markers]) + "\n")
-    if stats is not None:
-        stats = dict(stats)
-        stats = sorted(stats.items())
-        print(f"{args.input}: {stats}")
+        else:
+            f_out.write(f"{model}\t{' '.join(wrap_tokens(ner_markers, sent.split()))}\n")
+
+    stats = dict(stats)
+    stats = sorted(stats.items())
+    print(f"{args.input}: {stats}")
 
 
 if __name__ == "__main__":
