@@ -188,6 +188,8 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
     def _predict_labels(self, sentences: List[str]) -> Tuple[List[List[str]], torch.Tensor]:
         tokens_batch = []
         word_mask_batch = []
+        device = next(self.model.parameters()).device
+
         for sentence in sentences:
             tokens = self.encode(sentence)
             word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
@@ -195,9 +197,11 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
             word_mask[-1] = 0
             tokens_batch.append(tokens)
             word_mask_batch.append(word_mask)
-        tokens = pad_sequence(tokens_batch, batch_first=True, padding_value=self.task.source_dictionary.pad())
+        tokens = pad_sequence(tokens_batch, batch_first=True, padding_value=self.task.source_dictionary.pad()).to(
+            device
+        )
         # We need to use 0 to pad with for word_masks
-        word_mask = pad_sequence(word_mask_batch, batch_first=True, padding_value=0)
+        word_mask = pad_sequence(word_mask_batch, batch_first=True, padding_value=0).to(device)
         attr_logits, extra = self.model(tokens, word_mask=word_mask, features_only=True)
         pred_idxs = attr_logits.max(dim=-1).indices
         labels = [
