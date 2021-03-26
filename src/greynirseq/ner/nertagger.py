@@ -1,5 +1,6 @@
 import argparse
 import logging
+import sys
 from typing import Generator, Iterable, List, Tuple
 
 import spacy
@@ -16,7 +17,7 @@ log = logging.getLogger(__name__)
 NER_RESULTS = Generator[Tuple[List[str], List[str], str], None, None]
 
 
-def icelandic_ner(lines_in: Iterable[str]) -> NER_RESULTS:
+def icelandic_ner(lines_in: Iterable[str], batch_size=1) -> NER_RESULTS:
     """NER tags a given collection sentences.
 
     Args:
@@ -29,6 +30,7 @@ def icelandic_ner(lines_in: Iterable[str]) -> NER_RESULTS:
     model.to("cuda")
     model.eval()
 
+    tokenized_sents = []
     for idx, sentence in enumerate(lines_in):
         sentence = sentence.strip()
         # We ignore empty lines - this can be dangerous with parallel data.
@@ -38,13 +40,17 @@ def icelandic_ner(lines_in: Iterable[str]) -> NER_RESULTS:
 
         # We make sure that the Icelandic text is pretokenized.
         to_model = " ".join(list(split_into_sentences(sentence)))
+        tokenized_sents.append(to_model)
+    for ndx in range(0, len(tokenized_sents), batch_size):
+        batch = tokenized_sents[ndx : min(ndx + batch_size, len(tokenized_sents))]
         # Todo, update for batching when predict_pos fixed
-        labels, _ = model.predict_labels(to_model)  # type: ignore
-        toks = to_model.split(" ")
-        assert len(labels) == len(
-            toks
-        ), f"We expect the tokens to be of equal length to the labels: {len(toks)}, {len(labels)}, {toks}, {labels}"
-        yield toks, labels, "is"
+        batch_labels = model.predict_labels(batch)  # type: ignore
+        for to_model, labels in zip(batch, batch_labels):
+            toks = to_model.split(" ")
+            assert len(labels) == len(
+                toks
+            ), f"We expect the tokens to be of equal length to the labels: {len(toks)}, {len(labels)}, {toks}, {labels}"
+            yield toks, labels, "is"
 
 
 def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
@@ -136,17 +142,18 @@ def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument("--language", choices=["is", "en"])
-    parser.add_argument("--input")
-    parser.add_argument("--output")
+    parser.add_argument("--input", nargs="?", type=argparse.FileType("r"), default=sys.stdin)
+    parser.add_argument("--output", nargs="?", type=argparse.FileType("w"), default=sys.stdout)
 
     args = parser.parse_args()
+    f_in = args.input
+    f_out = args.output
 
     log.info(f"NER tagging {args.input}->{args.output}")
-    with open(args.input) as f_in, open(args.output, "w") as f_out:
-        lines_iter = tqdm.tqdm(f_in.readlines())
-        tagged_iter = ner(lang=args.language, lines_iter=lines_iter)
-        for tokens, labels, using in tagged_iter:
-            f_out.write(f"{' '.join(tokens)}\t{' '.join(labels)}\t{using}\n")
+    lines_iter = tqdm.tqdm(f_in)
+    tagged_iter = ner(lang=args.language, lines_iter=lines_iter)
+    for tokens, labels, using in tagged_iter:
+        f_out.write(f"{' '.join(tokens)}\t{' '.join(labels)}\t{using}\n")
 
 
 if __name__ == "__main__":
