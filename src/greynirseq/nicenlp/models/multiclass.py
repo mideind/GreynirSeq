@@ -20,6 +20,7 @@ from fairseq.modules import LayerNorm
 from fairseq.tasks import FairseqTask
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
+from torch.types import Device
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
 
@@ -159,12 +160,12 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         super().__init__(*args, **kwargs)
         self.word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
 
-    def encode(self, sentence: str) -> torch.LongTensor:
+    def encode(self, sentence: str, device: Device) -> torch.LongTensor:
         # Space added if needed to ensure encoding of words at the front
         # of a sentences is no different from those further back.
         if sentence[0] != " ":
             sentence = " " + sentence
-        return super().encode(sentence)
+        return super().encode(sentence).to(device=device)  # super encode does not support device argument.
 
     def decode(self, tokens: torch.LongTensor) -> List[str]:
         # Remove the leading space, see 'encode' comment.
@@ -188,9 +189,10 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
     def _predict_labels(self, sentences: List[str]) -> Tuple[List[List[str]], torch.Tensor]:
         tokens_batch = []
         word_mask_batch = []
+
         for sentence in sentences:
-            tokens = self.encode(sentence)
-            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
+            tokens = self.encode(sentence, device=self.device)
+            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()], device=self.device)
             word_mask[0] = 0
             word_mask[-1] = 0
             tokens_batch.append(tokens)
