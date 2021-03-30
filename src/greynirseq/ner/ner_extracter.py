@@ -20,6 +20,7 @@ DATE = "D"
 TIME = "T"
 MON = "$"
 PERC = "%"
+TAGS = {PER, LOC, ORG, MISC, DATE, TIME, MON, PERC}
 BIO_MAPPER = {NULL_TAG: NULL_TAG, "B": "B", "I": "I", "U": "B", "L": "I"}
 IS_TAGS = {
     "Person": PER,
@@ -132,12 +133,16 @@ def parse_line(sentence: List[str], labels: List[str], model: str) -> List[NERMa
     return result
 
 
-def wrap_tokens(markers: List[NERMarker], tokens: List[str]) -> List[str]:
-    """Wrap NER marker around NEs."""
+def embed_tokens(markers: List[NERMarker], tokens: List[str]) -> List[str]:
+    """Embed NER marker around NEs."""
     tokens = tokens[:]
     for marker in markers:
-        tokens[marker.start_idx] = f"<{marker.tag}>{tokens[marker.start_idx]}"
-        tokens[marker.end_idx - 1] = f"{tokens[marker.end_idx - 1]}</{marker.tag}>"
+        try:
+            tokens[marker.start_idx] = f"<{marker.tag}>{tokens[marker.start_idx]}"
+            tokens[marker.end_idx - 1] = f"{tokens[marker.end_idx - 1]}</{marker.tag}>"
+        except IndexError as e:
+            log.exception(f"Unable to wrap {tokens=} with {marker=}")
+            raise e
     return tokens
 
 
@@ -148,7 +153,10 @@ def main():
     parser.add_argument("--input", nargs="?", type=argparse.FileType("r"), default=sys.stdin)
     parser.add_argument("--output", nargs="?", type=argparse.FileType("w"), default=sys.stdout)
     parser.add_argument(
-        "--wrap_sentence", default=False, action="store_true", help="Should we write the NER tags around the tokens."
+        "--embed_tags",
+        default=False,
+        action="store_true",
+        help="Should we write (embed) the NER tags around the tokens.",
     )
 
     args = parser.parse_args()
@@ -160,10 +168,10 @@ def main():
         ner_markers = parse_line(sent.split(), labels.split(), model)
         for ner_marker in ner_markers:
             stats[ner_marker.tag] += 1
-        if not args.wrap_sentence:
+        if not args.embed_tags:
             f_out.write("\t".join([model] + [str(ner_marker) for ner_marker in ner_markers]) + "\n")
         else:
-            f_out.write(f"{model}\t{' '.join(wrap_tokens(ner_markers, sent.split()))}\n")
+            f_out.write(f"{model}\t{' '.join(embed_tokens(ner_markers, sent.split()))}\n")
 
     stats = dict(stats)
     stats = sorted(stats.items())
