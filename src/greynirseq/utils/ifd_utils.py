@@ -229,12 +229,6 @@ def ifd2coarse(tag):
     return tag[0]
 
 
-ftags = [
-    a.split()[0]
-    for a in open("/home/vesteinn/work/GreynirSeq/src/greynirseq/nicenlp/examples/pos/labdict2.txt").readlines()
-    if a
-]
-
 foreign_name = "n----s"
 
 

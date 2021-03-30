@@ -2,15 +2,29 @@
 
 This example shows how to train an Icelandic NER tagger with F1 score 0.9274 on the [MIM-GOLD-NER](https://repository.clarin.is/repository/xmlui/handle/20.500.12537/42) named entity recognition corpus.
 
-### Preprocessing
+## Preprocessing
 
 The raw data needs to be mapped from word per line to sentence per line, see `greynirseq.utils.ifd_utils.ifd2labels`. Then bpe encoded and preprocessed. See the README for POS tagging.
 
-### Training
+## Training
 
 See `./train.sh` for the script used.
 
-### Simple inference
+## Inference
+
+### From torch hub
+
+This will download the model from our servers and return an instance for inference
+
+```python
+import torch
+model = torch.hub.load("mideind/GreynirSeq", "icebert.ner")
+m.eval()
+labels = list(model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds."])
+```
+which returns the labels `['O', 'B-Person', 'O', 'B-Person', 'O', 'O', 'O', 'O', 'O', 'B-Organization', 'O']`.
+
+### Local inference
 
 Point the model class to the checkpoint (any of the splits or an averaged checkpoint) and auxiliary data as e.g.
 
@@ -20,9 +34,7 @@ from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 
 model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
 model.eval()
-
-labels = model.predict_labels("Systurnar Guðrún og Monique átu einar um jólin á McDonalds.")
 ```
 
-which returns the labels `['O', 'B-Person', 'O', 'B-Person', 'O', 'O', 'O', 'O', 'O', 'B-Organization', 'O']`.
+
 
