@@ -30,17 +30,7 @@ def icelandic_ner(lines_in: Iterable[str], batch_size=1) -> NER_RESULTS:
     model.to("cuda")
     model.eval()
 
-    tokenized_sents = []
-    for idx, sentence in enumerate(lines_in):
-        sentence = sentence.strip()
-        # We ignore empty lines - this can be dangerous with parallel data.
-        if not sentence:
-            log.warning(f"Found empty line at index={idx}")
-            continue
-
-        # We make sure that the Icelandic text is pretokenized.
-        to_model = " ".join(list(split_into_sentences(sentence)))
-        tokenized_sents.append(to_model)
+    tokenized_sents = list(icelandic_tok(lines_in))
     for ndx in range(0, len(tokenized_sents), batch_size):
         batch = tokenized_sents[ndx : min(ndx + batch_size, len(tokenized_sents))]
         # Todo, update for batching when predict_pos fixed
@@ -51,6 +41,16 @@ def icelandic_ner(lines_in: Iterable[str], batch_size=1) -> NER_RESULTS:
                 toks
             ), f"We expect the tokens to be of equal length to the labels: {len(toks)}, {len(labels)}, {toks}, {labels}"
             yield toks, labels, "is"
+
+
+def icelandic_tok(lines_in: Iterable[str]) -> Iterable[str]:
+    """Tokenizes Icelandic sentences. Can be split on spaces; " " to retrieve tokens."""
+    for idx, line in enumerate(lines_in):
+        line = line.strip()
+        if not line:
+            log.warning(f"Found empty line at index={idx}")
+            continue
+        yield " ".join(list(split_into_sentences(line)))
 
 
 def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
@@ -65,25 +65,25 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
 
     nlp = spacy.load("en_core_web_lg")
 
-    model = AutoModelForTokenClassification.from_pretrained(
-        "dbmdz/bert-large-cased-finetuned-conll03-english"
-    ).to(  # type: ignore
-        "cuda"
-    )
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
-    label_list = [
-        "O",  # Outside of a named entity
-        "B-MISC",  # Beginning of a miscellaneous entity right after another miscellaneous entity
-        "I-MISC",  # Miscellaneous entity
-        "B-PER",  # Beginning of a person's name right after another person's name
-        "I-PER",  # Person's name
-        "B-ORG",  # Beginning of an organisation right after another organisation
-        "I-ORG",  # Organisation
-        "B-LOC",  # Beginning of a location right after another location
-        "I-LOC",  # Location
-    ]
+    # model = AutoModelForTokenClassification.from_pretrained(
+    #     "dbmdz/bert-large-cased-finetuned-conll03-english"
+    # ).to(  # type: ignore
+    #     "cuda"
+    # )
+    # tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
+    # label_list = [
+    #     "O",  # Outside of a named entity
+    #     "B-MISC",  # Beginning of a miscellaneous entity right after another miscellaneous entity
+    #     "I-MISC",  # Miscellaneous entity
+    #     "B-PER",  # Beginning of a person's name right after another person's name
+    #     "I-PER",  # Person's name
+    #     "B-ORG",  # Beginning of an organisation right after another organisation
+    #     "I-ORG",  # Organisation
+    #     "B-LOC",  # Beginning of a location right after another location
+    #     "I-LOC",  # Location
+    # ]
 
-    def spacy_tok_ner(sent):
+    def spacy_tok_ner(sent: str):
         doc = nlp(sent)
         j = doc.to_json()
 
@@ -99,7 +99,7 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
 
         return tokens, labels
 
-    def hugface_tok_ner(sequence):
+    def hugface_tok_ner(sequence: str):
         # Bit of a hack to get the tokens with the special tokens
         tokens = tokenizer.tokenize(tokenizer.decode(tokenizer.encode(sequence)))  # type: ignore
         inputs = tokenizer.encode(sequence, return_tensors="pt").to("cuda")  # type: ignore
@@ -112,20 +112,31 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
         labels = [t[1] for t in bert_tokens if len(t[0]) < 2 or t[0][:2] != "##"]
         return tokens, labels
 
-    for idx, line in enumerate(lines_in):
-        source = line.strip()
-        # We ignore empty lines - this can be dangerous with parallel data.
-        if not source:
-            log.warning(f"Found empty line at index={idx}")
-            continue
+    for idx, line in enumerate(english_tok(lines_in)):
         using = "hf"
-        if len(source) < 512:
-            tokens, ents = hugface_tok_ner(source)
+        if False:  # len(line) < 512:
+            tokens, ents = hugface_tok_ner(line)
         else:
             using = "sp"
-            tokens, ents = spacy_tok_ner(source)
+            tokens, ents = spacy_tok_ner(line)
         assert len(ents) == len(tokens), "We expect the tokens to be of equal length to the labels"
         yield tokens, ents, using
+
+
+def english_tok(lines_in: Iterable[str]) -> Iterable[str]:
+    """Tokenizes English sentences. Can be split on spaces; " " to retrieve tokens."""
+    from spacy.lang.en import English
+
+    nlp = English()
+    # Create a Tokenizer with the default settings for English
+    # including punctuation rules and exceptions
+    tokenizer = nlp.tokenizer
+    for idx, line in enumerate(lines_in):
+        line = line.strip()
+        if not line:
+            log.warning(f"Found empty line at index={idx}")
+            continue
+        yield " ".join(tok.text for tok in tokenizer(line))
 
 
 def ner(lang: str, lines_iter: Iterable[str]) -> NER_RESULTS:
@@ -134,6 +145,16 @@ def ner(lang: str, lines_iter: Iterable[str]) -> NER_RESULTS:
         return icelandic_ner(lines_iter)
     elif lang == "en":
         return english_ner(lines_iter)
+    else:
+        raise ValueError(f"Unsupported language={lang}")
+
+
+def tok(lang: str, lines_iter: Iterable[str]) -> Iterable[str]:
+    """Tokenize a collection of lines."""
+    if lang == "is":
+        return icelandic_tok(lines_iter)
+    elif lang == "en":
+        return english_tok(lines_iter)
     else:
         raise ValueError(f"Unsupported language={lang}")
 
