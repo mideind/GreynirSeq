@@ -328,6 +328,8 @@ def get_min_hun_distance(words1: List[str], words2: List[str]) -> Tuple[float, L
     values = []
     hits = []
     min_dist = 0
+    if len(words1) == 0 or len(words2) == 0:
+        return min_dist, hits
     for i in range(len(words1)):
         w1 = words1[i]
         row = []
