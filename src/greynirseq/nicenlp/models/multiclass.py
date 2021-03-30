@@ -54,7 +54,7 @@ class MultiClassTokenClassificationHead(nn.Module):
 class MultiClassRobertaModel(RobertaModel):
     @classmethod
     def hub_models(cls):
-        return {"icebert.ner": "/data/wdir/new_models_for_cli/icebert.ner.tar.gz"}
+        return {"icebert.ner": "https://data.greynir.is/icebert.ner.tar.gz"}
 
     def __init__(self, args, encoder: RobertaEncoder, task: FairseqTask):
         super().__init__(args, encoder)
