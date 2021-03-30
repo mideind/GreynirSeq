@@ -19,7 +19,7 @@ This will download the model from our servers and return an instance for inferen
 ```python
 import torch
 model = torch.hub.load("mideind/GreynirSeq", "icebert.ner")
-m.eval()
+model.eval()
 labels = list(model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds."])
 ```
 which returns the labels `['O', 'B-Person', 'O', 'B-Person', 'O', 'O', 'O', 'O', 'O', 'B-Organization', 'O']`.
