@@ -59,7 +59,7 @@ class MultiLabelTokenClassificationHead(nn.Module):
 class MultiLabelRobertaModel(RobertaModel):
     @classmethod
     def hub_models(cls):
-        return {"icebert.pos": "https://data.greynirs.is/icebert.pos.tar.gz"}
+        return {"icebert.pos": "https://data.greynir.is/icebert.pos.tar.gz"}
 
  
     def __init__(self, args, encoder, task):
