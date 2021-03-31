@@ -51,7 +51,7 @@ py==1.8.1
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
 pycparser==2.20
-Pygments==2.6.1
+Pygments==2.7.4
 pylint==2.5.0
 pyparsing==2.4.7
 pytest==5.4.1
@@ -60,7 +60,7 @@ regex==2020.4.4
 requests==2.23.0
 requests-oauthlib==1.3.0
 rope==0.17.0
-rsa==4.0
+rsa==4.1
 sacrebleu==1.4.6
 six==1.14.0
 tensorboard==2.2.1
