@@ -57,7 +57,10 @@ CATS_W_LABELS = [
     ("fo", [GENDER_OR_PER, NUMBER, CASE]),
     ("fp", [GENDER_OR_PER, NUMBER, CASE]),
     ("fs", [GENDER, NUMBER, CASE]),
-    ("ft", [GENDER, NUMBER, CASE],),  # Deprecated but needs to be here for backwards compatibility.
+    (
+        "ft",
+        [GENDER, NUMBER, CASE],
+    ),  # Deprecated but needs to be here for backwards compatibility.
     # numerals
     ("tf", [GENDER, NUMBER, CASE]),
     ("ta", []),
@@ -134,16 +137,50 @@ FEATS = [
 ]
 
 FEATS_MUTEX = {
-    "gen": ["masc", "fem", "neut", "gender_undet",],
-    "per": ["1", "2", "3",],  # person
-    "num": ["sing", "plur",],
-    "cas": ["nom", "acc", "dat", "gen",],
-    "def": ["definite",],
+    "gen": [
+        "masc",
+        "fem",
+        "neut",
+        "gender_undet",
+    ],
+    "per": [
+        "1",
+        "2",
+        "3",
+    ],  # person
+    "num": [
+        "sing",
+        "plur",
+    ],
+    "cas": [
+        "nom",
+        "acc",
+        "dat",
+        "gen",
+    ],
+    "def": [
+        "definite",
+    ],
     "pro": ["proper"],
-    "dec": ["strong", "weak", "equiinflected",],  # "óbeygt"
-    "deg": ["pos", "cmp", "superl",],  # positive degree
-    "ten": ["past", "pres", "pass",],  # Not used but needs to be here for backwards compatibility.
-    "voi": ["act", "mid",],
+    "dec": [
+        "strong",
+        "weak",
+        "equiinflected",
+    ],  # "óbeygt"
+    "deg": [
+        "pos",
+        "cmp",
+        "superl",
+    ],  # positive degree
+    "ten": [
+        "past",
+        "pres",
+        "pass",
+    ],  # Not used but needs to be here for backwards compatibility.
+    "voi": [
+        "act",
+        "mid",
+    ],
 }
 FEATS_MUTEX_MAP = {}
 FEATS_MUTEX_MAP_IDX = {}
@@ -184,7 +221,13 @@ ADJ_CLASS = {"s": "strong", "v": "weak", "o": "equiinflected"}
 DEFINITE = {"g": "definite", " ": "indefinite"}
 
 TAGSET = {
-    "n": [GENDER, NUMBER, CASE, {"g": "definite", "-": "", " ": ""}, {"": "", "s": "proper"},],
+    "n": [
+        GENDER,
+        NUMBER,
+        CASE,
+        {"g": "definite", "-": "", " ": ""},
+        {"": "", "s": "proper"},
+    ],
     "l": [GENDER, NUMBER, CASE, ADJ_CLASS, DEGREE],
     # we skip PRONTYPE, as thats part of fine categories
     "f": [{**GENDER, **PERSON}, NUMBER, CASE],
@@ -294,7 +337,13 @@ def ifd2labelsNew(tag):
     DEFINITE = {"g": "definite", " ": "indefinite"}
 
     TAGSET = {
-        "n": [GENDER, NUMBER, CASE, {"g": "definite", "-": "", " ": ""}, {"": "", "s": "proper"},],
+        "n": [
+            GENDER,
+            NUMBER,
+            CASE,
+            {"g": "definite", "-": "", " ": ""},
+            {"": "", "s": "proper"},
+        ],
         "l": [GENDER, NUMBER, CASE, ADJ_CLASS, DEGREE],
         # we skip PRONTYPE, as thats part of fine categories
         "f": [{**GENDER, **PERSON}, NUMBER, CASE],

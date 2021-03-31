@@ -143,7 +143,10 @@ class MultiSpanPredictionTask(FairseqTask):
 
         inputs_path = Path(self.args.data) / "{split}".format(split=split)
         src_tokens = data_utils.load_indexed_dataset(
-            str(inputs_path), self.source_dictionary, self.args.dataset_impl, combine=combine,
+            str(inputs_path),
+            self.source_dictionary,
+            self.args.dataset_impl,
+            combine=combine,
         )
         assert src_tokens is not None, "could not find dataset: {}".format(inputs_path)
 
@@ -154,7 +157,10 @@ class MultiSpanPredictionTask(FairseqTask):
 
         targets_path = Path(self.args.data) / "{}.nonterm".format(split)
         labelled_spans = data_utils.load_indexed_dataset(
-            str(targets_path), self.label_dictionary, self.args.dataset_impl, combine=combine,
+            str(targets_path),
+            self.label_dictionary,
+            self.args.dataset_impl,
+            combine=combine,
         )
         assert labelled_spans is not None, "could not find labels: {}".format(targets_path)
 

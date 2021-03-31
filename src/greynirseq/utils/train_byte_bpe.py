@@ -37,10 +37,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Description")
 
     parser.add_argument(
-        "-i", "--input", type=str, help="Input file", metavar="FILE",
+        "-i",
+        "--input",
+        type=str,
+        help="Input file",
+        metavar="FILE",
     )
     parser.add_argument(
-        "-n", "--name", type=str, help="File prefix", metavar="NAME",
+        "-n",
+        "--name",
+        type=str,
+        help="File prefix",
+        metavar="NAME",
     )
     parser.add_argument(
         "-s",
@@ -51,7 +59,11 @@ if __name__ == "__main__":
         help="Total vocabulary size (not merge operations)",
     )
     parser.add_argument(
-        "--min-freq", type=int, default=3, metavar="N", help="Ignore tokens with lower frequency than this",
+        "--min-freq",
+        type=int,
+        default=3,
+        metavar="N",
+        help="Ignore tokens with lower frequency than this",
     )
 
     args = parser.parse_args()

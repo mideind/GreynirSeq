@@ -41,11 +41,16 @@ logger = logging.getLogger(__name__)
 
 
 class DynamicGPT2BPEDropoutResampling(BaseWrapperDataset):
-    """ Reencode input dataset encoded GPT2-BPE, with bpe-dropout.
-        Note that currently Huggingface tokenizers library does not support reproducible pseudo-rng."""
+    """Reencode input dataset encoded GPT2-BPE, with bpe-dropout.
+    Note that currently Huggingface tokenizers library does not support reproducible pseudo-rng."""
 
     def __init__(
-        self, args, dataset, source_dictionary, dropout=0.1, seed=1,
+        self,
+        args,
+        dataset,
+        source_dictionary,
+        dropout=0.1,
+        seed=1,
     ):
         super().__init__(dataset)
         self.source_dictionary = source_dictionary
@@ -56,7 +61,10 @@ class DynamicGPT2BPEDropoutResampling(BaseWrapperDataset):
         import tokenizers
 
         self.hf_tokenizer = tokenizers.ByteLevelBPETokenizer(
-            args.gpt2_encoder_json, args.gpt2_vocab_bpe, add_prefix_space=True, dropout=self.dropout,
+            args.gpt2_encoder_json,
+            args.gpt2_vocab_bpe,
+            add_prefix_space=True,
+            dropout=self.dropout,
         )
 
     @lru_cache(maxsize=8)
@@ -69,7 +77,10 @@ class DynamicGPT2BPEDropoutResampling(BaseWrapperDataset):
             for part in parts:
                 part_bpe_str_old = [int(elem) for elem in part.split(" ") if elem]  # filter trailing whitespace
                 part_bpe_str_new = " ".join(
-                    map(str, self.hf_tokenizer.encode(self.hf_tokenizer.decode(part_bpe_str_old)).ids,)
+                    map(
+                        str,
+                        self.hf_tokenizer.encode(self.hf_tokenizer.decode(part_bpe_str_old)).ids,
+                    )
                 )
                 hf_bpe_tokens_str.append(part_bpe_str_new)
             item = self.source_dictionary.encode_line(unk_sym.join(hf_bpe_tokens_str), add_if_not_exist=False).long()
@@ -94,7 +105,7 @@ class DynamicNoisingDataset(NoisingDataset):
 
     def __getitem__(self, index):
         """
-           Same as super method, except includes epoch for RNG
+        Same as super method, except includes epoch for RNG
         """
         src_tokens = self.src_dataset[index]
         has_bos = src_tokens[0] == self.src_dict.bos()
@@ -131,18 +142,34 @@ class DynamicNoisingDataset(NoisingDataset):
 
 class GPT2WordNoising(UnsupervisedMTNoising):
     """Same as UnsupervisedMTNoising class, except handles GPT2 byte-level bpe
-       instead of standard bpe. This assumes lookup-table is for dictionary bpes.
-        I.e. not raw gpt2 bpe itself """
+    instead of standard bpe. This assumes lookup-table is for dictionary bpes.
+     I.e. not raw gpt2 bpe itself"""
 
     def __init__(
-        self, dictionary, mask_is_beginning_of_word, max_word_shuffle_distance, word_dropout_prob, word_blanking_prob,
+        self,
+        dictionary,
+        mask_is_beginning_of_word,
+        max_word_shuffle_distance,
+        word_dropout_prob,
+        word_blanking_prob,
     ):
         super(GPT2WordNoising, self).__init__(
-            dictionary, max_word_shuffle_distance, word_dropout_prob, word_blanking_prob,
+            dictionary,
+            max_word_shuffle_distance,
+            word_dropout_prob,
+            word_blanking_prob,
         )
         self.dictionary = dictionary
-        self.word_dropout = WordDropout(dictionary=dictionary, bpe_cont_marker=None, bpe_end_marker="$",)
-        self.word_shuffle = WordShuffle(dictionary=dictionary, bpe_cont_marker=None, bpe_end_marker="$",)
+        self.word_dropout = WordDropout(
+            dictionary=dictionary,
+            bpe_cont_marker=None,
+            bpe_end_marker="$",
+        )
+        self.word_shuffle = WordShuffle(
+            dictionary=dictionary,
+            bpe_cont_marker=None,
+            bpe_end_marker="$",
+        )
         self.bpe_end = mask_is_beginning_of_word
         self.word_dropout.bpe_end = self.bpe_end
         self.word_shuffle.bpe_end = self.bpe_end
@@ -177,11 +204,13 @@ class GPT2WordNoising(UnsupervisedMTNoising):
 
 class GPT2Noising(WordNoising):
     """Same as WordNoising root class, except handles GPT2 byte-level bpe
-       instead of standard bpe. This assumes lookup-table is for dictionary bpes.
-        I.e. not raw gpt2 bpe itself """
+    instead of standard bpe. This assumes lookup-table is for dictionary bpes.
+     I.e. not raw gpt2 bpe itself"""
 
     def __init__(
-        self, dictionary, mask_is_beginning_of_word,
+        self,
+        dictionary,
+        mask_is_beginning_of_word,
     ):
         super(GPT2Noising, self).__init__(dictionary, bpe_cont_marker=None, bpe_end_marker=",")
         self.dictionary = dictionary
@@ -190,7 +219,7 @@ class GPT2Noising(WordNoising):
 
 class GPT2WordDropout(GPT2Noising):
     """Similar to WordDropout except for GPT2BPE and uses single blanks for
-       dropped 'words' """
+    dropped 'words'"""
 
     def __init__(self, dictionary, mask_is_beginning_of_word, default_dropout_prob=0.1):
         super().__init__(dictionary, mask_is_beginning_of_word)
@@ -288,7 +317,11 @@ class GPT2WordShuffle(GPT2Noising):
         assert max_shuffle_distance > 1
 
         # define noise word scores
-        noise = np.random.uniform(0, max_shuffle_distance, size=(x.size(0), x.size(1)),)
+        noise = np.random.uniform(
+            0,
+            max_shuffle_distance,
+            size=(x.size(0), x.size(1)),
+        )
         if x[0, 0] == self.dictionary.bos():
             noise[0] = -1  # do not move start sentence symbol
         # be sure to shuffle entire words
@@ -310,21 +343,33 @@ class GPT2WordShuffle(GPT2Noising):
 
 class GPT2WordNoisingV2(GPT2Noising):
     """Same as UnsupervisedMTNoising class, except handles GPT2 byte-level bpe
-       instead of standard bpe. This assumes lookup-table is for dictionary bpes.
-        I.e. not raw gpt2 bpe itself """
+    instead of standard bpe. This assumes lookup-table is for dictionary bpes.
+     I.e. not raw gpt2 bpe itself"""
 
     def __init__(
-        self, dictionary, mask_is_beginning_of_word, max_word_shuffle_distance, word_dropout_prob, word_blanking_prob,
+        self,
+        dictionary,
+        mask_is_beginning_of_word,
+        max_word_shuffle_distance,
+        word_dropout_prob,
+        word_blanking_prob,
     ):
         super(GPT2WordNoisingV2, self).__init__(
-            dictionary, mask_is_beginning_of_word,
+            dictionary,
+            mask_is_beginning_of_word,
         )
         self.max_word_shuffle_distance = max_word_shuffle_distance
         self.word_dropout_prob = word_dropout_prob
         self.word_blanking_prob = word_blanking_prob
         self.dictionary = dictionary
-        self.word_dropout = GPT2WordDropout(dictionary, mask_is_beginning_of_word,)
-        self.word_shuffle = GPT2WordShuffle(dictionary, mask_is_beginning_of_word,)
+        self.word_dropout = GPT2WordDropout(
+            dictionary,
+            mask_is_beginning_of_word,
+        )
+        self.word_shuffle = GPT2WordShuffle(
+            dictionary,
+            mask_is_beginning_of_word,
+        )
         self.bpe_end = mask_is_beginning_of_word
 
     def noising(self, x, lengths):
@@ -338,11 +383,15 @@ class GPT2WordNoisingV2(GPT2Noising):
 
         # 1. Word Shuffle
         noisy_src_tokens, noisy_src_lengths = self.word_shuffle.noising(
-            x=x, lengths=lengths, max_shuffle_distance=self.max_word_shuffle_distance,
+            x=x,
+            lengths=lengths,
+            max_shuffle_distance=self.max_word_shuffle_distance,
         )
         # 2. Word Dropout
         noisy_src_tokens, noisy_src_lengths = self.word_dropout.noising(
-            x=noisy_src_tokens, lengths=noisy_src_lengths, dropout_prob=self.word_dropout_prob,
+            x=noisy_src_tokens,
+            lengths=noisy_src_lengths,
+            dropout_prob=self.word_dropout_prob,
         )
         # 3. Word Blanking
         noisy_src_tokens, noisy_src_lengths = self.word_dropout.noising(
@@ -397,7 +446,10 @@ def load_unpaired_langpair(
         src_dataset = data_utils.load_indexed_dataset(prefix + src, src_dict, dataset_impl)
         if truncate_source:
             src_dataset = AppendTokenDataset(
-                TruncateDataset(StripTokenDataset(src_dataset, src_dict.eos()), max_source_positions - 1,),
+                TruncateDataset(
+                    StripTokenDataset(src_dataset, src_dict.eos()),
+                    max_source_positions - 1,
+                ),
                 src_dict.eos(),
             )
         src_datasets.append(src_dataset)
@@ -537,7 +589,10 @@ class TranslationWithBacktranslationTask(TranslationTask):
 
         if self.args.bpe_dropout > 0:
             src_dataset = DynamicGPT2BPEDropoutResampling(
-                self.args, src_dataset, self.source_dictionary, dropout=self.args.bpe_dropout,
+                self.args,
+                src_dataset,
+                self.source_dictionary,
+                dropout=self.args.bpe_dropout,
             )
 
         # load backtranslation
@@ -572,7 +627,10 @@ class TranslationWithBacktranslationTask(TranslationTask):
                 # )
                 if self.args.bpe_dropout > 0:
                     bt_src_dataset = DynamicGPT2BPEDropoutResampling(
-                        self.args, bt_src_dataset, self.source_dictionary, dropout=self.args.bpe_dropout,
+                        self.args,
+                        bt_src_dataset,
+                        self.source_dictionary,
+                        dropout=self.args.bpe_dropout,
                     )
                 noiser = GPT2WordNoisingV2(
                     self.src_dict,
@@ -581,7 +639,12 @@ class TranslationWithBacktranslationTask(TranslationTask):
                     self.args.word_dropout_prob,
                     self.args.word_blanking_prob,
                 )
-                bt_src_dataset = DynamicNoisingDataset(bt_src_dataset, self.src_dict, seed=1, noiser=noiser,)
+                bt_src_dataset = DynamicNoisingDataset(
+                    bt_src_dataset,
+                    self.src_dict,
+                    seed=1,
+                    noiser=noiser,
+                )
 
                 # try:
                 #     from icecream import ic

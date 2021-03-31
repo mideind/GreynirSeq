@@ -133,12 +133,21 @@ class MultiLabelRobertaModel(RobertaModel):
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
         cat_logits = pad_sequence(cat_logits.split((nwords).tolist()), padding_value=0, batch_first=True)
-        attr_logits = pad_sequence(attr_logits.split((nwords).tolist()), padding_value=0, batch_first=True,)
+        attr_logits = pad_sequence(
+            attr_logits.split((nwords).tolist()),
+            padding_value=0,
+            batch_first=True,
+        )
         return (cat_logits, attr_logits), _extra
 
     @classmethod
     def from_pretrained(
-        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs,
+        cls,
+        model_name_or_path,
+        checkpoint_file="model.pt",
+        data_name_or_path=".",
+        bpe="gpt2",
+        **kwargs,
     ):
         from fairseq import hub_utils
 
