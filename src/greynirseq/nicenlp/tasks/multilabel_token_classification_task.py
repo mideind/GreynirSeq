@@ -50,7 +50,10 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         """Add task-specific arguments to the parser."""
         parser.add_argument("data", metavar="FILE", help="file prefix for data")
         parser.add_argument(
-            "--term-schema", metavar="FILE", help="json file providing label-set and label-groups", required=True,
+            "--term-schema",
+            metavar="FILE",
+            help="json file providing label-set and label-groups",
+            required=True,
         )
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
@@ -139,7 +142,10 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
         inputs_path = Path(self.args.data) / "{split}".format(split=split)
         src_tokens = data_utils.load_indexed_dataset(
-            str(inputs_path), self.source_dictionary, self.args.dataset_impl, combine=combine,
+            str(inputs_path),
+            self.source_dictionary,
+            self.args.dataset_impl,
+            combine=combine,
         )
         assert src_tokens is not None, "could not find dataset: {}".format(inputs_path)
 
@@ -150,7 +156,10 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
         targets_path = Path(self.args.data) / "{}.term".format(split)
         term_labels = data_utils.load_indexed_dataset(
-            str(targets_path), self.label_dictionary, self.args.dataset_impl, combine=combine,
+            str(targets_path),
+            self.label_dictionary,
+            self.args.dataset_impl,
+            combine=combine,
         )
         assert term_labels is not None, "could not find labels: {}".format(targets_path)
 
@@ -248,7 +257,10 @@ class MultiLabelTokenClassificationTask(FairseqTask):
         return make_group_masks(self.label_dictionary, self.label_schema)
 
     def logits_to_labels(
-        self, cat_logits: torch.Tensor, attr_logits: torch.Tensor, word_mask: torch.Tensor,
+        self,
+        cat_logits: torch.Tensor,
+        attr_logits: torch.Tensor,
+        word_mask: torch.Tensor,
     ):
         # logits: Batch x Time x Labels
         bsz, _, num_cats = cat_logits.shape
@@ -288,7 +300,12 @@ class MultiLabelTokenClassificationTask(FairseqTask):
 
         predictions = list(
             [
-                _clean_cats_attrs(self.label_dictionary, self.label_schema, seq_cats, seq_attrs,)
+                _clean_cats_attrs(
+                    self.label_dictionary,
+                    self.label_schema,
+                    seq_cats,
+                    seq_attrs,
+                )
                 for seq_cats, seq_attrs in zip(batch_cats, batch_attrs)
             ]
         )

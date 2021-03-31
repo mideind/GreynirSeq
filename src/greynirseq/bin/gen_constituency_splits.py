@@ -46,23 +46,46 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Description")
 
     parser.add_argument(
-        "BASE", type=str, metavar="FILE",
+        "BASE",
+        type=str,
+        metavar="FILE",
     )
     parser.add_argument(
-        "DEST", type=str, metavar="FILE",
+        "DEST",
+        type=str,
+        metavar="FILE",
     )
 
     parser.add_argument(
-        "--train-size", dest="train_size", type=int, required=False, default=sys.maxsize, metavar="NUM",
+        "--train-size",
+        dest="train_size",
+        type=int,
+        required=False,
+        default=sys.maxsize,
+        metavar="NUM",
     )
     parser.add_argument(
-        "--valid-size", dest="valid_size", type=int, required=False, default=10000, metavar="NUM",
+        "--valid-size",
+        dest="valid_size",
+        type=int,
+        required=False,
+        default=10000,
+        metavar="NUM",
     )
     parser.add_argument(
-        "--test-size", dest="test_size", type=int, required=False, default=10000, metavar="NUM",
+        "--test-size",
+        dest="test_size",
+        type=int,
+        required=False,
+        default=10000,
+        metavar="NUM",
     )
 
     args = parser.parse_args()
     main(
-        Path(args.BASE), Path(args.DEST), args.train_size, args.valid_size, args.test_size,
+        Path(args.BASE),
+        Path(args.DEST),
+        args.train_size,
+        args.valid_size,
+        args.test_size,
     )

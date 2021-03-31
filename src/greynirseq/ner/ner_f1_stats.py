@@ -68,7 +68,10 @@ class EvalNER:
         print("")
         print(
             tbl_num_string.format(
-                "All", self.precision(set(self.labels)), self.recall(set(self.labels)), self.f1(set(self.labels)),
+                "All",
+                self.precision(set(self.labels)),
+                self.recall(set(self.labels)),
+                self.f1(set(self.labels)),
             )
         )
         for lbl in set(self.labels):
@@ -84,7 +87,13 @@ class EvalNER:
         sum_true_negative = sum(self.true_negative[lbl] for lbl in labels)
         sum_false_negative = sum(self.false_negative[lbl] for lbl in labels)
         print(
-            tbl_num_string.format("All", sum_true_positive, sum_false_positive, sum_true_negative, sum_false_negative,)
+            tbl_num_string.format(
+                "All",
+                sum_true_positive,
+                sum_false_positive,
+                sum_true_negative,
+                sum_false_negative,
+            )
         )
         for lbl in set(self.labels):
             print(
