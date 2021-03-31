@@ -295,10 +295,6 @@ def ifd2labels(tag):
     labels.append(cat)
 
     if tagset_key not in TAGSET:
-        # try:
-        #    assert tagset_key in ftags, tagset_key
-        # except:
-        #    import pdb; pdb.set_trace()
         return labels
 
     if tagset_key == "a" and not rest:
@@ -315,9 +311,6 @@ def ifd2labels(tag):
         if not label:
             continue
         labels.append(label)
-
-    for l in labels:
-        assert l in ftags, l
 
     return labels
 

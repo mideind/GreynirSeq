@@ -13,8 +13,8 @@ testpaths = [
 
 [tool.poetry]
 name = "greynirseq"
-version = "0.0.1"
-description = "Natural language processing for Icelandic, using fairseq"
+version = "0.1"
+description = "Natural language processing for Icelandic"
 authors = []
 readme = "README.md"
 repository = "https://github.com/mideind/GreynirSeq"

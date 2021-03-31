@@ -21,8 +21,8 @@ else:
 
 setup(
     name="greynirseq",
-    description="Natural language processing for Icelandic, using fairseq",
-    version="0.01",
+    description="Natural language processing for Icelandic",
+    version="0.1",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
     setup_requires=["cython"],
@@ -47,6 +47,7 @@ setup(
             ),
         ]
     ),
+    scripts=["bin/greynirseq"],
     cmdclass={"build_ext": build_ext},
     zip_safe=False,
 )

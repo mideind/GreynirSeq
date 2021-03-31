@@ -51,7 +51,8 @@ except ImportError:
         from setuptools import sandbox
 
         sandbox.run_setup(
-            os.path.join(os.path.dirname(__file__), "setup.py"), ["build_ext", "--inplace"],
+            os.path.join(os.path.dirname(__file__), "setup.py"),
+            ["build_ext", "--inplace"],
         )
     except ImportError:
         print(
@@ -63,4 +64,7 @@ except ImportError:
 # automatically expose models defined in FairseqModel::hub_models
 for _model_type, _cls in MODEL_REGISTRY.items():
     for model_name in _cls.hub_models().keys():
-        globals()[model_name] = functools.partial(_cls.from_pretrained, model_name,)
+        globals()[model_name] = functools.partial(
+            _cls.from_pretrained,
+            model_name,
+        )
