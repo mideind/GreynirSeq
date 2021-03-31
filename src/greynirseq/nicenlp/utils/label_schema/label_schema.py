@@ -2,8 +2,8 @@ import json
 from collections import namedtuple
 
 import torch
-from fairseq.data import Dictionary
 from fairseq import file_utils
+from fairseq.data import Dictionary
 
 
 def parse_label_schema(path):
