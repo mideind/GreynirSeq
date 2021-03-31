@@ -47,7 +47,7 @@ setup(
             ),
         ]
     ),
-    scripts=["bin/greynirseq"],
+    scripts=["src/greynirseq/bin/greynirseq"],
     cmdclass={"build_ext": build_ext},
     zip_safe=False,
 )

@@ -22,6 +22,7 @@ packages = [
     {include = "greynirseq", from = "src"}
 ]
 [tool.poetry.scripts]
+greynirseq = "greynirseq.bin.greynirseq:main"
 
 [tool.poetry.dependencies]
 python = "^3.7.2"
