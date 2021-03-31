@@ -35,7 +35,11 @@ class MultiClassTokenClassificationCriterion(FairseqCriterion):
         padding_mask = target_attrs.ne(pad_idx)
 
         # Batch x Time x Depth -> Batch x Depth x Time
-        loss = F.cross_entropy(logits.transpose(2, 1), target_attrs, reduction="none",)
+        loss = F.cross_entropy(
+            logits.transpose(2, 1),
+            target_attrs,
+            reduction="none",
+        )
 
         # padding_value is -100 which as special semantics in cross_entropy
         loss = (loss * padding_mask).sum()
