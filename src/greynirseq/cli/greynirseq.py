@@ -37,9 +37,13 @@ class GreynirSeqIO:
             batch.append(line)
             if len(batch) == self.batch_size:
                 results = self.infer(batch)
+                for result in results:
+                    self.output.write(result + "\n")
+                batch = []
+        if batch:
+            results = self.infer(batch)
             for result in results:
                 self.output.write(result + "\n")
-            batch = []
 
 
 class NER(GreynirSeqIO):
