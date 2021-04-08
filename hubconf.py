@@ -36,7 +36,7 @@ from fairseq.hub_utils import (  # noqa; noqa
 )
 
 
-from greynirseq.nicenlp import models
+from greynirseq.nicenlp import models  # noqa
 from fairseq.models import MODEL_REGISTRY  # noqa
 
 
