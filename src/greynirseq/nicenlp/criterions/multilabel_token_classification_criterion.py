@@ -42,7 +42,11 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         cat_dict_to_vec_idx = model.task.cat_dict_idx_to_vec_idx.clone().to(device)
 
         # Batch x Time x Depth -> Batch x Depth x Time
-        cat_loss = F.cross_entropy(cat_logits.transpose(2, 1), cat_dict_to_vec_idx[target_cats], reduction="none",)
+        cat_loss = F.cross_entropy(
+            cat_logits.transpose(2, 1),
+            cat_dict_to_vec_idx[target_cats],
+            reduction="none",
+        )
 
         # padding_value is -100 which as special semantics in cross_entropy
         cat_loss = (cat_loss * target_exclude_mask).sum()

@@ -72,7 +72,7 @@ class ChartParserHead(nn.Module):
 @register_model("icebert_simple_parser")
 class SimpleParserModel(RobertaModel):
     """Simple chart parser model based on Roberta. Simple in the sense that it does not
-       add additional self-attentive layers or feature-engineering from Kitaev and Klein 2018."""
+    add additional self-attentive layers or feature-engineering from Kitaev and Klein 2018."""
 
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
@@ -95,7 +95,9 @@ class SimpleParserModel(RobertaModel):
 
         self.task = task
         self.task_head = ChartParserHead(
-            sentence_encoder.embedding_dim, self.task.num_nterm_cats, self.args.pooler_dropout,
+            sentence_encoder.embedding_dim,
+            self.task.num_nterm_cats,
+            self.args.pooler_dropout,
         )
 
     @staticmethod
@@ -132,7 +134,9 @@ class SimpleParserModel(RobertaModel):
         nwords_w_bos = kwargs["word_mask_w_bos"].sum(-1)
 
         words_w_bos_padded = pad_sequence(
-            words_w_bos.softmax(-1).split((nwords_w_bos).tolist()), padding_value=0, batch_first=True,
+            words_w_bos.softmax(-1).split((nwords_w_bos).tolist()),
+            padding_value=0,
+            batch_first=True,
         )
 
         span_features = self.task_head(words_w_bos_padded)
@@ -152,7 +156,12 @@ class SimpleParserModel(RobertaModel):
 
     @classmethod
     def from_pretrained(
-        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs,
+        cls,
+        model_name_or_path,
+        checkpoint_file="model.pt",
+        data_name_or_path=".",
+        bpe="gpt2",
+        **kwargs,
     ):
         from fairseq import hub_utils
 

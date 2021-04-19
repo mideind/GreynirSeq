@@ -164,7 +164,7 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         # of a sentences is no different from those further back.
         if sentence[0] != " ":
             sentence = " " + sentence
-        return super().encode(sentence)
+        return super().encode(sentence).to(device=self.device)  # super encode does not support device argument.
 
     def decode(self, tokens: torch.LongTensor) -> List[str]:
         # Remove the leading space, see 'encode' comment.
@@ -188,9 +188,10 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
     def _predict_labels(self, sentences: List[str]) -> Tuple[List[List[str]], torch.Tensor]:
         tokens_batch = []
         word_mask_batch = []
+
         for sentence in sentences:
             tokens = self.encode(sentence)
-            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
+            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()], device=self.device)
             word_mask[0] = 0
             word_mask[-1] = 0
             tokens_batch.append(tokens)

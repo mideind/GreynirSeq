@@ -12,7 +12,7 @@ from fairseq.data import FairseqDataset
 
 class LazyMMapIndexedTextDataset(FairseqDataset):
     """Takes a text file as input, indexes it at instantiation.
-       The lines are binarized just in time."""
+    The lines are binarized just in time."""
 
     def __init__(self, path, tokenize_fn, string_encode_fn, append_eos=True):
         super().__init__()
