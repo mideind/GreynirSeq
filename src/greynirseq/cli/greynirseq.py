@@ -1,32 +1,34 @@
 #!/usr/bin/env python
 
 import argparse
+import io
 import sys
+from typing import List, Union
 
 import torch
 import tqdm
 
 
 class GreynirSeqIO:
-    def __init__(self, device, batch_size, show_progress, max_input_words_split):
+    def __init__(self, device: str, batch_size: int, show_progress: bool, max_input_words_split: int) -> None:
         self.device = device
         self.batch_size = batch_size
         self.show_progress = show_progress
         self.max_input_length = max_input_words_split
         self.model = self.build_model()
 
-    def build_model(self):
+    def build_model(self) -> torch.nn.Model:
         raise NotImplementedError
 
-    def infer(self, batch):
+    def infer(self, batch: List[str]) -> List[str]:
         raise NotImplementedError
 
-    def handle_batch(self, batch, output):
+    def handle_batch(self, batch: List[str], output: io.IOBase) -> None:
         results = self.infer(batch)
         for result in results:
             output.write(result + "\n")
 
-    def run(self, input, output):
+    def run(self, input: io.IOBase, output: io.IOBase) -> Union[None, io.IOBase]:
         batch = []
         input_iterable = map(str.rstrip, input)
         if self.show_progress:
@@ -70,13 +72,13 @@ class GreynirSeqIO:
 
 
 class NER(GreynirSeqIO):
-    def build_model(self):
+    def build_model(self) -> torch.nn.Model:
         model = torch.hub.load("mideind/GreynirSeq:hub", "icebert.ner")
         model.to(self.device)
         model.eval()
         return model
 
-    def infer(self, batch):
+    def infer(self, batch) -> List[str]:
         batch_labels = list(self.model.predict_labels(batch))
         formated_labels = []
 
@@ -86,13 +88,13 @@ class NER(GreynirSeqIO):
 
 
 class POS(GreynirSeqIO):
-    def build_model(self):
+    def build_model(self) -> torch.nn.Model:
         model = torch.hub.load("mideind/GreynirSeq:hub", "icebert.pos")
         model.to(self.device)
         model.eval()
         return model
 
-    def infer(self, batch):
+    def infer(self, batch) -> List[str]:
         batch_labels = self.model.predict_ifd_labels(batch)
         formated_labels = []
         for sentence_labels in batch_labels:
