@@ -1,14 +1,27 @@
 # POS tagging with IceBERT
 
-This example shows how to train an Icelandic POS tagger with ~98% accuracy on the [Tagged Icelandic Corpus](http://www.malfong.is/index.php?lang=en&pg=mim) (MIM) dataset.
+This example shows how to train an Icelandic POS tagger with ~98.2% accuracy on the [Tagged Icelandic Corpus](http://www.malfong.is/index.php?lang=en&pg=mim) (MIM) dataset . The output can be configure to use the MIM 2.0 label format which is the default for the CLI.
 
 ## Preprocessing
 See `./prep_mim_pos.sh` which is setup to process all data from the MIM pos set and prepare for crossvalidation.
 
 ## Training
-See `./train.sh` which trains all ten sets for crossvalidation.
+See `./train.sh` which trains all ten sets for cross-validation.
 
 ## Inference
+
+### Using the CLI
+
+Using the CLI is the easiest way of using the tagger, this downloads the necessary files, make sure you have space for around 1GB of data.
+
+``` bash
+❯ pip install greynirseq
+❯ echo "Systurnar Guðrún og Monique átu einar um jólin á McDonalds ." | greynirseq pos --input -
+
+nvfng nven-s c ns sfg3fþ lvfnsf aff nhfog aff ns pl
+```
+
+It takes a while to load the model so if you need to tag many lines you should provide them all at once.
 
 ### Using torch hub
 

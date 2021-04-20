@@ -5,6 +5,7 @@ import io
 import sys
 from typing import List, Union
 
+from fairseq.hub_utils import GeneratorHubInterface
 import torch
 import tqdm
 
@@ -17,7 +18,7 @@ class GreynirSeqIO:
         self.max_input_length = max_input_words_split
         self.model = self.build_model()
 
-    def build_model(self) -> torch.nn.Model:
+    def build_model(self) -> GeneratorHubInterface:
         raise NotImplementedError
 
     def infer(self, batch: List[str]) -> List[str]:
@@ -72,7 +73,7 @@ class GreynirSeqIO:
 
 
 class NER(GreynirSeqIO):
-    def build_model(self) -> torch.nn.Model:
+    def build_model(self) -> GeneratorHubInterface:
         model = torch.hub.load("mideind/GreynirSeq:hub", "icebert.ner")
         model.to(self.device)
         model.eval()
@@ -88,7 +89,7 @@ class NER(GreynirSeqIO):
 
 
 class POS(GreynirSeqIO):
-    def build_model(self) -> torch.nn.Model:
+    def build_model(self) -> GeneratorHubInterface:
         model = torch.hub.load("mideind/GreynirSeq:hub", "icebert.pos")
         model.to(self.device)
         model.eval()

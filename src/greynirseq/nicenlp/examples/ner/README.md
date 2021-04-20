@@ -1,16 +1,21 @@
 # NER tagging with IceBERT
 
-This example shows how to train an Icelandic NER tagger with F1 score 0.9274 on the [MIM-GOLD-NER](https://repository.clarin.is/repository/xmlui/handle/20.500.12537/42) named entity recognition corpus.
-
-## Preprocessing
-
-The raw data needs to be mapped from word per line to sentence per line, see `greynirseq.utils.ifd_utils.ifd2labels`. Then bpe encoded and preprocessed. See the README for POS tagging.
-
-## Training
-
-See `./train.sh` for the script used.
+This example shows how to train an Icelandic NER tagger with F1 score 0.9274 on the [MIM-GOLD-NER](https://repository.clarin.is/repository/xmlui/handle/20.500.12537/42) named entity recognition corpus. The output format is the same as used there.
 
 ## Inference
+
+### Using the CLI
+
+Using the CLI is the easiest way of using the tagger, this downloads the necessary files, make sure you have space for around 1GB of data.
+
+``` bash
+❯ pip install greynirseq
+❯ echo "Systurnar Guðrún og Monique átu einar um jólin á McDonalds ." | greynirseq ner --input -
+
+O B-Person O B-Person O O O O O B-Organization O
+```
+
+It takes a while to load the model so if you need to tag many lines you should provide them all at once.
 
 ### From torch hub
 
@@ -36,5 +41,14 @@ model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_C
 model.eval()
 ```
 
+## Training
+ 
+### Preprocessing
+
+The raw data needs to be mapped from word per line to sentence per line, see `greynirseq.utils.ifd_utils.ifd2labels`. Then bpe encoded and preprocessed. See the README for POS tagging.
+
+### Training
+
+See `./train.sh` for the script used.
 
 
