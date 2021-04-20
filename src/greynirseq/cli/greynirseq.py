@@ -5,9 +5,9 @@ import io
 import sys
 from typing import List, Union
 
-from fairseq.hub_utils import GeneratorHubInterface
 import torch
 import tqdm
+from fairseq.hub_utils import GeneratorHubInterface
 
 
 class GreynirSeqIO:
