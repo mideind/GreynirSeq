@@ -18,7 +18,7 @@ This will download the model from our servers and return an instance for inferen
 import torch
 model = torch.hub.load("mideind/GreynirSeq", "icebert.pos")
 model.eval()
-labels = model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds ."]
+labels = model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds ."])
 ```
 
 which returns

@@ -8,9 +8,7 @@ import tqdm
 
 
 class GreynirSeqIO:
-    def __init__(self, input, output, device, batch_size, show_progress, max_input_words_split):
-        self.input = input
-        self.output = output
+    def __init__(self, device, batch_size, show_progress, max_input_words_split):
         self.device = device
         self.batch_size = batch_size
         self.show_progress = show_progress
@@ -23,14 +21,14 @@ class GreynirSeqIO:
     def infer(self, batch):
         raise NotImplementedError
 
-    def handle_batch(self, batch):
+    def handle_batch(self, batch, output):
         results = self.infer(batch)
         for result in results:
-            self.output.write(result + "\n")
+            output.write(result + "\n")
 
-    def run(self):
+    def run(self, input, output):
         batch = []
-        input_iterable = map(str.rstrip, self.input)
+        input_iterable = map(str.rstrip, input)
         if self.show_progress:
             input_iterable = tqdm.tqdm(input_iterable)
 
@@ -38,16 +36,16 @@ class GreynirSeqIO:
             if not line:
                 # If input is empty write empty line to preserve order
                 if batch:
-                    self.handle_batch(batch)
+                    self.handle_batch(batch, output)
                     batch = []
-                self.output.write("\n")
+                output.write("\n")
                 continue
 
             split_line = line.split()
             split_line_length = len(split_line)
             if split_line_length > self.max_input_length:
                 if batch:
-                    self.handle_batch(batch)
+                    self.handle_batch(batch, output)
                     batch = []
 
                 ranges = range(0, split_line_length, self.max_input_length)
@@ -60,15 +58,15 @@ class GreynirSeqIO:
                 for i in sub_batches:
                     inference = self.infer(temp_batch[i : i + self.batch_size])
                     results += inference
-                self.output.write(" ".join(results) + "\n")
+                output.write(" ".join(results) + "\n")
                 continue
 
             batch.append(line)
             if len(batch) == self.batch_size:
-                self.handle_batch(batch)
+                self.handle_batch(batch, output)
                 batch = []
         if batch:
-            self.handle_batch(batch)
+            self.handle_batch(batch, output)
 
 
 class NER(GreynirSeqIO):
@@ -127,8 +125,8 @@ def main():
     elif args.command.lower() == "pos":
         command = POS
 
-    handler = command(args.input, args.output, args.device, args.bsz, args.progress, args.max_input_words_split)
-    handler.run()
+    handler = command(args.device, args.bsz, args.progress, args.max_input_words_split)
+    handler.run(args.input, args.output)
 
 
 if __name__ == "__main__":
