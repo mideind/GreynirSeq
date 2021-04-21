@@ -57,6 +57,10 @@ class MultiLabelTokenClassificationHead(nn.Module):
 
 @register_model("multilabel_roberta")
 class MultiLabelRobertaModel(RobertaModel):
+    @classmethod
+    def hub_models(cls):
+        return {"icebert.pos": "https://data.greynir.is/icebert.pos.tar.gz"}
+
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
 

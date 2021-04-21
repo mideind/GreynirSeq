@@ -30,3 +30,4 @@ jobs:
           PYTHON_PYLINT_CONFIG_FILE: .python-lint
           VALIDATE_JSCPD: false
           VALIDATE_MARKDOWN: false
+          LOG_LEVEL: NOTICE
