@@ -28,8 +28,7 @@ Be aware that usage of the CLI or otherwise downloading model files will result 
 
 ### TL;DR give me the CLI
 
-The `greynirseq` CLI interface can be used to run state-of-the-art POS and NER tagging for Icelandic. Run `pip install greynirseq && greynirseq -h` to see what options are available.
-
+The `greynirseq` CLI interface can be used to run state-of-the-art POS and NER tagging for Icelandic. Run `pip install greynirseq && greynirseq -h` to see what options are available. Input is accepted from file containing a single [tokenized](https://github.com/mideind/Tokenizer) sentence per line, or from stdin.
 #### POS
 
 ``` bash

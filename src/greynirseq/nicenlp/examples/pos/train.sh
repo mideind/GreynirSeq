@@ -1,32 +1,18 @@
 #!/usr/bin/env bash
 TOTAL_NUM_UPDATES=1000000  # 
-WARMUP_UPDATES=200      #  percent of the number of updates
-LR=5e-05                # Peak LR for polynomial LR scheduler.
-MAX_SENTENCES=32         # Batch size.
+WARMUP_UPDATES=200         #  percent of the number of updates
+LR=5e-05                   # Peak LR for polynomial LR scheduler.
+MAX_SENTENCES=32           # Batch size.
 MAX_TOKENS=3000
 
-# Pretrained model
-#ICEBERT_MODEL_DIR=/data/models/icebert/icebert-base
-#ICEBERT_MODEL_DIR=/data/models/icebert-base-36k
-#ICEBERT_MODEL_DIR=/data/models/icebert/icebert-nocc-base
-#ICEBERT_MODEL=$ICEBERT_MODEL_DIR/ckpts/checkpoint_70_49000.pt
-#ICEBERT_MODEL=$ICEBERT_MODEL_DIR/model.pt
-#ICEBERT_MODEL=$ICEBERT_MODEL_DIR/checkpoint28.pt
-VOCAB_PATH=/data/models/icebert/bpe_vocab
-#VOCAB_PATH=$ICEBERT_MODEL_DIR
-#ENCODER_JSON=$VOCAB_PATH/icebert-bpe-vocab.json
-#MERGES_TXT=$VOCAB_PATH/icebert-bpe-merges.txt
+ICEBERT_MODEL_DIR=
+VOCAB_PATH=
 ENCODER_JSON=$VOCAB_PATH/vocab.json
 MERGES_TXT=$VOCAB_PATH/merges.txt
-#LAB_DICT=labdict.txt
+DATA_PATH=
+SAVE_DIR=
+GREYNIRSEQ_PATH=
 
-DATA_PATH=/data/datasets/MIM-GOLD-1_0_SETS/for_training #_noprepend_space_legacy_icebert
-
-#SAVE_DIR=/data/scratch/vesteinn/icebert-base/checkpoints
-SAVE_DIR=/data/scratch/vesteinn/icebert-old-pos-testing/checkpoints
-GREYNIRSEQ_PATH=/home/vesteinn/work/GreynirSeq/src/greynirseq
-
-# ARC=icebert_large_pos
 ARC=icebert_base_pos
 CRITERION=multilabel_token_classification
 TASK=multi_label_token_classification_task
@@ -66,12 +52,7 @@ do
     --save-interval-updates 10000\
     --n-trans-layers-to-freeze 0\
     --freeze-embeddings 1\
-    --no-progress-bar #--restore-file $ICEBERT_MODEL --reset-optimizer --reset-dataloader --reset-meters 
+    --no-progress-bar \
+    --restore-file $ICEBERT_MODEL --reset-optimizer --reset-dataloader --reset-meters
 done
-
-# try --finetune-from-model 
-
-#--restore-file $ICEBERT_MODEL \
-
-#--reset-optimizer --reset-dataloader --reset-meters \
 
