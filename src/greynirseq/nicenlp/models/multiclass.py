@@ -22,6 +22,7 @@ from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
+from greynirseq.nicenlp.utils.ner_parser import BIOParser
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +188,7 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         for ndx in range(0, length, batch_size):
             batch = sentences[ndx : min(ndx + batch_size, length)]
             labels, pred_idx = self._predict_labels(batch)
+            labels = BIOParser.parse(labels)
             yield from labels
 
     def _predict_labels(self, sentences: List[str]) -> Tuple[List[List[str]], torch.Tensor]:

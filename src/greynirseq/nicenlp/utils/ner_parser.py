@@ -1,4 +1,4 @@
-from typing import List, Iterable
+from typing import Iterable, List
 
 
 class BIOParser:
@@ -9,8 +9,8 @@ class BIOParser:
 
     def _over(self) -> str:
         """Ensures legal BIO tags, i.e. I-tags have same
-           label as preceding B-tag and B-tags start new
-           spans.
+        label as preceding B-tag and B-tags start new
+        spans.
         """
         self.idx += 1
         cur_label = self.labels[self.idx - 1]
