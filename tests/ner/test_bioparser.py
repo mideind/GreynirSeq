@@ -10,11 +10,11 @@ TEST_LABELS = [
     ("B-p I-r O I-a B-p", "B-p I-p O B-a B-p"),
     (
         "O O B-person I-money O O I-time I-time O O B-location I-location",
-        "O O B-person I-person O O B-time I-time O O B-location I-location"
-    )
+        "O O B-person I-person O O B-time I-time O O B-location I-location",
+    ),
 ]
 
 
 def test_bioparser():
     for incorrect, correct in TEST_LABELS:
-        assert(BIOParser.parse(incorrect.split()) == correct.split())
+        assert BIOParser.parse(incorrect.split()) == correct.split()
