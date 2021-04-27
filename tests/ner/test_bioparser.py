@@ -1,5 +1,3 @@
-import pytest
-
 from greynirseq.nicenlp.utils.ner_parser import BIOParser
 
 # First value is the incorrect labels, the second the correct
