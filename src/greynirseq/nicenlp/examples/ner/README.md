@@ -25,7 +25,7 @@ This will download the model from our servers and return an instance for inferen
 import torch
 model = torch.hub.load("mideind/GreynirSeq:main", "icebert.ner")
 model.eval()
-labels = list(model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds."])
+labels = list(model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds ."])
 ```
 which returns the labels `['O', 'B-Person', 'O', 'B-Person', 'O', 'O', 'O', 'O', 'O', 'B-Organization', 'O']`.
 
@@ -40,6 +40,9 @@ from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
 model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
 model.eval()
 ```
+
+Note that the length of the sentences has a ceiling set by the used model and direct inference may crash on long sentences. To run the models on GPU simply run `model.to("cuda")`, we refer to the pytorch documentation for further details. When running on GPU we recommend using the argument `batch_size` with `predict_labels` to speed up inference.
+
 
 ## Training
  

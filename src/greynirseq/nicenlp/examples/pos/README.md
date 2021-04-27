@@ -10,7 +10,6 @@ See `./prep_mim_pos.sh` which is setup to process all data from the MIM pos set 
 ## Training
 See `./train.sh` which trains all ten sets for cross-validation.
 
-
 ## Inference
 
 ### Using the CLI
@@ -57,7 +56,7 @@ or
 
 ``` python
 
-labels = model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds ."])
+labels = model.predict_ifd_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds ."])
 ```
 
 which returns
@@ -76,6 +75,8 @@ which returns
   'pl']]
 
 ```
+
+Note that the length of the sentences has a ceiling set by the used model and direct inference may crash on long sentences. To run the models on GPU simply run `model.to("cuda")`, we refer to the pytorch documentation for further details.
 
 ### Local inference
 
