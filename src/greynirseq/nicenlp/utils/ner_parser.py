@@ -18,15 +18,18 @@ class BIOParser:
         if self.last is None:
             return cur_label
 
+        if cur_label == "O":
+            return cur_label
+
         if self.last == "O":
-            if cur_label[0] == "O":
-                return cur_label
             # In case the label starts with I
             return "B" + cur_label[1:]
 
         _, last_cat = self.last.split("-")
         cur_head, _ = cur_label.split("-")
-        return f"{cur_head}-{last_cat}"
+        if cur_head != "B":
+            return f"{cur_head}-{last_cat}"
+        return cur_label
 
     def over(self) -> str:
         label = self._over()

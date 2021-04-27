@@ -13,7 +13,7 @@ testpaths = [
 
 [tool.poetry]
 name = "greynirseq"
-version = "0.1.1"
+version = "0.1.2"
 description = "Natural language processing for Icelandic"
 authors = ["Miðeind ehf <tauganet@mideind.is>"]
 classifiers=[
