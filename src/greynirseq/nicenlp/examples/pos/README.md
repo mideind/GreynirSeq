@@ -21,7 +21,7 @@ Using the CLI is the easiest way of using the tagger, this downloads the necessa
 ❯ pip install greynirseq
 ❯ echo "Systurnar Guðrún og Monique átu einar um jólin á McDonalds ." | greynirseq pos --input -
 
-nvfng nven-s c ns sfg3fþ lvfnsf aff nhfog aff ns pl
+nvfng nven-s c n---s sfg3fþ lvfnsf af nhfog af n----s pl
 ```
 
 It takes a while to load the model so if you need to tag many lines you should provide them all at once.
