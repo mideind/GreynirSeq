@@ -198,7 +198,7 @@ DIM = len(CATS) + len(FEATS)
 assert DIM == len(set(LABELS)), "tag collision"
 
 
-GENDER = {"k": "masc", "v": "fem", "h": "neut", "x": "gender_x", "-": "gender_x"}
+GENDER = {"k": "masc", "v": "fem", "h": "neut", "-": "gender_x"}
 NUMBER = {"e": "sing", "f": "plur"}
 PERSON = {"1": "1", "2": "2", "3": "3"}
 CASE = {"n": "nom", "o": "acc", "þ": "dat", "e": "gen"}

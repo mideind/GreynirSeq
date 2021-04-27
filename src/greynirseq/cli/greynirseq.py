@@ -74,7 +74,7 @@ class GreynirSeqIO:
 
 class NER(GreynirSeqIO):
     def build_model(self) -> GeneratorHubInterface:
-        model = torch.hub.load("mideind/GreynirSeq:hub", "icebert.ner")
+        model = torch.hub.load("mideind/GreynirSeq:main", "icebert.ner")
         model.to(self.device)
         model.eval()
         return model
@@ -90,7 +90,7 @@ class NER(GreynirSeqIO):
 
 class POS(GreynirSeqIO):
     def build_model(self) -> GeneratorHubInterface:
-        model = torch.hub.load("mideind/GreynirSeq:hub", "icebert.pos")
+        model = torch.hub.load("mideind/GreynirSeq:main", "icebert.pos")
         model.to(self.device)
         model.eval()
         return model
