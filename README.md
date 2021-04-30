@@ -53,8 +53,8 @@ IceBERT is an Icelandic BERT-based (RoBERTa) language model that is suitable for
 
 The following fine tuning tasks are available both through the `greynirseq` CLI and for loading programmatically.
 
-1. [POS tagging](src/greynirseq/nicenlp/examples/pos/README.md)
-2. [NER tagging](src/greynirseq/nicenlp/examples/ner/README.md)
+1. [POS tagging](https://github.com/mideind/GreynirSeq/blob/main/src/greynirseq/nicenlp/examples/pos/README.md)
+2. [NER tagging](https://github.com/mideind/GreynirSeq/blob/main/src/greynirseq/nicenlp/examples/ner/README.md)
 
 ## Installation
 
