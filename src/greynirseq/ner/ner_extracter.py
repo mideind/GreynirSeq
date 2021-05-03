@@ -1,11 +1,13 @@
 """Extract NEs."""
 import argparse
 import logging
+import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+import tokenizer
 from tqdm import tqdm
 
 log = logging.getLogger(__name__)
@@ -59,7 +61,11 @@ SP_TAGS = {
     "WORK_OF_ART": MISC,
 }
 TAG_MAPPER = {"is": IS_TAGS, "hf": HF_TAGS, "sp": SP_TAGS}
-# TODO: map Spacy CARDINAL, DATE, EVENT, FAC, GPE, LANGUAGE, LAW, LOC, MONEY, NORP, ORDINAL, ORG, PERCENT, PERSON, PRODUCT, QUANTITY, TIME, WORK_OF_ART
+
+ENTITY_MARKERS_START = re.compile(f"<[{'|'.join(TAGS)}]>")
+ENTITY_MARKERS_END = re.compile(f"</[{'|'.join(TAGS)}]>")
+
+ENTITY_MARKERS = re.compile(f"<(/)?[{'|'.join(TAGS)}]>")
 
 
 @dataclass
@@ -153,10 +159,10 @@ def main():
     parser.add_argument("--input", nargs="?", type=argparse.FileType("r"), default=sys.stdin)
     parser.add_argument("--output", nargs="?", type=argparse.FileType("w"), default=sys.stdout)
     parser.add_argument(
-        "--embed_tags",
+        "--embed_tags_detok",
         default=False,
         action="store_true",
-        help="Should we write (embed) the NER tags around the tokens.",
+        help="Should we write (embed) the NER tags around the tokens and detokenize?",
     )
 
     args = parser.parse_args()
@@ -168,14 +174,32 @@ def main():
         ner_markers = parse_line(sent.split(), labels.split(), model)
         for ner_marker in ner_markers:
             stats[ner_marker.tag] += 1
-        if not args.embed_tags:
+        if not args.embed_tags_detok:
             f_out.write("\t".join([model] + [str(ner_marker) for ner_marker in ner_markers]) + "\n")
         else:
-            f_out.write(f"{model}\t{' '.join(embed_tokens(ner_markers, sent.split()))}\n")
+            # We use correct_spaces for both English and Icelandic
+            somewhat_correct_spaces = tokenizer.correct_spaces(" ".join(embed_tokens(ner_markers, sent.split())))
+            # correct_spaces adds spaces around the ner_markers which we do not want.
+            found = 0
+            for match in ENTITY_MARKERS_START.finditer(somewhat_correct_spaces):
+                # Skip the space
+                somewhat_correct_spaces = (
+                    somewhat_correct_spaces[: match.end() - found] + somewhat_correct_spaces[match.end() - found + 1 :]
+                )
+                found += 1
+            found = 0
+            for match in ENTITY_MARKERS_END.finditer(somewhat_correct_spaces):
+                # Skip the space
+                somewhat_correct_spaces = (
+                    somewhat_correct_spaces[: match.start() - found - 1]
+                    + somewhat_correct_spaces[match.start() - found :]
+                )
+                found += 1
+            f_out.write(f"{somewhat_correct_spaces}\n")
 
     stats = dict(stats)
     stats = sorted(stats.items())
-    print(f"{args.input}: {stats}")
+    print(f"Labels of '{args.input.name}': {stats}")
 
 
 if __name__ == "__main__":

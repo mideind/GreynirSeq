@@ -4,7 +4,7 @@ In training data for NMT (neural machine translation) systems it is of benefit t
 
 ## Name Tagging
 
-For Icelandic NER the included IceBERT-NER model is used. For english we use spacy due to label overlap (`python -m spacy download en_core_web_lg`).
+For Icelandic NER the included IceBERT-NER model is used. For english we use huggingface (for better accuracy) and spacy (due to length restrictions). (`python -m spacy download en_core_web_lg`).
 
 The script accepts a file in English or Icelandic, the sentences will then be tokenized and tokens joined with spaces as the model expects.
 
@@ -30,7 +30,7 @@ Guðrún fór í heimsókn til Einars Jónssonar .	B-Person O O O O B-Person I-P
 Anna fékk gjöf frá Alexei , Pétri og Páli .	B-Person O O O B-Person O B-Person O B-Person O	is
 ```
 
-and for English (the last column is sp if the spacy fallback was used)
+and for English the last column is hf for Huggingface and sp for spacy.
 
 ```
 Einar Jónsson was visited by Guðrún .	I-PER I-PER O O O I-PER O	hf
@@ -39,6 +39,18 @@ Anna got a gift from Pétur , Páll and Alexei .	I-PER O O O O I-PER O I-PER O I
 
 Note the different tagsets used, this is dealt with by the aligner.
 
+## Embedding and unifying tags
+
+In order to be able to train and NMT system on the NER tagged data we embed the NEs markers into the sentences, detokenizes and unify the tag sets.
+
+```
+lang=en
+python ner_extracter.py --input testdata/example.ner.$lang --output testdata/example.ner-ext.$lang --embed_tags
+# Running the command also displays the number of labels parsed.
+cat testdata/example.ner-ext.$lang
+hf	<P>Einar Jónsson</P> was visited by <P>Guðrún</P> .
+hf	<P>Anna</P> got a gift from <P>Pétur</P> , <P>Páll</P> and <P>Alexei</P> .
+```
 
 ## Analyzing and pairing
 

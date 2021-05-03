@@ -203,10 +203,10 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
             tokens_batch.append(tokens)
             word_mask_batch.append(word_mask)
         tokens = pad_sequence(tokens_batch, batch_first=True, padding_value=self.task.source_dictionary.pad()).to(
-            device
+            self.device
         )
         # We need to use 0 to pad with for word_masks
-        word_mask = pad_sequence(word_mask_batch, batch_first=True, padding_value=0).to(device)
+        word_mask = pad_sequence(word_mask_batch, batch_first=True, padding_value=0).to(self.device)
         attr_logits, extra = self.model(tokens, word_mask=word_mask, features_only=True)
         pred_idxs = attr_logits.max(dim=-1).indices
         labels = [

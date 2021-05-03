@@ -1,6 +1,5 @@
 import argparse
 import logging
-import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Tuple
@@ -9,15 +8,18 @@ import sacrebleu
 from tqdm import tqdm
 
 from greynirseq.ner.aligner import NULL_TAG, get_min_hun_distance
-from greynirseq.ner.ner_extracter import TAGS, NERMarker, embed_tokens, parse_line
+from greynirseq.ner.ner_extracter import (
+    ENTITY_MARKERS,
+    ENTITY_MARKERS_END,
+    ENTITY_MARKERS_START,
+    TAGS,
+    NERMarker,
+    embed_tokens,
+    parse_line,
+)
 from greynirseq.ner.nertagger import ner, tok
 
 log = logging.getLogger(__name__)
-
-ENTITY_MARKERS_START = re.compile(f"<[{'|'.join(TAGS)}]>")
-ENTITY_MARKERS_END = re.compile(f"</[{'|'.join(TAGS)}]>")
-
-ENTITY_MARKERS = re.compile(f"<(/)?[{'|'.join(TAGS)}]>")
 
 
 @dataclass(frozen=True)
@@ -35,7 +37,8 @@ class NERAlignment:
 def read_embedded_markers(
     lines_iter: Iterable[str], contains_model_marker=False
 ) -> Tuple[List[List[NERMarker]], Dict[str, int]]:
-    """Read embedded NER markers from a collection of lines. NERMarkers contain untokenized token offsets and NULL_TAGS."""
+    """Read embedded NER markers from a collection of lines.
+    NERMarkers contain untokenized token offsets and NULL_TAGS."""
     all_markers = []
     bad_markers = {f"<{tag}>": 0 for tag in TAGS}
     bad_markers.update({f"</{tag}>": 0 for tag in TAGS})

@@ -4,9 +4,11 @@ import sys
 from typing import Generator, Iterable, List, Tuple
 
 import spacy
+import torch
 import tqdm
 from spacy.gold import biluo_tags_from_offsets
 from tokenizer import split_into_sentences
+from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
 from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
@@ -15,7 +17,7 @@ log = logging.getLogger(__name__)
 NER_RESULTS = Generator[Tuple[List[str], List[str], str], None, None]
 
 
-def icelandic_ner(lines_in: Iterable[str], batch_size=1) -> NER_RESULTS:
+def icelandic_ner(lines_in: Iterable[str], device: str, batch_size=1) -> NER_RESULTS:
     """NER tags a given collection sentences.
 
     Args:
@@ -25,7 +27,7 @@ def icelandic_ner(lines_in: Iterable[str], batch_size=1) -> NER_RESULTS:
         An iterable of a list of tokens, labels and a string representing the model used to NER tagging.
     """
     model = MultiClassRobertaModel.from_pretrained(IceBERT_NER_PATH, **IceBERT_NER_CONFIG)
-    model.to("cuda")
+    model.to(device)
     model.eval()
 
     tokenized_sents = list(lines_in)
@@ -51,7 +53,7 @@ def icelandic_tok(lines_in: Iterable[str]) -> Iterable[str]:
         yield " ".join(list(split_into_sentences(line)))
 
 
-def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
+def english_ner(lines_in: Iterable[str], device: str) -> NER_RESULTS:
     """NER tags a given collection sentences.
 
     Args:
@@ -63,23 +65,21 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
 
     nlp = spacy.load("en_core_web_lg")
 
-    # model = AutoModelForTokenClassification.from_pretrained(
-    #     "dbmdz/bert-large-cased-finetuned-conll03-english"
-    # ).to(  # type: ignore
-    #     "cuda"
-    # )
-    # tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
-    # label_list = [
-    #     "O",  # Outside of a named entity
-    #     "B-MISC",  # Beginning of a miscellaneous entity right after another miscellaneous entity
-    #     "I-MISC",  # Miscellaneous entity
-    #     "B-PER",  # Beginning of a person's name right after another person's name
-    #     "I-PER",  # Person's name
-    #     "B-ORG",  # Beginning of an organisation right after another organisation
-    #     "I-ORG",  # Organisation
-    #     "B-LOC",  # Beginning of a location right after another location
-    #     "I-LOC",  # Location
-    # ]
+    model = AutoModelForTokenClassification.from_pretrained("dbmdz/bert-large-cased-finetuned-conll03-english").to(
+        device
+    )
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
+    label_list = [
+        "O",  # Outside of a named entity
+        "B-MISC",  # Beginning of a miscellaneous entity right after another miscellaneous entity
+        "I-MISC",  # Miscellaneous entity
+        "B-PER",  # Beginning of a person's name right after another person's name
+        "I-PER",  # Person's name
+        "B-ORG",  # Beginning of an organisation right after another organisation
+        "I-ORG",  # Organisation
+        "B-LOC",  # Beginning of a location right after another location
+        "I-LOC",  # Location
+    ]
 
     def spacy_tok_ner(sent: str):
         doc = nlp(sent)
@@ -97,9 +97,26 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
 
         return tokens, labels
 
+    def hugface_tok_ner(sequence: str):
+        # Bit of a hack to get the tokens with the special tokens
+        tokens = tokenizer.tokenize(tokenizer.decode(tokenizer.encode(sequence)))  # type: ignore
+        inputs = tokenizer.encode(sequence, return_tensors="pt").to(device)
+        outputs = model(inputs)[0]
+        predictions = torch.argmax(outputs, dim=2)
+        bert_tokens = [(token, label_list[prediction]) for token, prediction in zip(tokens, predictions[0].tolist())][
+            1:-1
+        ]
+        tokens = " ".join([t[0] for t in bert_tokens]).replace(" ##", "").split(" ")
+        labels = [t[1] for t in bert_tokens if len(t[0]) < 2 or t[0][:2] != "##"]
+        return tokens, labels
+
     for line in lines_in:
-        using = "sp"
-        tokens, ents = spacy_tok_ner(line)
+        using = "hf"
+        if len(line.split()) < 400:
+            tokens, ents = hugface_tok_ner(line)
+        else:
+            using = "sp"
+            tokens, ents = spacy_tok_ner(line)
         assert len(ents) == len(tokens), "We expect the tokens to be of equal length to the labels"
         yield tokens, ents, using
 
@@ -120,12 +137,12 @@ def english_tok(lines_in: Iterable[str]) -> Iterable[str]:
         yield " ".join(tok.text for tok in tokenizer(line))
 
 
-def ner(lang: str, lines_iter: Iterable[str]) -> NER_RESULTS:
+def ner(lang: str, lines_iter: Iterable[str], device: str) -> NER_RESULTS:
     """Apply NER tagging on a collection of lines. Assumes input is tokenized."""
     if lang == "is":
-        return icelandic_ner(lines_iter)
+        return icelandic_ner(lines_iter, device=device)
     elif lang == "en":
-        return english_ner(lines_iter)
+        return english_ner(lines_iter, device=device)
     else:
         raise ValueError(f"Unsupported language={lang}")
 
@@ -146,14 +163,15 @@ def main():
     parser.add_argument("--language", choices=["is", "en"])
     parser.add_argument("--input", nargs="?", type=argparse.FileType("r"), default=sys.stdin)
     parser.add_argument("--output", nargs="?", type=argparse.FileType("w"), default=sys.stdout)
+    parser.add_argument("--device", type=str, default="cuda")
 
     args = parser.parse_args()
     f_in = args.input
     f_out = args.output
 
     log.info(f"NER tagging {args.input}->{args.output}")
-    lines_iter = tqdm.tqdm(f_in)
-    tagged_iter = ner(lang=args.language, lines_iter=tok(lang=args.language, lines_iter=lines_iter))
+    toks = tok(lang=args.language, lines_iter=f_in)
+    tagged_iter = ner(lang=args.language, lines_iter=tqdm.tqdm(toks), device=args.device)
     for tokens, labels, using in tagged_iter:
         f_out.write(f"{' '.join(tokens)}\t{' '.join(labels)}\t{using}\n")
 
