@@ -22,6 +22,7 @@ from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
+from greynirseq.nicenlp.utils.ner_parser import BIOParser
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,10 @@ class MultiClassTokenClassificationHead(nn.Module):
 
 @register_model("multiclass_roberta")
 class MultiClassRobertaModel(RobertaModel):
+    @classmethod
+    def hub_models(cls):
+        return {"icebert.ner": "https://data.greynir.is/icebert.ner.tar.gz"}
+
     def __init__(self, args, encoder: RobertaEncoder, task: FairseqTask):
         super().__init__(args, encoder)
 
@@ -164,7 +169,7 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         # of a sentences is no different from those further back.
         if sentence[0] != " ":
             sentence = " " + sentence
-        return super().encode(sentence)
+        return super().encode(sentence).to(device=self.device)  # super encode does not support device argument.
 
     def decode(self, tokens: torch.LongTensor) -> List[str]:
         # Remove the leading space, see 'encode' comment.
@@ -183,16 +188,16 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         for ndx in range(0, length, batch_size):
             batch = sentences[ndx : min(ndx + batch_size, length)]
             labels, pred_idx = self._predict_labels(batch)
+            labels = BIOParser.parse(labels)
             yield from labels
 
     def _predict_labels(self, sentences: List[str]) -> Tuple[List[List[str]], torch.Tensor]:
         tokens_batch = []
         word_mask_batch = []
-        device = next(self.model.parameters()).device
 
         for sentence in sentences:
             tokens = self.encode(sentence)
-            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
+            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()], device=self.device)
             word_mask[0] = 0
             word_mask[-1] = 0
             tokens_batch.append(tokens)

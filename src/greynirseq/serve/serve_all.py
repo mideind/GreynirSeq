@@ -30,7 +30,10 @@ class IceBERTRunner:
 
 class RoBERTaRunner:
     def __init__(self):
-        self.model = RobertaModel.from_pretrained("/data/models/roberta.large", checkpoint_file="model.pt",)
+        self.model = RobertaModel.from_pretrained(
+            "/data/models/roberta.large",
+            checkpoint_file="model.pt",
+        )
         self.model.to("cpu")
         self.model.eval()
 

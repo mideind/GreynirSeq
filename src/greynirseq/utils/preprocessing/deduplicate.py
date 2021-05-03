@@ -110,7 +110,12 @@ def main():
     args = parser.parse_args()
 
     corpus = Corpus(
-        args.files, args.max_sentences, args.min_sentences, args.max_bpe_length, args.bpe_merges, args.bpe_vocab,
+        args.files,
+        args.max_sentences,
+        args.min_sentences,
+        args.max_bpe_length,
+        args.bpe_merges,
+        args.bpe_vocab,
     )
     corpus.deduplicate(args.output)
 

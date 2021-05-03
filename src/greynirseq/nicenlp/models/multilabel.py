@@ -57,6 +57,10 @@ class MultiLabelTokenClassificationHead(nn.Module):
 
 @register_model("multilabel_roberta")
 class MultiLabelRobertaModel(RobertaModel):
+    @classmethod
+    def hub_models(cls):
+        return {"icebert.pos": "https://data.greynir.is/icebert.pos.tar.gz"}
+
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
 
@@ -129,12 +133,21 @@ class MultiLabelRobertaModel(RobertaModel):
 
         # (Batch * Time) x Depth -> Batch x Time x Depth
         cat_logits = pad_sequence(cat_logits.split((nwords).tolist()), padding_value=0, batch_first=True)
-        attr_logits = pad_sequence(attr_logits.split((nwords).tolist()), padding_value=0, batch_first=True,)
+        attr_logits = pad_sequence(
+            attr_logits.split((nwords).tolist()),
+            padding_value=0,
+            batch_first=True,
+        )
         return (cat_logits, attr_logits), _extra
 
     @classmethod
     def from_pretrained(
-        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs,
+        cls,
+        model_name_or_path,
+        checkpoint_file="model.pt",
+        data_name_or_path=".",
+        bpe="gpt2",
+        **kwargs,
     ):
         from fairseq import hub_utils
 
@@ -208,11 +221,23 @@ class MultiLabelRobertaHubInterface(RobertaHubInterface):
             ifd_labels = []
             for labelset in sentence_labels:
                 cat, feats = labelset
-                idxs = [labdict.symbols.index(label) for label in [cat] + feats]
+                labels_to_map = [cat]
+                if len(feats) == 1 and feats[0] == "pos":
+                    # This label is used as a default for training but implied in mim format
+                    feats = []
+                elif cat == "sl" and "act" in feats:
+                    # Number and tense are not shown for sl act in mim format
+                    feats = [f for f in feats if f not in ["1", "sing", "pres"]]
+                labels_to_map += feats
+                idxs = [labdict.symbols.index(label) for label in labels_to_map]
                 oh = nn.functional.one_hot(torch.tensor(idxs), num_classes=len(labdict.symbols)).sum(dim=0)
                 # Add one since the sep token is not treated as a special token in the label dictionary
                 oh = oh[labdict.nspecial + 1 :]
-                ifd_labels.append(vec2ifd(oh.numpy()))
+                ifd_label = vec2ifd(oh.numpy())
+                if ifd_label == "ns":
+                    # This is to comply with the format
+                    ifd_label = "n----s"
+                ifd_labels.append(ifd_label)
             ifd_labels_batch.append(ifd_labels)
         return ifd_labels_batch
 

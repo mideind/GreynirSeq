@@ -97,7 +97,14 @@ def main(args):
                 prefix = "{}{}".format(output_prefix, worker_id)
                 pool.apply_async(
                     binarize_labelled_spans,
-                    (args, input_file, labelled_span_parser, prefix, offsets[worker_id], offsets[worker_id + 1],),
+                    (
+                        args,
+                        input_file,
+                        labelled_span_parser,
+                        prefix,
+                        offsets[worker_id],
+                        offsets[worker_id + 1],
+                    ),
                     callback=merge_result,
                 )
             pool.close()
@@ -106,7 +113,11 @@ def main(args):
 
         merge_result(
             Binarizer.binarize_alignments(
-                input_file, labelled_span_parser, lambda t: ds.add_item(t), offset=0, end=offsets[1],
+                input_file,
+                labelled_span_parser,
+                lambda t: ds.add_item(t),
+                offset=0,
+                end=offsets[1],
             )
         )
         if num_workers > 1:
@@ -142,13 +153,23 @@ def main(args):
                 prefix = "{}{}".format(output_prefix, worker_id)
                 pool.apply_async(
                     binarize,
-                    (args, input_file, vocab, prefix, lang, offsets[worker_id], offsets[worker_id + 1],),
+                    (
+                        args,
+                        input_file,
+                        vocab,
+                        prefix,
+                        lang,
+                        offsets[worker_id],
+                        offsets[worker_id + 1],
+                    ),
                     callback=merge_result,
                 )
             pool.close()
 
         ds = indexed_dataset.make_builder(
-            dataset_dest_file(args, output_prefix, lang, "bin"), impl=args.dataset_impl, vocab_size=len(vocab),
+            dataset_dest_file(args, output_prefix, lang, "bin"),
+            impl=args.dataset_impl,
+            vocab_size=len(vocab),
         )
         merge_result(Binarizer.binarize(input_file, vocab, lambda t: ds.add_item(t), offset=0, end=offsets[1]))
         if num_workers > 1:
@@ -176,7 +197,10 @@ def main(args):
     def make_dataset(vocab, input_prefix, output_prefix, lang, num_workers=1):
         if args.dataset_impl == "raw":
             # Copy original text file to destination folder
-            output_text_file = dest_path(output_prefix + ".{}-{}".format(args.source_lang, args.target_lang), lang,)
+            output_text_file = dest_path(
+                output_prefix + ".{}-{}".format(args.source_lang, args.target_lang),
+                lang,
+            )
             shutil.copyfile(file_name(input_prefix, lang), output_text_file)
         else:
             make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers)
@@ -184,15 +208,21 @@ def main(args):
     if args.nonterm_suffix:
         if args.trainpref and os.path.exists("{}.{}".format(args.trainpref, args.nonterm_suffix)):
             make_binary_labelled_spans_dataset(
-                "{}.{}".format(args.trainpref, args.nonterm_suffix), "train.nonterm", args.workers,
+                "{}.{}".format(args.trainpref, args.nonterm_suffix),
+                "train.nonterm",
+                args.workers,
             )
         if args.validpref and os.path.exists("{}.{}".format(args.validpref, args.nonterm_suffix)):
             make_binary_labelled_spans_dataset(
-                "{}.{}".format(args.validpref, args.nonterm_suffix), "valid.nonterm", args.workers,
+                "{}.{}".format(args.validpref, args.nonterm_suffix),
+                "valid.nonterm",
+                args.workers,
             )
         if args.testpref and os.path.exists("{}.{}".format(args.testpref, args.nonterm_suffix)):
             make_binary_labelled_spans_dataset(
-                "{}.{}".format(args.testpref, args.nonterm_suffix), "test.nonterm", args.workers,
+                "{}.{}".format(args.testpref, args.nonterm_suffix),
+                "test.nonterm",
+                args.workers,
             )
     elif args.term_suffix:
         if args.trainpref:
@@ -227,7 +257,9 @@ def main(args):
 
 def binarize(args, filename, vocab, output_prefix, lang, offset, end, append_eos=True):
     ds = indexed_dataset.make_builder(
-        dataset_dest_file(args, output_prefix, lang, "bin"), impl=args.dataset_impl, vocab_size=len(vocab),
+        dataset_dest_file(args, output_prefix, lang, "bin"),
+        impl=args.dataset_impl,
+        vocab_size=len(vocab),
     )
 
     def consumer(tensor):
@@ -240,7 +272,9 @@ def binarize(args, filename, vocab, output_prefix, lang, offset, end, append_eos
 
 def binarize_alignments(args, filename, parse_alignment, output_prefix, offset, end):
     ds = indexed_dataset.make_builder(
-        dataset_dest_file(args, output_prefix, None, "bin"), impl=args.dataset_impl, vocab_size=None,
+        dataset_dest_file(args, output_prefix, None, "bin"),
+        impl=args.dataset_impl,
+        vocab_size=None,
     )
 
     def consumer(tensor):
@@ -253,7 +287,9 @@ def binarize_alignments(args, filename, parse_alignment, output_prefix, offset, 
 
 def binarize_labelled_spans(args, filename, parse_spans, output_prefix, offset, end):
     ds = indexed_dataset.make_builder(
-        dataset_dest_file(args, output_prefix, None, "bin"), impl=args.dataset_impl, vocab_size=None,
+        dataset_dest_file(args, output_prefix, None, "bin"),
+        impl=args.dataset_impl,
+        vocab_size=None,
     )
 
     def consumer(tensor):

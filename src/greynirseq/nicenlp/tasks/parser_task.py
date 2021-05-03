@@ -49,7 +49,10 @@ class ParserTask(FairseqTask):
         """Add task-specific arguments to the parser."""
         parser.add_argument("data", metavar="FILE", help="file prefix for data")
         parser.add_argument(
-            "--term-schema", metavar="FILE", help="json file providing label-set and label-groups", required=True,
+            "--term-schema",
+            metavar="FILE",
+            help="json file providing label-set and label-groups",
+            required=True,
         )
         parser.add_argument(
             "--nonterm-schema",
@@ -59,10 +62,18 @@ class ParserTask(FairseqTask):
             required=True,
         )
         parser.add_argument(
-            "--nonterm-weight", default=1.0, type=float, help="weight to scale nonterminal loss", required=True,
+            "--nonterm-weight",
+            default=1.0,
+            type=float,
+            help="weight to scale nonterminal loss",
+            required=True,
         )
         parser.add_argument(
-            "--term-weight", default=1.0, type=float, help="weight to scale terminal loss", required=False,
+            "--term-weight",
+            default=1.0,
+            type=float,
+            help="weight to scale terminal loss",
+            required=False,
         )
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
@@ -105,7 +116,11 @@ class ParserTask(FairseqTask):
         nterm_dict.leaf = lambda: nterm_dict.index(nterm_schema.null_leaf)
 
         return ParserTask(
-            args, data_dict, nterm_dict=nterm_dict, nterm_schema=nterm_schema, is_word_initial=is_word_initial,
+            args,
+            data_dict,
+            nterm_dict=nterm_dict,
+            nterm_schema=nterm_schema,
+            is_word_initial=is_word_initial,
         )
 
     @classmethod
@@ -157,7 +172,10 @@ class ParserTask(FairseqTask):
 
         inputs_path = Path(self.args.data) / "{split}".format(split=split)
         src_tokens = data_utils.load_indexed_dataset(
-            str(inputs_path), self.source_dictionary, self.args.dataset_impl, combine=combine,
+            str(inputs_path),
+            self.source_dictionary,
+            self.args.dataset_impl,
+            combine=combine,
         )
         assert src_tokens is not None, "could not find dataset: {}".format(inputs_path)
 
@@ -171,11 +189,17 @@ class ParserTask(FairseqTask):
 
         nterm_targets_path = Path(self.args.data) / "{}.nonterm".format(split)
         labelled_spans = data_utils.load_indexed_dataset(
-            str(nterm_targets_path), self.nterm_dictionary, self.args.dataset_impl, combine=combine,
+            str(nterm_targets_path),
+            self.nterm_dictionary,
+            self.args.dataset_impl,
+            combine=combine,
         )
         assert labelled_spans is not None, "could not find nonterminal labels: {}".format(nterm_targets_path)
         target_spans, nterm_cats = DynamicLabelledSpanDataset.make_both(
-            labelled_spans, self.nterm_dictionary, rebinarize_fn=greynir_utils.rebinarize, seed=self.args.seed,
+            labelled_spans,
+            self.nterm_dictionary,
+            rebinarize_fn=greynir_utils.rebinarize,
+            seed=self.args.seed,
         )
 
         dataset = {

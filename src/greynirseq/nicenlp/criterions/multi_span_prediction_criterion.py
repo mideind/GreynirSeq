@@ -127,7 +127,9 @@ class MultiSpanCriterion(FairseqCriterion):
         jj = tspans[:, 1, :]
 
         (logits, cat_logits), _extra = model(
-            **sample["net_input"], features_only=True, classification_head_name="multi_span_classification",
+            **sample["net_input"],
+            features_only=True,
+            classification_head_name="multi_span_classification",
         )
 
         scores = logits
@@ -199,7 +201,10 @@ class MultiSpanCriterion(FairseqCriterion):
         # parsing constructs a high scoring bad tree
         # tree_scores_bad, tree_spans_bad, tree_labels_bad = parse_from_chart(
         tree_scores_bad, results_bad = parse_from_chart(
-            chart_scores, nswidths, scores_only=model.training, score_shift=chart_mask_not_gold,
+            chart_scores,
+            nswidths,
+            scores_only=model.training,
+            score_shift=chart_mask_not_gold,
         )
 
         def parse_result_to_tree(parse_result):

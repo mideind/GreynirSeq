@@ -27,7 +27,7 @@ from greynirseq.utils.types import Numeric  # pylint: disable=no-name-in-module
 
 def gen_2d_diags(chart_width: Union[int, LongTensor]):  # pylint: disable=unsubscriptable-object
     """Generator for all diagonal positions in a 2d matrix, starting with right of center diagonal from pos (0,1),
-       then diagonal starting at (0,2), etc."""
+    then diagonal starting at (0,2), etc."""
     for span_length in range(1, chart_width):
         for start in range(chart_width - span_length):
             ii = start
@@ -75,7 +75,10 @@ def compute_parse_stats(
         ncorrect_spans += (tgt_mask * pred_mask).sum()
 
     return ParseStats(
-        ncorrect=ncorrect_lbls.item(), ncorrect_spans=ncorrect_spans.item(), npred=npred.item(), ngold=ngold.item(),
+        ncorrect=ncorrect_lbls.item(),
+        ncorrect_spans=ncorrect_spans.item(),
+        npred=npred.item(),
+        ngold=ngold.item(),
     )
 
 
@@ -137,7 +140,9 @@ class ParserCriterion(FairseqCriterion):
         label_shift = model.task.nterm_dictionary.nspecial
 
         nterm_dict_idx_to_vec_idx = make_dict_idx_to_vec_idx(
-            model.task.nterm_dictionary, model.task.nterm_schema.label_categories, device=ntarget_span_labels.device,
+            model.task.nterm_dictionary,
+            model.task.nterm_schema.label_categories,
+            device=ntarget_span_labels.device,
         )
 
         # extract targets from padded inputs

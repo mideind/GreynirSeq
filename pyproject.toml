@@ -13,19 +13,50 @@ testpaths = [
 
 [tool.poetry]
 name = "greynirseq"
-version = "0.0.1"
-description = "Natural language processing for Icelandic, using fairseq"
-authors = []
+version = "0.1.2"
+description = "Natural language processing for Icelandic"
+authors = ["Miðeind ehf <tauganet@mideind.is>"]
+classifiers=[
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: Unix",
+    "Operating System :: POSIX",
+    "Natural Language :: Icelandic",
+    "Environment :: GPU :: NVIDIA CUDA :: 10.1",
+    "Environment :: GPU :: NVIDIA CUDA :: 10.2",
+    "Environment :: GPU :: NVIDIA CUDA :: 11.0",
+    "Environment :: GPU :: NVIDIA CUDA :: 11.1",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Cython",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+    "Topic :: Text Processing :: Linguistic",
+]
+keywords=["nlp", "pos", "ner", "icelandic"]
+license = "AGPLv3+"
 readme = "README.md"
+homepage = "https://github.com/mideind/GreynirSeq"
 repository = "https://github.com/mideind/GreynirSeq"
 packages = [
     {include = "greynirseq", from = "src"}
 ]
+include = [
+    "LICENSE",
+]
+
 [tool.poetry.scripts]
+greynirseq = "greynirseq.cli.greynirseq:main"
 
 [tool.poetry.dependencies]
 python = "^3.7.2"
-fairseq = {git = "https://github.com/pytorch/fairseq.git", rev = "7f4c7481a54a9d1da0a3c65084cb79c70196ddd2"}
+fairseq = "^0.10.0" 
 nltk = "^3.5"
 reynir = "^2.10.1"
 transformers = "^4.3.2"

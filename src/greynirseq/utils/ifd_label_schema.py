@@ -273,10 +273,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Description")
 
     parser.add_argument(
-        "output", type=str, metavar="FILE",
+        "output",
+        type=str,
+        metavar="FILE",
     )
     parser.add_argument(
-        "-f", "--force", action="store_true", help="Force overwrite",
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force overwrite",
     )
 
     args = parser.parse_args()

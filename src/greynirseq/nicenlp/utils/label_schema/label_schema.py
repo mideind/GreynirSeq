@@ -2,6 +2,7 @@ import json
 from collections import namedtuple
 
 import torch
+from fairseq import file_utils
 from fairseq.data import Dictionary
 
 
@@ -20,6 +21,7 @@ def parse_label_schema(path):
             "ignore_categories",
         ],
     )
+    path = file_utils.cached_path(path)
     with open(path, "r") as fp:
         j_obj = json.load(fp)
     return LabelSchema(**j_obj)

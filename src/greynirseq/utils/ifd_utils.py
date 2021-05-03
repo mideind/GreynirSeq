@@ -57,7 +57,10 @@ CATS_W_LABELS = [
     ("fo", [GENDER_OR_PER, NUMBER, CASE]),
     ("fp", [GENDER_OR_PER, NUMBER, CASE]),
     ("fs", [GENDER, NUMBER, CASE]),
-    ("ft", [GENDER, NUMBER, CASE],),  # Deprecated but needs to be here for backwards compatibility.
+    (
+        "ft",
+        [GENDER, NUMBER, CASE],
+    ),  # Deprecated but needs to be here for backwards compatibility.
     # numerals
     ("tf", [GENDER, NUMBER, CASE]),
     ("ta", []),
@@ -134,16 +137,50 @@ FEATS = [
 ]
 
 FEATS_MUTEX = {
-    "gen": ["masc", "fem", "neut", "gender_undet",],
-    "per": ["1", "2", "3",],  # person
-    "num": ["sing", "plur",],
-    "cas": ["nom", "acc", "dat", "gen",],
-    "def": ["definite",],
+    "gen": [
+        "masc",
+        "fem",
+        "neut",
+        "gender_undet",
+    ],
+    "per": [
+        "1",
+        "2",
+        "3",
+    ],  # person
+    "num": [
+        "sing",
+        "plur",
+    ],
+    "cas": [
+        "nom",
+        "acc",
+        "dat",
+        "gen",
+    ],
+    "def": [
+        "definite",
+    ],
     "pro": ["proper"],
-    "dec": ["strong", "weak", "equiinflected",],  # "óbeygt"
-    "deg": ["pos", "cmp", "superl",],  # positive degree
-    "ten": ["past", "pres", "pass",],  # Not used but needs to be here for backwards compatibility.
-    "voi": ["act", "mid",],
+    "dec": [
+        "strong",
+        "weak",
+        "equiinflected",
+    ],  # "óbeygt"
+    "deg": [
+        "pos",
+        "cmp",
+        "superl",
+    ],  # positive degree
+    "ten": [
+        "past",
+        "pres",
+        "pass",
+    ],  # Not used but needs to be here for backwards compatibility.
+    "voi": [
+        "act",
+        "mid",
+    ],
 }
 FEATS_MUTEX_MAP = {}
 FEATS_MUTEX_MAP_IDX = {}
@@ -161,7 +198,7 @@ DIM = len(CATS) + len(FEATS)
 assert DIM == len(set(LABELS)), "tag collision"
 
 
-GENDER = {"k": "masc", "v": "fem", "h": "neut", "x": "gender_x", "-": "gender_x"}
+GENDER = {"k": "masc", "v": "fem", "h": "neut", "-": "gender_x"}
 NUMBER = {"e": "sing", "f": "plur"}
 PERSON = {"1": "1", "2": "2", "3": "3"}
 CASE = {"n": "nom", "o": "acc", "þ": "dat", "e": "gen"}
@@ -184,7 +221,13 @@ ADJ_CLASS = {"s": "strong", "v": "weak", "o": "equiinflected"}
 DEFINITE = {"g": "definite", " ": "indefinite"}
 
 TAGSET = {
-    "n": [GENDER, NUMBER, CASE, {"g": "definite", "-": "", " ": ""}, {"": "", "s": "proper"},],
+    "n": [
+        GENDER,
+        NUMBER,
+        CASE,
+        {"g": "definite", "-": "", " ": ""},
+        {"": "", "s": "proper"},
+    ],
     "l": [GENDER, NUMBER, CASE, ADJ_CLASS, DEGREE],
     # we skip PRONTYPE, as thats part of fine categories
     "f": [{**GENDER, **PERSON}, NUMBER, CASE],
@@ -229,12 +272,6 @@ def ifd2coarse(tag):
     return tag[0]
 
 
-ftags = [
-    a.split()[0]
-    for a in open("/home/vesteinn/work/GreynirSeq/src/greynirseq/nicenlp/examples/pos/labdict2.txt").readlines()
-    if a
-]
-
 foreign_name = "n----s"
 
 
@@ -258,10 +295,6 @@ def ifd2labels(tag):
     labels.append(cat)
 
     if tagset_key not in TAGSET:
-        # try:
-        #    assert tagset_key in ftags, tagset_key
-        # except:
-        #    import pdb; pdb.set_trace()
         return labels
 
     if tagset_key == "a" and not rest:
@@ -278,9 +311,6 @@ def ifd2labels(tag):
         if not label:
             continue
         labels.append(label)
-
-    for l in labels:
-        assert l in ftags, l
 
     return labels
 
@@ -300,7 +330,13 @@ def ifd2labelsNew(tag):
     DEFINITE = {"g": "definite", " ": "indefinite"}
 
     TAGSET = {
-        "n": [GENDER, NUMBER, CASE, {"g": "definite", "-": "", " ": ""}, {"": "", "s": "proper"},],
+        "n": [
+            GENDER,
+            NUMBER,
+            CASE,
+            {"g": "definite", "-": "", " ": ""},
+            {"": "", "s": "proper"},
+        ],
         "l": [GENDER, NUMBER, CASE, ADJ_CLASS, DEGREE],
         # we skip PRONTYPE, as thats part of fine categories
         "f": [{**GENDER, **PERSON}, NUMBER, CASE],

@@ -146,7 +146,10 @@ class Node:
         if obj.get("tree") is not None:
             obj = obj["tree"]
         if obj.get("terminal") is not None:
-            node = TerminalNode(obj["text"], obj["terminal"],)
+            node = TerminalNode(
+                obj["text"],
+                obj["terminal"],
+            )
             return node
         node = NonterminalNode(obj["nonterminal"])
         for child in obj.get("children", []):
@@ -904,7 +907,11 @@ class TerminalNode(Node):
         for idx, token in enumerate(self.text.split(" ")):
             term = self.terminal if idx == 0 else CAT_INSIDE_MW_TOKEN
             cat = self.category if idx == 0 else CAT_INSIDE_MW_TOKEN
-            new_node = TerminalNode(token, term, category=cat,)
+            new_node = TerminalNode(
+                token,
+                term,
+                category=cat,
+            )
             new_terminals.append(new_node)
         return new_terminals
 
@@ -1065,7 +1072,17 @@ NONTERM_SUFFIX = {
         "NP-COMPANY",
     ],
     "S0": ["S0", "S0-X"],
-    "S": ["S", "S-COND", "S-CONS", "S-EXPLAIN", "S-HEADING", "S-MAIN", "S-PREFIX", "S-QUE", "S-QUOTE",],
+    "S": [
+        "S",
+        "S-COND",
+        "S-CONS",
+        "S-EXPLAIN",
+        "S-HEADING",
+        "S-MAIN",
+        "S-PREFIX",
+        "S-QUE",
+        "S-QUOTE",
+    ],
     "VP": ["VP", "VP-AUX"],
     # "C": ["C"],
     # "FOREIGN": ["FOREIGN"],

@@ -117,7 +117,15 @@ class Lemmatizer:
                     found = True
                     break
                 try:
-                    ifd = IFD_Tagset(k=tok.kind, c=c.ordfl, t=c.ordfl, f=c.fl, txt=tok.txt, s=c.stofn, b=c.beyging,)
+                    ifd = IFD_Tagset(
+                        k=tok.kind,
+                        c=c.ordfl,
+                        t=c.ordfl,
+                        f=c.fl,
+                        txt=tok.txt,
+                        s=c.stofn,
+                        b=c.beyging,
+                    )
                 except:  # noqa
                     lemmas.append(tok.txt)
                     found = True
