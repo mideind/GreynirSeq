@@ -8,7 +8,6 @@ import torch
 import tqdm
 from spacy.gold import biluo_tags_from_offsets
 from tokenizer import split_into_sentences
-from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
 from greynirseq.settings import IceBERT_NER_CONFIG, IceBERT_NER_PATH
@@ -21,7 +20,7 @@ def icelandic_ner(lines_in: Iterable[str], batch_size=1) -> NER_RESULTS:
     """NER tags a given collection sentences.
 
     Args:
-        lines_in: The sentences should be given as a string, we will tokenize them and join by ' ' as the model expects.
+        lines_in: The sentences should be given as a string, tokenized and joined by ' ' as the model expects.
 
     Returns:
         An iterable of a list of tokens, labels and a string representing the model used to NER tagging.
@@ -30,7 +29,7 @@ def icelandic_ner(lines_in: Iterable[str], batch_size=1) -> NER_RESULTS:
     model.to("cuda")
     model.eval()
 
-    tokenized_sents = list(icelandic_tok(lines_in))
+    tokenized_sents = list(lines_in)
     for ndx in range(0, len(tokenized_sents), batch_size):
         batch = tokenized_sents[ndx : min(ndx + batch_size, len(tokenized_sents))]
         # Todo, update for batching when predict_pos fixed
@@ -57,7 +56,7 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
     """NER tags a given collection sentences.
 
     Args:
-        lines_in: The sentences should be given as a pretokenized string (joined by ' ').
+        lines_in: The sentences should be given as a string, tokenized and joined by ' ' as the model expects.
 
     Returns:
         An iterable of a list of tokens, labels and a string representing the model used to NER tagging.
@@ -99,26 +98,9 @@ def english_ner(lines_in: Iterable[str]) -> NER_RESULTS:
 
         return tokens, labels
 
-    def hugface_tok_ner(sequence: str):
-        # Bit of a hack to get the tokens with the special tokens
-        tokens = tokenizer.tokenize(tokenizer.decode(tokenizer.encode(sequence)))  # type: ignore
-        inputs = tokenizer.encode(sequence, return_tensors="pt").to("cuda")  # type: ignore
-        outputs = model(inputs)[0]
-        predictions = torch.argmax(outputs, dim=2)
-        bert_tokens = [(token, label_list[prediction]) for token, prediction in zip(tokens, predictions[0].tolist())][
-            1:-1
-        ]
-        tokens = " ".join([t[0] for t in bert_tokens]).replace(" ##", "").split(" ")
-        labels = [t[1] for t in bert_tokens if len(t[0]) < 2 or t[0][:2] != "##"]
-        return tokens, labels
-
-    for idx, line in enumerate(english_tok(lines_in)):
-        using = "hf"
-        if False:  # len(line) < 512:
-            tokens, ents = hugface_tok_ner(line)
-        else:
-            using = "sp"
-            tokens, ents = spacy_tok_ner(line)
+    for line in lines_in:
+        using = "sp"
+        tokens, ents = spacy_tok_ner(line)
         assert len(ents) == len(tokens), "We expect the tokens to be of equal length to the labels"
         yield tokens, ents, using
 
@@ -140,7 +122,7 @@ def english_tok(lines_in: Iterable[str]) -> Iterable[str]:
 
 
 def ner(lang: str, lines_iter: Iterable[str]) -> NER_RESULTS:
-    """Apply NER tagging on a collection of lines."""
+    """Apply NER tagging on a collection of lines. Assumes input is tokenized."""
     if lang == "is":
         return icelandic_ner(lines_iter)
     elif lang == "en":
@@ -172,7 +154,7 @@ def main():
 
     log.info(f"NER tagging {args.input}->{args.output}")
     lines_iter = tqdm.tqdm(f_in)
-    tagged_iter = ner(lang=args.language, lines_iter=lines_iter)
+    tagged_iter = ner(lang=args.language, lines_iter=tok(lang=args.language, lines_iter=lines_iter))
     for tokens, labels, using in tagged_iter:
         f_out.write(f"{' '.join(tokens)}\t{' '.join(labels)}\t{using}\n")
 

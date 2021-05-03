@@ -1,14 +1,14 @@
 # Named Entity Processing Pipeline for NMT
 
-In training data for NMT (neural machine translation) systems it is of benefit to have a large and varried corpus. Unfortunately this is not often the case. This submodule implements a pipeline for tagging, filtering, matching and substituing named entities in a parallel English to Icelandic corpus. Currently it only support Persons but it should not be much work to extend this to other label sets.
+In training data for NMT (neural machine translation) systems it is of benefit to have a large and varried corpus. Unfortunately this is not often the case. This submodule implements a pipeline for tagging, filtering, matching, substituing and evaluating translation of named entities in a parallel English to Icelandic corpus.
 
 ## Name Tagging
 
-For Icelandic NER the included IceBERT-NER model is used. For english a NER model fine tuned on BERT large from huggingface is used with spacy as fallback (`python -m spacy download en_core_web_lg`) if sentence length is too long for the model to process. Note that this results in downloading of data beyond 1Gb.
+For Icelandic NER the included IceBERT-NER model is used. For english we use spacy due to label overlap (`python -m spacy download en_core_web_lg`).
 
-The script accepts a file in English or Icelandic in which each line contains a pretokenized sentence (with tokens join with spaces: ' ').
+The script accepts a file in English or Icelandic, the sentences will then be tokenized and tokens joined with spaces as the model expects.
 
-In later stages we assume that the English and Icelandic sentences are translations of each other.
+In later stages we assume that the English and Icelandic sentences are translations of each other, i.e. parallel.
 
 ```example.is
 Guðrún fór í heimsókn til Einars Jónssonar.
