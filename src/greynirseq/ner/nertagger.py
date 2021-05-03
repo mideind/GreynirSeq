@@ -4,7 +4,6 @@ import sys
 from typing import Generator, Iterable, List, Tuple
 
 import spacy
-import torch
 import tqdm
 from spacy.gold import biluo_tags_from_offsets
 from tokenizer import split_into_sentences
