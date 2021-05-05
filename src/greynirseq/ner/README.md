@@ -52,6 +52,29 @@ hf	<P>Einar Jónsson</P> was visited by <P>Guðrún</P> .
 hf	<P>Anna</P> got a gift from <P>Pétur</P> , <P>Páll</P> and <P>Alexei</P> .
 ```
 
+## MT evaluation
+
+To evaluate an MT system w.r.t. BLEU run:
+```
+# This should give a perfect score.
+lang=en
+ref=testdata/example.ner-ext.$lang
+sys=testdata/example.$lang
+python mt_eval.py --ref $ref --ref-contains-entities --sys $sys --tgt_lang $lang
+```
+This will do the following:
+- Read the NER markers from the REF.
+- Report the BLEU score on the cleaned REF and SYS (as is).
+- Run a NER on the SYS.
+- Report on NER alignment: 
+  - Alignment count: How many NEs we were able to match between REF and SYS.
+  - Alignment coverage: The fraction of NEs which we were able to able to align, from 0-1, **1 is best**. If REF and SYS do not contain equal counts of NEs, we use the smaller count.
+  - Average alignment distance: The average distance in the alignment, from 0-1, **0 is best**.
+  - Accuracy: The fraction exact matches in the alignment (string comparison).
+- Run the report on each distinct tag found both REF and SYS.
+
+This evaluation can be run with any combination of --ref/sys-contains-entities.
+
 ## Analyzing and pairing
 
 (This can be skipped) The next step aligns the two tagged files, and optionally prints some statistics. This step is run automatically by the filtering but can be ran on its own.

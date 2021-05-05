@@ -7,8 +7,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-import tokenizer
 from tqdm import tqdm
+
+from greynirseq.ner.nertagger import detok
 
 log = logging.getLogger(__name__)
 
@@ -62,10 +63,10 @@ SP_TAGS = {
 }
 TAG_MAPPER = {"is": IS_TAGS, "hf": HF_TAGS, "sp": SP_TAGS}
 
-ENTITY_MARKERS_START = re.compile(f"<[{'|'.join(TAGS)}]>")
-ENTITY_MARKERS_END = re.compile(f"</[{'|'.join(TAGS)}]>")
+ENTITY_MARKERS_START = re.compile(f"<[{'|'.join(TAGS)}]+>")
+ENTITY_MARKERS_END = re.compile(f"</[{'|'.join(TAGS)}]+>")
 
-ENTITY_MARKERS = re.compile(f"<(/)?[{'|'.join(TAGS)}]>")
+ENTITY_MARKERS = re.compile(f"</?[{'|'.join(TAGS)}]+>")
 
 
 @dataclass
@@ -139,7 +140,7 @@ def parse_line(sentence: List[str], labels: List[str], model: str) -> List[NERMa
     return result
 
 
-def embed_tokens(markers: List[NERMarker], tokens: List[str]) -> List[str]:
+def embed_tokens_to_list(markers: List[NERMarker], tokens: List[str]) -> List[str]:
     """Embed NER marker around NEs."""
     tokens = tokens[:]
     for marker in markers:
@@ -150,6 +151,28 @@ def embed_tokens(markers: List[NERMarker], tokens: List[str]) -> List[str]:
             log.exception(f"Unable to wrap {tokens=} with {marker=}")
             raise e
     return tokens
+
+
+def embed_tokens(markers: List[NERMarker], tokens: List[str]) -> str:
+    embedded_token_list = embed_tokens_to_list(markers, tokens)
+    # We use correct_spaces for both English and Icelandic
+    somewhat_correct_spaces = list(detok([" ".join(embedded_token_list)]))[0]
+    # correct_spaces adds spaces around the ner_markers which we do not want.
+    found = 0
+    for match in ENTITY_MARKERS_START.finditer(somewhat_correct_spaces):
+        # Skip the space
+        somewhat_correct_spaces = (
+            somewhat_correct_spaces[: match.end() - found] + somewhat_correct_spaces[match.end() - found + 1 :]
+        )
+        found += 1
+    found = 0
+    for match in ENTITY_MARKERS_END.finditer(somewhat_correct_spaces):
+        # Skip the space
+        somewhat_correct_spaces = (
+            somewhat_correct_spaces[: match.start() - found - 1] + somewhat_correct_spaces[match.start() - found :]
+        )
+        found += 1
+    return somewhat_correct_spaces
 
 
 def main():
@@ -177,25 +200,7 @@ def main():
         if not args.embed_tags_detok:
             f_out.write("\t".join([model] + [str(ner_marker) for ner_marker in ner_markers]) + "\n")
         else:
-            # We use correct_spaces for both English and Icelandic
-            somewhat_correct_spaces = tokenizer.correct_spaces(" ".join(embed_tokens(ner_markers, sent.split())))
-            # correct_spaces adds spaces around the ner_markers which we do not want.
-            found = 0
-            for match in ENTITY_MARKERS_START.finditer(somewhat_correct_spaces):
-                # Skip the space
-                somewhat_correct_spaces = (
-                    somewhat_correct_spaces[: match.end() - found] + somewhat_correct_spaces[match.end() - found + 1 :]
-                )
-                found += 1
-            found = 0
-            for match in ENTITY_MARKERS_END.finditer(somewhat_correct_spaces):
-                # Skip the space
-                somewhat_correct_spaces = (
-                    somewhat_correct_spaces[: match.start() - found - 1]
-                    + somewhat_correct_spaces[match.start() - found :]
-                )
-                found += 1
-            f_out.write(f"{somewhat_correct_spaces}\n")
+            f_out.write(f"{embed_tokens(ner_markers, sent.split())}\n")
 
     stats = dict(stats)
     stats = sorted(stats.items())

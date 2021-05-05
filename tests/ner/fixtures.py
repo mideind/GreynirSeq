@@ -3,6 +3,8 @@ from typing import Tuple
 
 import pytest
 
+from greynirseq.ner.ner_extracter import embed_tokens, parse_line
+
 
 @pytest.fixture
 def ner_sentence_pair():
@@ -56,6 +58,15 @@ def ner_tagged_sentences_is():
         "Guðrún fór í heimsókn til Einars Jónssonar .	B-Person O O O O B-Person I-Person O",
         "Anna fékk gjöf frá Alexei , Pétri og Páli .	B-Person O O O B-Person O B-Person O B-Person O",
     )
+
+
+@pytest.fixture
+def embedded_ner_tagged_sentences_is(ner_tagged_sentences_is):
+    result = []
+    for sent in ner_tagged_sentences_is:
+        sent, labels = sent.split("\t")
+        result.append(embed_tokens(parse_line(sent.split(), labels.split(), "is"), sent.split()))
+    return result
 
 
 @pytest.fixture

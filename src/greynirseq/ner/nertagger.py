@@ -7,7 +7,7 @@ import spacy
 import torch
 import tqdm
 from spacy.gold import biluo_tags_from_offsets
-from tokenizer import split_into_sentences
+from tokenizer import correct_spaces, split_into_sentences
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from greynirseq.nicenlp.models.multiclass import MultiClassRobertaModel
@@ -155,6 +155,10 @@ def tok(lang: str, lines_iter: Iterable[str]) -> Iterable[str]:
         return english_tok(lines_iter)
     else:
         raise ValueError(f"Unsupported language={lang}")
+
+
+def detok(lines_iter: Iterable[str]) -> Iterable[str]:
+    return (correct_spaces(line) for line in lines_iter)
 
 
 def main():
