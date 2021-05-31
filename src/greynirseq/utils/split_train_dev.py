@@ -54,7 +54,7 @@ def main():
     data_size = len(data)
     remainder_size = int(args.p * data_size)
     random.seed(args.seed)
-    remainder_idxs = random.sample(range(data_size), remainder_size)
+    remainder_idxs = set(random.sample(range(data_size), remainder_size))
 
     for i in range(data_size):
         data_item = data[i]
