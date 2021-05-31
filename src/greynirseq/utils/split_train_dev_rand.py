@@ -52,17 +52,20 @@ def main():
         doc = []
         for i, line in enumerate(h):
             if line.strip() == "":  # empty line indicates new document
+                total += 1
                 remainder_count += write_doc(doc, p, f_remainder, f_sample, separate_docs)
                 doc.clear()
             else:
                 doc.append(line)
             if not separate_docs and len(doc) != 0:
+                total += 1
                 remainder_count += write_doc(doc, p, f_remainder, f_sample, separate_docs)
             if i % 1000 == 0:
                 print(i, file=sys.stderr, end="", flush=True)
             elif i % 100 == 0:
                 print(".", file=sys.stderr, end="", flush=True)
         if len(doc) > 0:
+            total += 1
             remainder_count += write_doc(doc, p, f_remainder, f_sample, separate_docs)
     print(file=sys.stderr, flush=True)
     print(f"Wrote {total} lines. {remainder_count/total:.3f} fraction to remainder")
