@@ -33,28 +33,30 @@ def main(in_path, out_path, args):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser("Vocab extension - add new language id to mBART, ")
+    parser = argparse.ArgumentParser("Embedding extension - add new language id to a model checkpoint",
+            description="Extend the embedding matrix of a Pytorch model checkpoint by one vector. The new embedding is created by averaging a slice of the existing embedding matrix instead of via random initializion."
+    )
 
-    parser.add_argument("input", type=str, help="Input model file")
-    parser.add_argument("output", type=str, help="Output file")
+    parser.add_argument("input", type=str, help="Input checkpoint file")
+    parser.add_argument("output", type=str, help="Output checkpoint file")
     parser.add_argument(
         "--slice-start",
         type=int,
         required=True,
-        help="First embedding index of slice that will be averaged (mBART has 250.027 embeddings)",
+        help="Start of the slice that will be averaged (mBART has 250.027 embeddings)",
     )
     parser.add_argument(
         "--slice-end",
         type=int,
         required=True,
-        help="Last embedding index of slice that will be averaged",
+        help="End of slice that will be averaged.",
     )
     parser.add_argument(
         "--insertion-index",
         type=int,
         default=-1,
         required=False,
-        help="Location of new language id (if set to -1, will insert as second to last)",
+        help="Embedding index (location in the embedding matrix) of the newly created lang-id embedding (-1 has special semantics and will insert as second to last)",
     )
     parser.add_argument(
         "--noise-scale",
