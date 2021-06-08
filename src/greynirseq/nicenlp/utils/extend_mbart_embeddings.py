@@ -23,27 +23,20 @@ def main(in_path, out_path, args):
     new_emb_mat = enc_w.new_zeros(vocab_size + 1, nfeatures)
     new_emb_mat[:insertion_index] = enc_w[:insertion_index]
     new_emb_mat[insertion_index] = new_vec
-    new_emb_mat[insertion_index + 1:] = enc_w[insertion_index:]
+    new_emb_mat[insertion_index + 1 :] = enc_w[insertion_index:]
 
     model["encoder.embed_tokens.weight"] = new_emb_mat
     model["decoder.embed_tokens.weight"] = new_emb_mat.clone()
     torch.save(checkpoint, out_path)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser("Vocab extension - add new language id to mBART, ")
 
-    parser.add_argument(
-        "input",
-        type=str,
-        help="Input model file",
-    )
-    parser.add_argument(
-        "output",
-        type=str,
-        help="Output file",
-    )
+    parser.add_argument("input", type=str, help="Input model file")
+    parser.add_argument("output", type=str, help="Output file")
     parser.add_argument(
         "--slice-start",
         type=int,
@@ -77,3 +70,4 @@ if __name__ == '__main__':
         raise ValueError(f"Could not find file {args.input}")
 
     main(args.input, args.output, args)
+
