@@ -71,7 +71,9 @@ def print_ex(ex):
 
 def get_or_initialize_encoder():
     global ENC
-    return ENC
+    # This used to have subword encoder from t2t for subword edit-distance.
+    # Removed until this is implemented with fairseq/huggingface/spm
+    raise NotImplementedError
 
 
 # def probably_correct_language2(text, lang_code, lower_bound=0.8):
@@ -119,15 +121,7 @@ class Deduplifier:
 
     @classmethod
     def is_unique_example(cls, ex):
-        key = cls.preprocess_example(ex)
-        if key in cls._set:
-            return False
-        cls._set.add(key)
-        return True
-
-    @classmethod
-    def is_unique_example(cls, ex):
-        key = cls.preprocess_example(ex)
+        key = hash(cls.preprocess_example(ex))
         if key in cls._set:
             return False
         cls._set.add(key)
@@ -169,7 +163,6 @@ class RegexCache:
 
 class Filters:
 
-    _programs = {}  # compiled regular expressions
     _filters = {}  # registered filters
 
     @classmethod
@@ -586,7 +579,7 @@ class MinFrequency(Gather):
         try:
             os.makedirs(_TMP_DIR, exist_ok=True)
             path = os.path.join(_TMP_DIR, cls.__name__)
-            with open(path, "r") as fh:
+            with open(path, "r", encoding="utf8") as fh:
                 cls._prev_store = json.load(fh)
         except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
             pass
@@ -597,7 +590,7 @@ class MinFrequency(Gather):
         try:
             os.makedirs(_TMP_DIR, exist_ok=True)
             path = os.path.join(_TMP_DIR, cls.__name__)
-            with open(path, "w") as fh:
+            with open(path, "w", encoding="utf8") as fh:
                 json.dump(cls._store, fh, indent=2)
         except FileNotFoundError:
             pass
@@ -637,20 +630,13 @@ class MinFrequency(Gather):
 def wrong_quotes(ex):
     ice, eng = ex["is"], ex["en"]
 
-    QUOTES = set(QUOTE_LIKE)
-    QUOTES.remove("'")
-    QUOTES.remove('"')
-    QUOTES.remove(",")
-    for q in ICE_QUOTE.ALL:
-        try:
-            QUOTES.remove(q)
-        except:
-            pass
+    ALLOWED_QUOTES = set("'\"," + ICE_QUOTE.ALL)
+    DISALLOWED_QUOTES = set(QUOTE_LIKE).difference(ALLOWED_QUOTES)
 
     chars_ex = set(ice)
     chars_ex.update(eng)
 
-    return not bool(chars_ex & QUOTES)
+    return not bool(chars_ex & DISALLOWED_QUOTES)
 
 
 # @register_filter
@@ -721,7 +707,7 @@ class Pipeline:
                 yield ex
 
         for obj in cls._fns:
-            if not isinstance(obj, type):
+            if not isinstance(obj, Gather):
                 continue
             obj.save_to_file()
         cls.end_time = time.time()
@@ -876,7 +862,7 @@ class TransformationPipeline(Pipeline):
     ]
 
 def do_fns(
-    in_file=None, transforms=[], filters=[], quiet=False, use_pipeline=False, **kwargs
+    in_file=None, transforms=[], filters=[], quiet=False, **kwargs
 ):
     for ex in lines_to_examples(in_file):
         for transform in transforms:
@@ -885,7 +871,7 @@ def do_fns(
             inverted = False
             if filter_name.endswith("_inv"):
                 inverted = True
-                filter_name = filter_name.strip("_inv")
+                filter_name = filter_name.rstrip("_inv")
             if Filters.apply(filter_name, ex, inverted=inverted):
                 if not quiet:
                     print("\t".join([ex["en"], ex["is"]]))
