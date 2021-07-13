@@ -50,6 +50,13 @@ MAX_CHARS_PER_SENTENCE = 500
 BANNED_SYMBOLS_PAT = "[" + re.escape(BANNED_SYMBOLS) + "]"
 DEFAULT_MIN_WORD_COUNT = 3
 
+
+def safe_div(a, b):
+    if b == 0:
+        return 0
+    return a / b
+
+
 class Example:
     def __init__(self, src, tgt, file_id=None, align_score=None):
         self.source = src
@@ -184,21 +191,13 @@ class Filters:
 
 
 def register_filter(fun):
-    @functools.wraps(fun)
-    def wrapper(*args, **kwargs):
-        return fun(*args, **kwargs)
-
     Filters.register(fun)
-    return wrapper
+    return fun
 
 
 def register_transformation(fun):
-    @functools.wraps(fun)
-    def wrapper(*args, **kwargs):
-        return fun(*args, **kwargs)
-
     Transformations.register(fun)
-    return wrapper
+    return fun
 
 
 @register_transformation
@@ -208,7 +207,7 @@ def fix_ice_quotes(ex):
         "”", ICE_QUOTE.PRIMARY.RIGHT
     )
 
-    if not bool(set(ICE_QUOTE.PRIMARY.BOTH) & set(ice)):
+    if not (set(ICE_QUOTE.PRIMARY.BOTH) & set(ice)):
         ice = ice.replace(ICE_QUOTE.SECONDARY.LEFT, ICE_QUOTE.PRIMARY.LEFT)
         ice = ice.replace(ICE_QUOTE.SECONDARY.RIGHT, ICE_QUOTE.PRIMARY.RIGHT)
 
@@ -316,8 +315,8 @@ def ocr_word_boundary_avg_length(ex):
     prog = RegexCache.compile_rx(r"\w+")
     lens_ice = [len(m) for m in prog.findall(ice)]
     lens_eng = [len(m) for m in prog.findall(eng)]
-    avg_ice = sum(lens_ice) / len(lens_ice)
-    avg_eng = sum(lens_eng) / len(lens_eng)
+    avg_ice = safe_div(sum(lens_ice), len(lens_ice))
+    avg_eng = /safe_div(sum(lens_eng), len(lens_eng))
     return avg_ice > 1.8 and avg_eng > 1.8
 
 
@@ -350,32 +349,25 @@ def alphanumeric(ex):
     return mice and meng
 
 
-@register_filter
-def sentence_length_ratio(ex):
+def _sentence_length_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_count=3):
+    """Enforce length ratios between source and target, if either side is 'small'
+        then we use a larger ratio (such as a sentence of one word becomes 5 words on the other side)
+        if both sides are sufficiently large, we use a stricter ratio"""
+    # note: this is a pass-filter (True if item should remain)
     ice, eng = len(ex["is"]), len(ex["en"])
-    res1 = ice > 3 or not (ice < 3 * eng)  # ice > 3 implies ice < 3 * eng
-    res2 = eng > 3 or not (eng < 3 * ice)
-    return res1 and res2
+    if len(ice) <= min_count or len(eng) <= min_count:
+        return (ice <= eng * ratio_below_min) and (eng <= ice * ratio_below_min)
+    return (ice <= eng * ratio_above_min) and (eng <= ice * ratio_above_min)
 
 
 @register_filter
 def strict_sentence_length_ratio(ex):
-    ice, eng = len(ex["is"]), len(ex["en"])
-    #res1 = ice > 3 or not (ice < 2 * eng)  # ice > 3 implies ice < 3 * eng
-    #res2 = eng > 3 or not (eng < 2 * ice)
-    res = (ice <= eng * 1.5) and (eng <= ice * 1.5)
-    return res
+    return _sentence_length_ratio(ex, ratio_below_min=1.5, min_count=0)
 
 
 @register_filter
-def token_count_ratio(ex):
+def subtoken_count_ratio(ex):
     if not T2T_AVAILABLE:
-        print(
-            "Skipping {0} because t2t is not available".format(
-                token_count_ratio.__name__
-            ),
-            file=sys.stderr,
-        )
         return ex
     enc = get_or_initialize_encoder()
     ice = len(enc.encode(ex["is"]))
@@ -392,9 +384,7 @@ def token_count_ratio(ex):
 @register_filter
 def case_mismatch(ex):
     ice, eng = ex["is"], ex["en"]
-    ice = ice.upper() == ice
-    eng = eng.upper() == eng
-    return ice == eng
+    return ice.isupper() ^ eng.isupper()
 
 
 @register_filter
@@ -410,7 +400,7 @@ def digit_mismatch(ex):
 
 
 @register_filter
-def quote_mismatch(ex):
+def only_even_quotes(ex):
     ice, eng = ex["is"], ex["en"]
     prog = RegexCache.compile_rx(re.escape('"'))
     nice = len(prog.findall(ice))
@@ -430,20 +420,14 @@ def rel_min_string_edit(ex):
     ice, eng = ex["is"], ex["en"]
     num_edits = editdistance.eval(ice, eng)
     lengths = [len(ice), len(eng)]
-    min_ratio = num_edits / min(lengths)
-    max_ratio = num_edits / max(lengths)
+    min_ratio = safe_div(num_edits, min(lengths))
+    max_ratio = safe_div(num_edits, max(lengths))
     return (max_ratio >= 0.10) and (min_ratio >= 0.10)
 
 
 @register_filter
 def abs_min_subtoken_edit(ex):
     if not T2T_AVAILABLE:
-        print(
-            "Skipping {0} because t2t is not available".format(
-                abs_min_subtoken_edit.__name__
-            ),
-            file=sys.stderr,
-        )
         return ex
     enc = get_or_initialize_encoder()
     ice = enc.encode(ex["is"])
@@ -455,20 +439,14 @@ def abs_min_subtoken_edit(ex):
 @register_filter
 def rel_min_subtoken_edit(ex):
     if not T2T_AVAILABLE:
-        print(
-            "Skipping {0} because t2t is not available".format(
-                rel_min_subtoken_edit.__name__
-            ),
-            file=sys.stderr,
-        )
         return ex
     enc = get_or_initialize_encoder()
     ice = enc.encode(ex["is"])
     eng = enc.encode(ex["en"])
     num_edits = editdistance.eval(ice, eng)
     lengths = [len(ice), len(eng)]
-    min_ratio = num_edits / min(lengths)
-    max_ratio = num_edits / max(lengths)
+    min_ratio = safe_div(num_edits, min(lengths))
+    max_ratio = safe_div(num_edits, max(lengths))
     return (max_ratio >= 0.10) and (min_ratio >= 0.10)
 
 
@@ -670,7 +648,7 @@ class Pipeline:
         # fix_ice_quotes,
         ### filters
         # bullet_mismatch,
-        #quote_mismatch,
+        #only_even_quotes,
         ocr_wrong_symbol,
         # colon_mismatch,
         #missing_letter,
@@ -680,9 +658,8 @@ class Pipeline:
         rel_min_string_edit,
         #abs_min_subtoken_edit,
         #rel_min_subtoken_edit,
-        sentence_length_ratio,
         strict_sentence_length_ratio,
-        #token_count_ratio,
+        #subtoken_count_ratio,
         ocr_word_boundary_avg_length,
         #dot_pattern,
         # wrong_quotes,
@@ -755,7 +732,7 @@ class Pipeline:
             "Examples remaining:  {rem:>8d} / {total:<8d}  {pct:5.2f}%  in {elaps:>5.1f} seconds".format(
                 rem=total - num_filtered,
                 total=total,
-                pct=100 * (total - num_filtered) / (total or 1),
+                pct=100 * safe_div(total - num_filtered, total),
                 elaps=cls.end_time - cls.start_time,
             )
         )
@@ -779,12 +756,12 @@ class Pipeline:
                 indent=" " * indent,
                 name=name,
                 count=count,
-                pct=100 * count / (total or 1),
-                rel=100 * count / (num_filtered or 1),
+                pct=100 * safe_div(count, total),
+                rel=100 * safe_div(count, filtered),
             )
 
             transform_msg = "{indent}{name:<30s}  {count:>8d}  {pct:>5.2f}%".format(
-                indent=" " * indent, name=name, count=count, pct=100 * count / (total or 1)
+                indent=" " * indent, name=name, count=count, pct=100 * safe_div(count, total)
             )
             msg = filter_msg if name in Filters._filters else transform_msg
             print(msg)
@@ -813,7 +790,7 @@ class MinimalPipeline(Pipeline):
         wrong_quotes,
         ### filters
         bullet_mismatch,
-        quote_mismatch,
+        only_even_quotes,
         ocr_wrong_symbol,
         colon_mismatch,
         missing_letter,
