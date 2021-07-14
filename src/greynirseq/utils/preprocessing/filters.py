@@ -5,7 +5,6 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import collections
-import functools
 import json
 import os
 import re
@@ -15,6 +14,7 @@ import time
 import editdistance
 import tokenizer
 from symbols import BANNED_SYMBOLS, ICE_QUOTE, PUNCTUATION_SYMBOLS, QUOTE_LIKE, SUBSTITUTE_FOR_NULL, SYMBOL_WHITELIST
+
 # from langid.langid import LanguageIdentifier, model
 # import pycld2 as cld2
 
@@ -478,13 +478,11 @@ def bullet_mismatch(ex):
 
 
 @register_filter
-def max_word_length(ex, max_word_length=50):
+def max_word_length(ex, max_ice_len=50, max_eng_len=50):
     ice, eng = ex["is"], ex["en"]
     word_prog = RegexCache.compile_rx(r"\b\w+\b")
     ice_words = word_prog.findall(ice)
     eng_words = word_prog.findall(eng)
-    max_ice_len = max_word_length
-    max_eng_len = max_word_length
     return max(len(w) for w in ice_words) <= max_ice_len and max(len(w) for w in eng_words) <= max_eng_len
 
 
@@ -497,7 +495,7 @@ def min_word_count(ex):
         eng_toks = [
             tok for tok in tokenizer.tokenize(ex["en"]) if tok.txt is not None and tok.kind == tokenizer.TOK.WORD
         ]
-    except TypeError as e:
+    except TypeError:
         return True
     return len(isl_toks) >= DEFAULT_MIN_WORD_COUNT and len(eng_toks) >= DEFAULT_MIN_WORD_COUNT
 
@@ -510,9 +508,9 @@ class Gather:
 
     @classmethod
     def _idemp_init(cls):
-        """ Idempotently initialize, if gather data exists from last run
+        """Idempotently initialize, if gather data exists from last run
         it will be used to filter/transform. Otherwise, pipeline needs
-        to be executed twice. """
+        to be executed twice."""
         raise NotImplementedError
 
     @classmethod
@@ -689,7 +687,7 @@ class Pipeline:
         total = cls.counter["total"]
         cls.counter.pop("total")
         num_filtered = sum(count for name, count in cls.counter.items() if name not in Transformations._transforms)
-        num_transformed = sum(count for name, count in cls.counter.items() if name in Transformations._transforms)
+        # num_transformed = sum(count for name, count in cls.counter.items() if name in Transformations._transforms)
         print(
             "Examples remaining:  {rem:>8d} / {total:<8d}  {pct:5.2f}%  in {elaps:>5.1f} seconds".format(
                 rem=total - num_filtered,
@@ -785,7 +783,9 @@ class TransformationPipeline(Pipeline):
     _fns = [fix_improper_line_split, remove_leading_bullet, soft_hyphen, replace_dashes, merge_spaces, fix_ice_quotes]
 
 
-def do_fns(in_file=None, transforms=[], filters=[], quiet=False, **kwargs):
+def do_fns(in_file=None, transforms=None, filters=None, quiet=False, **kwargs):
+    transforms = [] if transforms is None else transforms
+    filters = [] if filters is None else filters
     for ex in lines_to_examples(in_file):
         for transform in transforms:
             ex = Transformations.apply(transform, ex)
@@ -805,7 +805,7 @@ def valid_view_function(string):
     fn_names = [fn.__name__ for fn in Pipeline._fns] + [fn.__name__ for fn in MinimalPipeline._fns]
     if string in fn_names:
         return string
-    raise argparse.ArgumentError("Invalid filter/transformation name")
+    raise argparse.ArgumentError(string, "Invalid filter/transformation name")
 
 
 if __name__ == "__main__":
