@@ -165,9 +165,7 @@ UNNAMED_SYMBOLS = (
     "\x8b\uf0d7\x8d"
 )
 
-BAD_SYMBOLS_OS2018 = (
-    "âğųôŨşčėëÄĀîŞĘÈęÔÅŽı°àÕåÂŌōèŊžˇŋį�ØÀ¤û¿˛ãīŖøï¨š`ŲÜũĄäüõĶČñņ…"
-)
+BAD_SYMBOLS_OS2018 = "âğųôŨşčėëÄĀîŞĘÈęÔÅŽı°àÕåÂŌōèŊžˇŋį�ØÀ¤û¿˛ãīŖøï¨š`ŲÜũĄäüõĶČñņ…"
 
 MISC_SYMBOLS = (
     "\uf0b3\u200c\uf06d\uf0a3\uf0b0\uf0af\uf0b1\uf061\uf0ad\uf0e8\uf0ab\uf0ae"
@@ -198,7 +196,6 @@ QUOTE_LIKE = "\"'„“”«»‛ʼ″´`′‘’`,"
 
 
 class ICE_QUOTE:
-
     class PRIMARY:
         LEFT = "„"  # 0x201e  DOUBLE LOW-9 QUOTATION MARK
         RIGHT = "“"  # 0x201c  LEFT DOUBLE QUOTATION MARK
@@ -208,11 +205,12 @@ class ICE_QUOTE:
         LEFT = "‚"  # 0x201a  SINGLE LOW-9 QUOTATION MARK
         RIGHT = "‘"  # 0x2018  LEFT SINGLE QUOTATION MARK
         BOTH = [LEFT, RIGHT]
+
     ALL = PRIMARY.BOTH + SECONDARY.BOTH
 
+
 PUNCTUATION_SYMBOLS = (
-    "'ʼ∞¥≈€∂‧Ω÷‐℉†℃‛″£™∙§«»@¯^!½³²˜−{$¼¹≠}º‗®‑#¡´&`|·≥―′¿<≤~?±"
-    '…\\>”_+][°–=*"‘%„“;:-•(),…–`-—!’?;“”:.,'
+    "'ʼ∞¥≈€∂‧Ω÷‐℉†℃‛″£™∙§«»@¯^!½³²˜−{$¼¹≠}º‗®‑#¡´&`|·≥―′¿<≤~?±" '…\\>”_+][°–=*"‘%„“;:-•(),…–`-—!’?;“”:.,'
 )
 
 SUBSTITUTE_FOR_NULL = "\xad"

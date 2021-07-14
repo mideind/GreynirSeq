@@ -17,14 +17,7 @@ import time
 
 import editdistance
 
-from symbols import (
-    SYMBOL_WHITELIST,
-    BANNED_SYMBOLS,
-    SUBSTITUTE_FOR_NULL,
-    PUNCTUATION_SYMBOLS,
-    QUOTE_LIKE,
-    ICE_QUOTE,
-)
+from symbols import SYMBOL_WHITELIST, BANNED_SYMBOLS, SUBSTITUTE_FOR_NULL, PUNCTUATION_SYMBOLS, QUOTE_LIKE, ICE_QUOTE
 
 import tokenizer
 
@@ -152,9 +145,7 @@ class Transformations:
         if fun.__name__ not in cls._transforms:
             cls._transforms[fun.__name__] = fun
         else:
-            raise ValueError(
-                "Tried to register transform {0} more than once".format(fun.__name__)
-            )
+            raise ValueError("Tried to register transform {0} more than once".format(fun.__name__))
 
 
 class RegexCache:
@@ -177,9 +168,7 @@ class Filters:
         if fun.__name__ not in cls._filters:
             cls._filters[fun.__name__] = fun
         else:
-            raise ValueError(
-                "Tried to register filter {0} more than once".format(fun.__name__)
-            )
+            raise ValueError("Tried to register filter {0} more than once".format(fun.__name__))
 
     @classmethod
     def apply(cls, filter_name, ex, inverted=False):
@@ -203,9 +192,7 @@ def register_transformation(fun):
 @register_transformation
 def fix_ice_quotes(ex):
     ice, eng = ex["is"], ex["en"]
-    ice = ice.replace(  # 0x201d  RIGHT DOUBLE QUOTATION MARK
-        "”", ICE_QUOTE.PRIMARY.RIGHT
-    )
+    ice = ice.replace("”", ICE_QUOTE.PRIMARY.RIGHT)  # 0x201d  RIGHT DOUBLE QUOTATION MARK
 
     if not (set(ICE_QUOTE.PRIMARY.BOTH) & set(ice)):
         ice = ice.replace(ICE_QUOTE.SECONDARY.LEFT, ICE_QUOTE.PRIMARY.LEFT)
@@ -324,18 +311,7 @@ def ocr_word_boundary_avg_length(ex):
 def missing_letter(ex):
     # TODO(haukurb): gather file ids from this filter
     ice = ex["is"]
-    substrings = [
-        r" a ",
-        r" e ",
-        r" i ",
-        r" o ",
-        r" u ",
-        r" y ",
-        r"\bvi\b",
-        r"\bess\b",
-        r"\bme\b",
-        r"\bessum\b",
-    ]
+    substrings = [r" a ", r" e ", r" i ", r" o ", r" u ", r" y ", r"\bvi\b", r"\bess\b", r"\bme\b", r"\bessum\b"]
     found = re.search("(" + "|".join(substrings) + ")", ice)
     return not found
 
@@ -357,15 +333,13 @@ def _sentence_length_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_cou
     ice, eng = len(ex["is"]), len(ex["en"])
     recip_ratio_below_min = safe_div(1, ratio_below_min)
     if ice < min_count or eng < min_count:
-        return (
-            (recip_ratio_below_min * eng <= ice <= ratio_below_min * eng)
-            and (recip_ratio_below_min * ice <= eng <= ratio_below_min * ice)
+        return (recip_ratio_below_min * eng <= ice <= ratio_below_min * eng) and (
+            recip_ratio_below_min * ice <= eng <= ratio_below_min * ice
         )
     recip_ratio_above_min = safe_div(1, ratio_above_min)
 
-    return (
-        (recip_ratio_above_min * eng <= ice <= ratio_above_min * eng)
-        and (recip_ratio_above_min * ice <= eng <= ratio_above_min * ice)
+    return (recip_ratio_above_min * eng <= ice <= ratio_above_min * eng) and (
+        recip_ratio_above_min * ice <= eng <= ratio_above_min * ice
     )
 
 
@@ -383,14 +357,12 @@ def _subtoken_count_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_coun
     eng = len(enc.encode(ex["en"]))
     recip_ratio_below_min = safe_div(1, ratio_below_min)
     if ice < min_count or eng < min_count:
-        return (
-            (recip_ratio_below_min * eng <= ice <= ratio_below_min * eng)
-            and (recip_ratio_below_min * ice <= eng <= ratio_below_min * ice)
+        return (recip_ratio_below_min * eng <= ice <= ratio_below_min * eng) and (
+            recip_ratio_below_min * ice <= eng <= ratio_below_min * ice
         )
     recip_ratio_above_min = safe_div(1, ratio_above_min)
-    return (
-        (recip_ratio_above_min * eng <= ice <= ratio_above_min * eng)
-        and (recip_ratio_above_min * ice <= eng <= ratio_above_min * ice)
+    return (recip_ratio_above_min * eng <= ice <= ratio_above_min * eng) and (
+        recip_ratio_above_min * ice <= eng <= ratio_above_min * ice
     )
 
 
@@ -522,18 +494,19 @@ def max_word_length(ex, max_word_length=50):
     eng_words = word_prog.findall(eng)
     max_ice_len = max_word_length
     max_eng_len = max_word_length
-    return (
-        max(len(w) for w in ice_words) <= max_ice_len
-        and max(len(w) for w in eng_words) <= max_eng_len
-    )
+    return max(len(w) for w in ice_words) <= max_ice_len and max(len(w) for w in eng_words) <= max_eng_len
 
 
 @register_filter
 def min_word_count(ex):
     try:
-        isl_toks = [tok for tok in tokenizer.tokenize(ex["is"]) if tok.txt is not None and tok.kind == tokenizer.TOK.WORD]
-        eng_toks = [tok for tok in tokenizer.tokenize(ex["en"]) if tok.txt is not None and tok.kind == tokenizer.TOK.WORD]
-    except TypeError  as e:
+        isl_toks = [
+            tok for tok in tokenizer.tokenize(ex["is"]) if tok.txt is not None and tok.kind == tokenizer.TOK.WORD
+        ]
+        eng_toks = [
+            tok for tok in tokenizer.tokenize(ex["en"]) if tok.txt is not None and tok.kind == tokenizer.TOK.WORD
+        ]
+    except TypeError as e:
         return True
     return len(isl_toks) >= DEFAULT_MIN_WORD_COUNT and len(eng_toks) >= DEFAULT_MIN_WORD_COUNT
 
@@ -598,29 +571,16 @@ class MinFrequency(Gather):
         ice, eng = ex["is"], ex["en"]
         ice_words = cls.word_prog.findall(ice)
         eng_words = cls.word_prog.findall(eng)
-        ice_words = [
-            w.lower()
-            for w in ice_words
-            if len(w) > cls.auto_pass_len and not cls.num_prog.match(w)
-        ]
-        eng_words = [
-            w.lower()
-            for w in eng_words
-            if len(w) > cls.auto_pass_len and not cls.num_prog.match(w)
-        ]
+        ice_words = [w.lower() for w in ice_words if len(w) > cls.auto_pass_len and not cls.num_prog.match(w)]
+        eng_words = [w.lower() for w in eng_words if len(w) > cls.auto_pass_len and not cls.num_prog.match(w)]
         cls._store["ice"].update(ice_words)
         cls._store["eng"].update(eng_words)
 
         if cls._prev_store:
-            pice = all(
-                cls._prev_store["ice"].get(w, 0) >= cls.min_freq for w in ice_words
-            )
-            peng = all(
-                cls._prev_store["eng"].get(w, 0) >= cls.min_freq for w in eng_words
-            )
+            pice = all(cls._prev_store["ice"].get(w, 0) >= cls.min_freq for w in ice_words)
+            peng = all(cls._prev_store["eng"].get(w, 0) >= cls.min_freq for w in eng_words)
             return pice and peng
         return True
-
 
 
 @register_filter
@@ -655,32 +615,32 @@ class Pipeline:
         whitelist_symbol,
         digit_mismatch,
         deduplicate,
-        #case_mismatch,
+        # case_mismatch,
         max_word_length,
         min_word_count,
         ### transformations
         fix_improper_line_split,
-        #remove_leading_bullet,
+        # remove_leading_bullet,
         soft_hyphen,
         replace_dashes,
         merge_spaces,
         # fix_ice_quotes,
         ### filters
         # bullet_mismatch,
-        #only_even_quotes,
+        # only_even_quotes,
         ocr_wrong_symbol,
         # colon_mismatch,
-        #missing_letter,
-        #corrupt_symbol,
+        # missing_letter,
+        # corrupt_symbol,
         quote_inside_word,
         abs_min_string_edit,
         rel_min_string_edit,
-        #abs_min_subtoken_edit,
-        #rel_min_subtoken_edit,
+        # abs_min_subtoken_edit,
+        # rel_min_subtoken_edit,
         strict_sentence_length_ratio,
-        #subtoken_count_ratio,
+        # subtoken_count_ratio,
         ocr_word_boundary_avg_length,
-        #dot_pattern,
+        # dot_pattern,
         # wrong_quotes,
         ###############
         # language,
@@ -737,16 +697,8 @@ class Pipeline:
     def summarize_counter(cls, indent=4, file=sys.stdout):
         total = cls.counter["total"]
         cls.counter.pop("total")
-        num_filtered = sum(
-            count
-            for name, count in cls.counter.items()
-            if name not in Transformations._transforms
-        )
-        num_transformed = sum(
-            count
-            for name, count in cls.counter.items()
-            if name in Transformations._transforms
-        )
+        num_filtered = sum(count for name, count in cls.counter.items() if name not in Transformations._transforms)
+        num_transformed = sum(count for name, count in cls.counter.items() if name in Transformations._transforms)
         print(
             "Examples remaining:  {rem:>8d} / {total:<8d}  {pct:5.2f}%  in {elaps:>5.1f} seconds".format(
                 rem=total - num_filtered,
@@ -758,11 +710,7 @@ class Pipeline:
         print("-" * 80)
         print(
             "{indent}{name:<30s}  {count:>8s}   {pct:>5s}  {rel:<10s}".format(
-                indent=" " * indent,
-                name="Name",
-                count="Count",
-                pct="Total",
-                rel="Total filtered",
+                indent=" " * indent, name="Name", count="Count", pct="Total", rel="Total filtered"
             )
         )
         for fn in cls._fns:
@@ -801,7 +749,7 @@ class MinimalPipeline(Pipeline):
         min_word_count,
         ### transformations
         fix_improper_line_split,
-        #remove_leading_bullet,
+        # remove_leading_bullet,
         soft_hyphen,
         replace_dashes,
         merge_spaces,
@@ -822,16 +770,10 @@ class MinimalPipeline(Pipeline):
 
 
 def do_pipeline(
-    in_file=None,
-    out_file=sys.stdout,
-    quiet=False,
-    summary=False,
-    view_function=None,
-    inverted=False,
-    **kwargs
+    in_file=None, out_file=sys.stdout, quiet=False, summary=False, view_function=None, inverted=False, **kwargs
 ):
     examples = lines_to_examples(in_file)
-    #pipeline = Pipeline
+    # pipeline = Pipeline
     pipeline = MinimalPipeline
     for ex in pipeline.run(examples, view_function=view_function, inverted=inverted):
         if not quiet and view_function is None:
@@ -847,19 +789,12 @@ def lines_to_examples(lines):
         ex = {"en": src, "is": tgt}
         yield ex
 
-class TransformationPipeline(Pipeline):
-    _fns = [
-        fix_improper_line_split,
-        remove_leading_bullet,
-        soft_hyphen,
-        replace_dashes,
-        merge_spaces,
-        fix_ice_quotes,
-    ]
 
-def do_fns(
-    in_file=None, transforms=[], filters=[], quiet=False, **kwargs
-):
+class TransformationPipeline(Pipeline):
+    _fns = [fix_improper_line_split, remove_leading_bullet, soft_hyphen, replace_dashes, merge_spaces, fix_ice_quotes]
+
+
+def do_fns(in_file=None, transforms=[], filters=[], quiet=False, **kwargs):
     for ex in lines_to_examples(in_file):
         for transform in transforms:
             ex = Transformations.apply(transform, ex)
@@ -934,13 +869,7 @@ if __name__ == "__main__":
         help="Output lines after transformations and filtering.",
     )
     parser.add_argument(
-        "-s",
-        "--summary",
-        dest="summary",
-        action="store_true",
-        required=False,
-        default=False,
-        help="Help",
+        "-s", "--summary", dest="summary", action="store_true", required=False, default=False, help="Help"
     )
     parser.add_argument(
         "--hook",
