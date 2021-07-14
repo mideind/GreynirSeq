@@ -12,24 +12,15 @@ import re
 import sys
 import time
 
+import editdistance
+import tokenizer
+from symbols import BANNED_SYMBOLS, ICE_QUOTE, PUNCTUATION_SYMBOLS, QUOTE_LIKE, SUBSTITUTE_FOR_NULL, SYMBOL_WHITELIST
 # from langid.langid import LanguageIdentifier, model
 # import pycld2 as cld2
 
-import editdistance
-
-from symbols import SYMBOL_WHITELIST, BANNED_SYMBOLS, SUBSTITUTE_FOR_NULL, PUNCTUATION_SYMBOLS, QUOTE_LIKE, ICE_QUOTE
-
-import tokenizer
-
 _SCRIPT_DIR = os.path.dirname(os.path.realpath("__file__"))
 
-T2T_AVAILABLE = True
-try:
-    from tensor2tensor.data_generators import text_encoder
-except ImportError:
-    print("Running without subword-level filters", file=sys.stderr)
-    T2T_AVAILABLE = False
-
+T2T_AVAILABLE = False
 ENC = None
 
 # LANGID_IDENTIFIER = LanguageIdentifier.from_modelstring(model, norm_probs=True)
@@ -97,7 +88,7 @@ def get_or_initialize_encoder():
 
 class Deduplifier:
     """Deduplify sentence pairs using Tilde's approach (Tilde 2018)
-       Along with a few others."""
+    Along with a few others."""
 
     _set = set()
 
@@ -291,7 +282,7 @@ def quote_inside_word(ex):
 @register_filter
 def ocr_wrong_symbol(ex):
     # TODO(haukurb): gather file ids from this filter
-    ice, eng = ex["is"], ex["en"]
+    ice = ex["is"]
     prog = RegexCache.compile_rx(r",,")
     return not prog.search(ice)
 
@@ -327,8 +318,8 @@ def alphanumeric(ex):
 
 def _sentence_length_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_count=3):
     """Enforce length ratios between source and target, if either side is 'small'
-        then we use a larger ratio (such as a sentence of one word becomes 5 words on the other side)
-        if both sides are sufficiently large, we use a stricter ratio"""
+    then we use a larger ratio (such as a sentence of one word becomes 5 words on the other side)
+    if both sides are sufficiently large, we use a stricter ratio"""
     # note: this is a pass-filter (True if item should remain)
     ice, eng = len(ex["is"]), len(ex["en"])
     recip_ratio_below_min = safe_div(1, ratio_below_min)
@@ -352,7 +343,7 @@ def _subtoken_count_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_coun
     """Same as _sentence_length_ratio, but at the subtoken level"""
     if not T2T_AVAILABLE:
         return ex
-    enc = get_or_initialize_encoder()
+    enc = get_or_initialize_encoder()  # pylint: disable=assignment-from-no-return
     ice = len(enc.encode(ex["is"]))
     eng = len(enc.encode(ex["en"]))
     recip_ratio_below_min = safe_div(1, ratio_below_min)
@@ -420,7 +411,7 @@ def rel_min_string_edit(ex, min_ratio=0.10):
 def abs_min_subtoken_edit(ex, min_dist=2):
     if not T2T_AVAILABLE:
         return ex
-    enc = get_or_initialize_encoder()
+    enc = get_or_initialize_encoder()  # pylint: disable=assignment-from-no-return
     ice = enc.encode(ex["is"])
     eng = enc.encode(ex["en"])
     dist = editdistance.eval(ice, eng)
@@ -431,7 +422,7 @@ def abs_min_subtoken_edit(ex, min_dist=2):
 def rel_min_subtoken_edit(ex):
     if not T2T_AVAILABLE:
         return ex
-    enc = get_or_initialize_encoder()
+    enc = get_or_initialize_encoder()  # pylint: disable=assignment-from-no-return
     ice = enc.encode(ex["is"])
     eng = enc.encode(ex["en"])
     num_edits = editdistance.eval(ice, eng)
@@ -520,8 +511,8 @@ class Gather:
     @classmethod
     def _idemp_init(cls):
         """ Idempotently initialize, if gather data exists from last run
-            it will be used to filter/transform. Otherwise, pipeline needs
-            to be executed twice. """
+        it will be used to filter/transform. Otherwise, pipeline needs
+        to be executed twice. """
         raise NotImplementedError
 
     @classmethod
@@ -553,7 +544,7 @@ class MinFrequency(Gather):
         try:
             with open(cls._file_path(), "r", encoding="utf8") as fh:
                 cls._prev_store = json.load(fh)
-        except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
+        except (FileNotFoundError, json.decoder.JSONDecodeError):
             pass
         cls._store = {"eng": collections.Counter(), "ice": collections.Counter()}
 
@@ -608,7 +599,7 @@ class Pipeline:
 
     counter = dict()
     _fns = [
-        ### filters
+        # filters
         null_sentence,
         alphanumeric,
         banned_symbol,
@@ -618,14 +609,14 @@ class Pipeline:
         # case_mismatch,
         max_word_length,
         min_word_count,
-        ### transformations
+        # transformations
         fix_improper_line_split,
         # remove_leading_bullet,
         soft_hyphen,
         replace_dashes,
         merge_spaces,
         # fix_ice_quotes,
-        ### filters
+        # filters
         # bullet_mismatch,
         # only_even_quotes,
         ocr_wrong_symbol,
@@ -642,7 +633,7 @@ class Pipeline:
         ocr_word_boundary_avg_length,
         # dot_pattern,
         # wrong_quotes,
-        ###############
+        #
         # language,
         # MinFrequency.gather,
         # MinFrequency,
@@ -738,7 +729,7 @@ class MinimalPipeline(Pipeline):
 
     counter = dict()
     _fns = [
-        ### filters
+        # filters
         null_sentence,
         alphanumeric,
         whitelist_symbol,
@@ -747,7 +738,7 @@ class MinimalPipeline(Pipeline):
         case_mismatch,
         max_word_length,
         min_word_count,
-        ### transformations
+        # transformations
         fix_improper_line_split,
         # remove_leading_bullet,
         soft_hyphen,
@@ -755,7 +746,7 @@ class MinimalPipeline(Pipeline):
         merge_spaces,
         fix_ice_quotes,
         wrong_quotes,
-        ### filters
+        # filters
         bullet_mismatch,
         only_even_quotes,
         ocr_wrong_symbol,
@@ -819,10 +810,6 @@ def valid_view_function(string):
 
 if __name__ == "__main__":
 
-    try:
-        import argcomplete
-    except ImportError as exc:
-        pass
     import argparse
 
     parser = argparse.ArgumentParser(
