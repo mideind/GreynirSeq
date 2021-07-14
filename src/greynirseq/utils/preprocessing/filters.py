@@ -28,13 +28,13 @@ from symbols import (
 
 import tokenizer
 
-_PROJECT_DIR = os.path.dirname(os.path.realpath("__file__"))
+_SCRIPT_DIR = os.path.dirname(os.path.realpath("__file__"))
 
 T2T_AVAILABLE = True
 try:
     from tensor2tensor.data_generators import text_encoder
 except ImportError:
-    print("Running without tensor2tensor", file=sys.stderr)
+    print("Running without subword-level filters", file=sys.stderr)
     T2T_AVAILABLE = False
 
 ENC = None
@@ -316,7 +316,7 @@ def ocr_word_boundary_avg_length(ex):
     lens_ice = [len(m) for m in prog.findall(ice)]
     lens_eng = [len(m) for m in prog.findall(eng)]
     avg_ice = safe_div(sum(lens_ice), len(lens_ice))
-    avg_eng = /safe_div(sum(lens_eng), len(lens_eng))
+    avg_eng = safe_div(sum(lens_eng), len(lens_eng))
     return avg_ice > 1.8 and avg_eng > 1.8
 
 
@@ -355,9 +355,18 @@ def _sentence_length_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_cou
         if both sides are sufficiently large, we use a stricter ratio"""
     # note: this is a pass-filter (True if item should remain)
     ice, eng = len(ex["is"]), len(ex["en"])
-    if len(ice) <= min_count or len(eng) <= min_count:
-        return (ice <= eng * ratio_below_min) and (eng <= ice * ratio_below_min)
-    return (ice <= eng * ratio_above_min) and (eng <= ice * ratio_above_min)
+    recip_ratio_below_min = safe_div(1, ratio_below_min)
+    if ice < min_count or eng < min_count:
+        return (
+            (recip_ratio_below_min * eng <= ice <= ratio_below_min * eng)
+            and (recip_ratio_below_min * ice <= eng <= ratio_below_min * ice)
+        )
+    recip_ratio_above_min = safe_div(1, ratio_above_min)
+
+    return (
+        (recip_ratio_above_min * eng <= ice <= ratio_above_min * eng)
+        and (recip_ratio_above_min * ice <= eng <= ratio_above_min * ice)
+    )
 
 
 @register_filter
@@ -365,32 +374,42 @@ def strict_sentence_length_ratio(ex):
     return _sentence_length_ratio(ex, ratio_below_min=1.5, min_count=0)
 
 
-@register_filter
-def subtoken_count_ratio(ex):
+def _subtoken_count_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_count=3):
+    """Same as _sentence_length_ratio, but at the subtoken level"""
     if not T2T_AVAILABLE:
         return ex
     enc = get_or_initialize_encoder()
     ice = len(enc.encode(ex["is"]))
     eng = len(enc.encode(ex["en"]))
-    # ice > n implies ice < k * eng is equivalent to
-    MIN_COUNT = 4
-    if ice < MIN_COUNT or eng < MIN_COUNT:
-        return True
+    recip_ratio_below_min = safe_div(1, ratio_below_min)
+    if ice < min_count or eng < min_count:
+        return (
+            (recip_ratio_below_min * eng <= ice <= ratio_below_min * eng)
+            and (recip_ratio_below_min * ice <= eng <= ratio_below_min * ice)
+        )
+    recip_ratio_above_min = safe_div(1, ratio_above_min)
+    return (
+        (recip_ratio_above_min * eng <= ice <= ratio_above_min * eng)
+        and (recip_ratio_above_min * ice <= eng <= ratio_above_min * ice)
+    )
 
-    res = (0.5 * ice < eng) and (0.5 * eng < ice)
-    return res
+
+@register_filter
+def subtoken_count_ratio(ex, min_count=4):
+    return _subtoken_count_ratio(ex, ratio_below_min=float("inf"), ratio_above_min=2.0, min_count=min_count)
 
 
 @register_filter
 def case_mismatch(ex):
     ice, eng = ex["is"], ex["en"]
-    return ice.isupper() ^ eng.isupper()
+    return not (ice.isupper() ^ eng.isupper())  # xor
 
 
 @register_filter
 def digit_mismatch(ex):
     prog = RegexCache.compile_rx(r"\D+")
     # Remove non-digit characters, group consecutive numbers, filter empty string
+    # TODO: Make clock references pass ('1 pm' vs 'kl. eitt')
     ice = [w for w in prog.sub(" ", ex["is"]).strip(" ").split(" ") if w]
     eng = [w for w in prog.sub(" ", ex["en"]).strip(" ").split(" ") if w]
     dice = collections.Counter(ice)
@@ -409,31 +428,31 @@ def only_even_quotes(ex):
 
 
 @register_filter
-def abs_min_string_edit(ex):
+def abs_min_string_edit(ex, min_dist=3):
     ice, eng = ex["is"], ex["en"]
     dist = editdistance.eval(ice, eng)
-    return dist >= 3
+    return dist >= min_dist
 
 
 @register_filter
-def rel_min_string_edit(ex):
+def rel_min_string_edit(ex, min_ratio=0.10):
     ice, eng = ex["is"], ex["en"]
     num_edits = editdistance.eval(ice, eng)
     lengths = [len(ice), len(eng)]
-    min_ratio = safe_div(num_edits, min(lengths))
-    max_ratio = safe_div(num_edits, max(lengths))
-    return (max_ratio >= 0.10) and (min_ratio >= 0.10)
+    min_edits = safe_div(num_edits, min(lengths))
+    max_edits = safe_div(num_edits, max(lengths))
+    return (max_edits >= min_ratio) and (min_edits >= min_ratio)
 
 
 @register_filter
-def abs_min_subtoken_edit(ex):
+def abs_min_subtoken_edit(ex, min_dist=2):
     if not T2T_AVAILABLE:
         return ex
     enc = get_or_initialize_encoder()
     ice = enc.encode(ex["is"])
     eng = enc.encode(ex["en"])
     dist = editdistance.eval(ice, eng)
-    return dist >= 2
+    return dist >= min_dist
 
 
 @register_filter
@@ -496,13 +515,13 @@ def bullet_mismatch(ex):
 
 
 @register_filter
-def max_word_length(ex):
+def max_word_length(ex, max_word_length=50):
     ice, eng = ex["is"], ex["en"]
     word_prog = RegexCache.compile_rx(r"\b\w+\b")
     ice_words = word_prog.findall(ice)
     eng_words = word_prog.findall(eng)
-    max_ice_len = 50
-    max_eng_len = 50
+    max_ice_len = max_word_length
+    max_eng_len = max_word_length
     return (
         max(len(w) for w in ice_words) <= max_ice_len
         and max(len(w) for w in eng_words) <= max_eng_len
@@ -542,6 +561,10 @@ class Gather:
         # This depends on the data structure the gatherer uses
         raise NotImplementedError
 
+    @classmethod
+    def _file_path(cls):
+        return os.path.join(_SCRIPT_DIR, f"{cls.__name__}.json")
+
 
 class MinFrequency(Gather):
 
@@ -555,9 +578,7 @@ class MinFrequency(Gather):
         if cls._store is not None:
             return
         try:
-            os.makedirs(_TMP_DIR, exist_ok=True)
-            path = os.path.join(_TMP_DIR, cls.__name__)
-            with open(path, "r", encoding="utf8") as fh:
+            with open(cls._file_path(), "r", encoding="utf8") as fh:
                 cls._prev_store = json.load(fh)
         except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
             pass
@@ -566,9 +587,7 @@ class MinFrequency(Gather):
     @classmethod
     def save_to_file(cls):
         try:
-            os.makedirs(_TMP_DIR, exist_ok=True)
-            path = os.path.join(_TMP_DIR, cls.__name__)
-            with open(path, "w", encoding="utf8") as fh:
+            with open(cls._file_path(), "w", encoding="utf8") as fh:
                 json.dump(cls._store, fh, indent=2)
         except FileNotFoundError:
             pass
@@ -608,7 +627,7 @@ class MinFrequency(Gather):
 def wrong_quotes(ex):
     ice, eng = ex["is"], ex["en"]
 
-    ALLOWED_QUOTES = set("'\"," + ICE_QUOTE.ALL)
+    ALLOWED_QUOTES = set("'\"," + "".join(ICE_QUOTE.ALL))
     DISALLOWED_QUOTES = set(QUOTE_LIKE).difference(ALLOWED_QUOTES)
 
     chars_ex = set(ice)
@@ -757,7 +776,7 @@ class Pipeline:
                 name=name,
                 count=count,
                 pct=100 * safe_div(count, total),
-                rel=100 * safe_div(count, filtered),
+                rel=100 * safe_div(count, num_filtered),
             )
 
             transform_msg = "{indent}{name:<30s}  {count:>8d}  {pct:>5.2f}%".format(
