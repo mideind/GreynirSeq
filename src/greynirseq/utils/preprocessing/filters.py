@@ -194,8 +194,9 @@ def fix_ice_quotes(ex):
 
 @register_transformation
 def fix_improper_line_split(ex):
-    ice_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!eða|og)\w+\b)")  # pylint: disable=anomalous-backslash-in-string
-    eng_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!or|and)\w+\b)")  # pylint: disable=anomalous-backslash-in-string
+    # pylint: disable=anomalous-backslash-in-string
+    ice_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!eða|og)\w+\b)")
+    eng_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!or|and)\w+\b)")
     ice = ice_prog.sub(r"\1\2", ex["is"])
     eng = eng_prog.sub(r"\1\2", ex["en"])
     return {"is": ice, "en": eng}
@@ -411,7 +412,8 @@ def rel_min_string_edit(ex, min_ratio=0.10):
 def abs_min_subtoken_edit(ex, min_dist=2):
     if not T2T_AVAILABLE:
         return ex
-    enc = get_or_initialize_encoder()  # pylint: disable=assignment-from-no-return
+    # pylint: disable=assignment-from-no-return
+    enc = get_or_initialize_encoder()
     ice = enc.encode(ex["is"])
     eng = enc.encode(ex["en"])
     dist = editdistance.eval(ice, eng)
@@ -422,7 +424,8 @@ def abs_min_subtoken_edit(ex, min_dist=2):
 def rel_min_subtoken_edit(ex):
     if not T2T_AVAILABLE:
         return ex
-    enc = get_or_initialize_encoder()  # pylint: disable=assignment-from-no-return
+    # pylint: disable=anomalous-backslash-in-string
+    enc = get_or_initialize_encoder()
     ice = enc.encode(ex["is"])
     eng = enc.encode(ex["en"])
     num_edits = editdistance.eval(ice, eng)
@@ -444,7 +447,8 @@ def colon_mismatch(ex):
 def corrupt_symbol(ex):
     ice, eng = ex["is"], ex["en"]
     symbols = re.escape("?")
-    pat = r"\w[" + symbols + "]+\w"  # pylint: disable=anomalous-backslash-in-string
+    # pylint: disable=anomalous-backslash-in-string
+    pat = r"\w[" + symbols + "]+\w"
     prog = RegexCache.compile_rx(pat)
     found = prog.search(ice) or prog.search(eng)
     return not found
