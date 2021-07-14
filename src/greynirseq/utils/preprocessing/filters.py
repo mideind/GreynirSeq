@@ -194,8 +194,8 @@ def fix_ice_quotes(ex):
 
 @register_transformation
 def fix_improper_line_split(ex):
-    ice_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!eða|og)\w+\b)")
-    eng_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!or|and)\w+\b)")
+    ice_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!eða|og)\w+\b)")  # pylint: disable=anomalous-backslash-in-string
+    eng_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!or|and)\w+\b)")  # pylint: disable=anomalous-backslash-in-string
     ice = ice_prog.sub(r"\1\2", ex["is"])
     eng = eng_prog.sub(r"\1\2", ex["en"])
     return {"is": ice, "en": eng}
@@ -274,7 +274,7 @@ def null_sentence(ex):
 @register_filter
 def quote_inside_word(ex):
     # TODO(haukurb): gather file ids from this filter
-    prog = RegexCache.compile_rx(r'\w+"\w')
+    prog = RegexCache.compile_rx(r'\w+"\w')  # pylint: disable=anomalous-backslash-in-string
     has_error = prog.search(ex["is"]) or prog.search(ex["en"])
     return not has_error
 
@@ -444,7 +444,7 @@ def colon_mismatch(ex):
 def corrupt_symbol(ex):
     ice, eng = ex["is"], ex["en"]
     symbols = re.escape("?")
-    pat = r"\w[" + symbols + "]+\w"
+    pat = r"\w[" + symbols + "]+\w"  # pylint: disable=anomalous-backslash-in-string
     prog = RegexCache.compile_rx(pat)
     found = prog.search(ice) or prog.search(eng)
     return not found
