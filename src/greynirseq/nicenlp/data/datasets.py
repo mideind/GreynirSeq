@@ -89,10 +89,12 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
             numel = len(item) // 3
             seq_spans = item.reshape(numel, 3)[:, :2].tolist()
             seq_labels = item.reshape(numel, 3)[:, 2].tolist()
+            assert all(i > 3 for i in seq_labels), f"Unknown label in sequence {index}"
             seq_labels = [self.label_dictionary.symbols[l_idx] for l_idx in seq_labels]
 
             new_seq_spans, seq_labels = self.rebinarize_fn(seq_spans, seq_labels)
             new_seq_labels = [self.label_dictionary.index(label) for label in seq_labels]
+            assert all(i > 3 for i in new_seq_labels), f"Unknown label in sequence {index}"
             if self.return_spans:
                 return torch.tensor(new_seq_spans).view(-1)
             return torch.tensor(new_seq_labels)
@@ -297,15 +299,6 @@ class NumWordsDataset(BaseWrapperDataset):
 
     def __getitem__(self, index: int):
         word_starts = [self.is_word_initial.get(int(v), 1) for v in self.dataset[index][self.start_offset : -1]]  # noqa
-
-        # LEGACY hack
-        # try:
-        #     word_starts[0] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
-        # except:
-        #     print("WORDS_STARTS", word_starts)
-        #     print("OFFSET", self.start_offset)
-        #     print("INDEX", index)
-        #     raise
         return torch.tensor(sum(word_starts)).long()
 
 

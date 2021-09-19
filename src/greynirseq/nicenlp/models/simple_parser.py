@@ -14,6 +14,8 @@ from fairseq.modules import LayerNorm
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
+import pyximport; pyximport.install()
+
 import greynirseq.nicenlp.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.data.datasets import (
@@ -82,20 +84,20 @@ class SimpleParserModel(RobertaModel):
                 for p in m.parameters():
                     p.requires_grad = False
 
-        sentence_encoder = self.decoder.sentence_encoder
+        sentence_encoder = self.encoder.sentence_encoder
 
         # Not freezing embeddings degrades result according to multiple papers (e.g. Kitaev)
         freeze_module_params(sentence_encoder.embed_tokens)
-        freeze_module_params(sentence_encoder.segment_embeddings)
         freeze_module_params(sentence_encoder.embed_positions)
-        freeze_module_params(sentence_encoder.emb_layer_norm)
+        freeze_module_params(sentence_encoder.layernorm_embedding)
 
         for layer in range(args.n_trans_layers_to_freeze):
             freeze_module_params(sentence_encoder.layers[layer])
 
+        _num_embeddings, embed_dim = sentence_encoder.embed_tokens.weight.shape
         self.task = task
         self.task_head = ChartParserHead(
-            sentence_encoder.embedding_dim,
+            embed_dim,
             self.task.num_nterm_cats,
             self.args.pooler_dropout,
         )
@@ -121,12 +123,12 @@ class SimpleParserModel(RobertaModel):
         if not hasattr(args, "max_positions"):
             args.max_positions = args.tokens_per_sample
 
-        encoder = RobertaEncoder(args, task.source_dictionary)
+        encoder = RobertaModel.build_model(args, task).encoder
+
         return cls(args, encoder, task)
 
     def forward(self, src_tokens, features_only=False, return_all_hiddens=False, **kwargs):
-        x, _extra = self.decoder(src_tokens, features_only, return_all_hiddens=True, **kwargs)
-        x = x.transpose(0, 1)
+        x, _extra = self.encoder(src_tokens, features_only, return_all_hiddens=True, **kwargs)
         _, _, nchannels = x.shape
         mask = kwargs["word_mask_w_bos"]
         words_w_bos = x.masked_select(mask.unsqueeze(-1).bool()).reshape(-1, nchannels)
@@ -186,7 +188,7 @@ class SimpleParserHubInterface(RobertaHubInterface):
         word_mask_w_bos = sample["net_input"]["word_mask_w_bos"]
 
         # get roberta features
-        x, _extra = self.model.decoder(tokens, features_only=True, return_all_hiddens=False)
+        x, _extra = self.model.encoder(tokens, features_only=True, return_all_hiddens=False)
 
         # use first bpe token of each "word" as contextual word vectors
         words_w_bos = x.masked_select(word_mask_w_bos.unsqueeze(-1).bool()).reshape(-1, self.in_features)

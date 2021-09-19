@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
 # Built on top of fairseqs fairseq_cli/preprocess.py
+
 # flake8: noqa
 
 """
@@ -19,8 +23,7 @@ from fairseq import options, tasks, utils
 from fairseq.binarizer import Binarizer
 from fairseq.data import Dictionary, indexed_dataset
 
-# from . import multi_span_prediction_task
-from greynirseq.nicenlp.tasks import multi_span_prediction_task  # pylint: disable=no-name-in-module
+from greynirseq.nicenlp.tasks import parser_task  # pylint: disable=no-name-in-module
 
 try:
     from icecream import ic
@@ -306,8 +309,11 @@ def make_parse_labelled_spans(label_dictionary, label_schema):
 
     def parse_labelled_spans(line):
         items = line.strip().split()
-        assert len(items) % 3 == 0, "Expected labelled span items to be multiple of 3"
-        parsed_spans = torch.tensor(len(items)).int()
+        try:
+            assert len(items) % 3 == 0, "Expected labelled span items to be multiple of 3"
+        except Exception as e:
+            breakpoint()
+        parsed_spans = torch.zeros(len(items), dtype=torch.int)
         for span_idx in range(len(items) // 3):
             span_start, span_end, span_label = items[3 * span_idx : 3 * span_idx + 3]
             parsed_spans[3 * span_idx + 0] = int(span_start)

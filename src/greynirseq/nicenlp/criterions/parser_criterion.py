@@ -18,11 +18,15 @@ from fairseq.data import Dictionary
 from fairseq.models import FairseqModel
 from torch import LongTensor, Tensor
 
+import pyximport; pyximport.install()
+
 import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
-import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
+import greynirseq.nicenlp.utils.constituency.greynir_utils_new as greynir_utils
 import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
-from greynirseq.utils.types import Numeric  # pylint: disable=no-name-in-module
+
+
+Numeric = Union[int, float, Tensor]
 
 
 def gen_2d_diags(chart_width: Union[int, LongTensor]):  # pylint: disable=unsubscriptable-object

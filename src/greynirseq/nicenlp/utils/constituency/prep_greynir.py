@@ -1,26 +1,9 @@
+#!/usr/bin/env python3
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
 # flake8: noqa
-
-"""
-Items:
-- POS and Constituency parsing
-- Consituency featuers
-- Consituency featuers
-- Probing
-
-
-Probing task
-    - BigramShift
-    - Coordination Inversion
-    - Depth
-    - Length
-    - ObjNumber
-    - OddManOut
-    - SubjNumber
-    - Tense
-    - TopConst
-    - WordContent
-
-"""
 
 import code
 import json
@@ -37,13 +20,6 @@ import tokenizer
 
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
 
 @click.group()
 def main():
@@ -52,23 +28,22 @@ def main():
 
 @main.command()
 @click.argument("input_file", type=click.File("r"))
-@click.argument("text_file", type=click.File("w"))
-@click.argument("term_file", type=click.File("w"))
-@click.argument("nonterm_file", type=click.File("w"))
+@click.argument("text_file", type=click.File("w", lazy=True))
+@click.argument("term_file", type=click.File("w", lazy=True))
+@click.argument("nonterm_file", type=click.File("w", lazy=True))
 @click.option("--sep", default="<sep>", type=str)
 @click.option("--merge/--no-merge", default=True)
-@click.option("--anno/--no-anno", default=False)
 @click.option("--seed", type=int, default=1)
-@click.option("--include-null/--no-include-null", default=True)
-@click.option("--simplified/--no-simplified", default=False)
-@click.option("--psd", default=False)
-def export(input_file, text_file, nonterm_file, term_file, sep, merge, anno, seed, include_null, simplified, use_new):
-    print("Extracting data from trees to: {}".format(str(Path(nonterm_file.name).parent)))
+@click.option("--binarize-trees/--no-binarize-trees", default=True)
+@click.option("--simplify/--no-simplify", default=False)
+@click.option("--append", default=False, is_flag=True)
+@click.option("--ignore-errors", default=False, is_flag=True)
+@click.option("--error-log", type=click.File("w"))
+@click.option("--append-errors", default=False, is_flag=True)
+@click.option("--limit", default=-1, type=int)
+def export(input_file, text_file, nonterm_file, term_file, sep, merge, seed, binarize_trees, simplify, append, ignore_errors, error_log, append_errors, limit):
+    print(f"Extracting data from {input_file.name} to: {Path(nonterm_file.name).parent}")
     random.seed(seed)
-
-    converter = greynir_utils.Node.from_simple_tree
-    if anno:
-        converter = greynir_utils.Node.from_anno_dict
 
     label_sep = "\t"
     nonterm_sep, term_sep, text_sep = "\n", "\n", "\n"
@@ -76,27 +51,38 @@ def export(input_file, text_file, nonterm_file, term_file, sep, merge, anno, see
         label_sep, nonterm_sep, text_sep = " ", " ", " "
         term_sep = " {} ".format(sep)
 
-    def generator_old(input_file):
-        for _jline_idx, jline in enumerate(input_file):
-            tree = json.loads(jline)
-            tree = converter(tree)
-            yield tree
+    num_skipped = 0
+    tree_gen = greynir_utils.Node.from_psd_file_obj(input_file, ignore_errors=ignore_errors, limit=limit)
 
-    print("Using psd reader")
-    if use_new:
-        tree_gen = greynir_utils.Node.from_psd_file_obj(input_file, limit=None)
-    else:
-        tree_gen = generator_old(input_file)
+    if append_errors:
+        error_log.mode = "a"
+    if append:
+        nonterm_file.mode = "a"
+        term_file.mode = "a"
+        text_file.mode = "a"
 
-    for _tree_idx, tree in enumerate(tree_gen):
-        tree.split_multiword_tokens()
-        tree = tree.collapse_unary()
-        # We binarize on export so that the length of serialized trees is the same
-        # after rebinarization (assertion constraint in parallel dataset workers)
-        tree = tree.binarize()
+    for _tree_idx, (tree, tree_str) in enumerate(tree_gen):
+        if tree is None and not ignore_errors:
+            num_skipped += 1
+            if error_log is not None:
+                error_log.write(tree_str)
+                error_log.write("\n")
+            continue
 
-        nterms, terms = tree.labelled_spans(include_null=include_null, simplify=False)
+        try:
+            tree.split_multiword_tokens()
+            tree = tree.collapse_unary()
+            # We binarize on export so that the length of serialized trees is the same
+            # after rebinarization (assertion constraint in parallel dataset workers)
+            tree = tree.binarize()
 
+            nterms, terms = tree.labelled_spans(include_null=binarize_trees, simplify=simplify)
+        except Exception as _:
+            num_skipped += 1
+            if error_log is not None:
+                error_log.write(tree_str)
+                error_log.write("\n")
+            continue
         if not (nterms and terms):
             continue
 
@@ -118,16 +104,21 @@ def export(input_file, text_file, nonterm_file, term_file, sep, merge, anno, see
         term_file.write("\n")
         text_file.write(text_sep.join(text_output))
         text_file.write("\n")
+    if ignore_errors:
+        print(f"Skipped {num_skipped}/{_tree_idx + 1} trees ({round(100 * num_skipped/(_tree_idx + 1), 3)}%)")
 
 
 @main.command()
 @click.argument("output_file", type=click.File("w"))
-@click.option("--simplify/--no-simplify", default=True)
+@click.option("--simplify/--no-simplify", default=False)
 def dump_nonterm_schema(output_file, simplify):
+    simplified_type = "simplified" if simplify else "unsimplified"
+    print(f"Writing {simplified_type} nonterm schema to file: {output_file.name}")
     if simplify:
         obj = greynir_utils.make_simple_nonterm_labels_decl()
     else:
         obj = greynir_utils.make_nonterm_labels_decl()
+    obj["ignore_categories"] = []
     json.dump(obj, output_file, indent=4, ensure_ascii=False)
 
 

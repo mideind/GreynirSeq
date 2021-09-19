@@ -61,20 +61,6 @@ class ParserTask(FairseqTask):
                 (mutually exclusive labels)",
             required=True,
         )
-        parser.add_argument(
-            "--nonterm-weight",
-            default=1.0,
-            type=float,
-            help="weight to scale nonterminal loss",
-            required=True,
-        )
-        parser.add_argument(
-            "--term-weight",
-            default=1.0,
-            type=float,
-            help="weight to scale terminal loss",
-            required=False,
-        )
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
     def __init__(
@@ -87,6 +73,9 @@ class ParserTask(FairseqTask):
     ):
         super().__init__(args)
         self.dictionary = data_dictionary
+
+        if not hasattr(self, "args") and hasattr(self, "cfg"):
+            self.args = self.cfg
 
         self.nterm_dictionary = nterm_dict
         self.nterm_schema = nterm_schema
@@ -129,6 +118,7 @@ class ParserTask(FairseqTask):
         Args:
             filename (str): the filename
         """
+        assert Path(filename).exists(), f"Expected label_schema file at {filename}"
         label_schema = parse_label_schema(filename)
 
         return label_schema_as_dictionary(label_schema), label_schema
@@ -170,7 +160,7 @@ class ParserTask(FairseqTask):
     def load_dataset(self, split: str, combine: bool = False, **kwargs):
         """Load a given dataset split (e.g., train, valid, test)."""
 
-        inputs_path = Path(self.args.data) / "{split}".format(split=split)
+        inputs_path = Path(self.args.data) / f"{split}.text"
         src_tokens = data_utils.load_indexed_dataset(
             str(inputs_path),
             self.source_dictionary,
