@@ -151,7 +151,7 @@ class ParserCriterion(FairseqCriterion):
 
         # extract targets from padded inputs
         gold_lmask = make_gold_label_mask(sample, nterm_dict_idx_to_vec_idx, ncats_nterm).type_as(scores)
-        null_leaf_dict_idx = model.task.nterm_dictionary.leaf()
+        null_leaf_dict_idx = model.task.nterm_dictionary.leaf_index
 
         _, best_lspans, _best_mask, best_lmask = chart_parser.parse_many(scores.cpu().detach(), nwords.cpu())
 

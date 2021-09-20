@@ -12,6 +12,7 @@ from fairseq.data.nested_dictionary_dataset import _unflatten
 from torch import LongTensor, Tensor
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
+from greynirseq.nicenlp.utils.constituency.greynir_utils import rebinarize as rebinarize_span_labels
 
 
 class LabelledSpanDataset(BaseWrapperDataset):
@@ -43,7 +44,6 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
         cls,
         dataset: Dataset,
         label_dictionary: Dictionary,
-        rebinarize_fn=None,
         seed: int = 1,
     ):
         dataset = LRUCacheDataset(dataset)
@@ -52,14 +52,12 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
                 dataset,
                 label_dictionary,
                 return_spans=True,
-                rebinarize_fn=rebinarize_fn,
                 seed=seed,
             ),
             DynamicLabelledSpanDataset(
                 dataset,
                 label_dictionary,
                 return_spans=False,
-                rebinarize_fn=rebinarize_fn,
                 seed=seed,
             ),
         )
@@ -68,14 +66,11 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
         self,
         dataset: Dataset,
         label_dictionary: Dictionary,
-        rebinarize_fn: Callable[[LongTensor, List[str]], Tuple[Tuple[int, int], str]] = None,
         return_spans: bool = None,
         seed: int = 1,
     ):
-        assert rebinarize_fn is not None, "Rebinarization function must be provided"
         assert isinstance(return_spans, bool), "Must provide boolean for return_spans"
         super().__init__(dataset)
-        self.rebinarize_fn = rebinarize_fn
         self.label_dictionary = label_dictionary
         self.return_spans = return_spans
         self.epoch = 0
@@ -92,7 +87,7 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
             assert all(i > 3 for i in seq_labels), f"Unknown label in sequence {index}"
             seq_labels = [self.label_dictionary.symbols[l_idx] for l_idx in seq_labels]
 
-            new_seq_spans, seq_labels = self.rebinarize_fn(seq_spans, seq_labels)
+            new_seq_spans, seq_labels = rebinarize_span_labels(seq_spans, seq_labels)
             new_seq_labels = [self.label_dictionary.index(label) for label in seq_labels]
             assert all(i > 3 for i in new_seq_labels), f"Unknown label in sequence {index}"
             if self.return_spans:

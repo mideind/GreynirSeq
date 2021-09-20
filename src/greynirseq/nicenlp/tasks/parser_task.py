@@ -101,8 +101,8 @@ class ParserTask(FairseqTask):
         # assert labels[0] == "NULL", "Expected label at index 0 to be 'NULL'"
         nterm_dict, nterm_schema = cls.load_label_dictionary(args, args.nonterm_schema)
         logger.info("[nterm] dictionary: {} types".format(len(nterm_dict)))
-        nterm_dict.null = lambda: nterm_dict.index(nterm_schema.null)
-        nterm_dict.leaf = lambda: nterm_dict.index(nterm_schema.null_leaf)
+        nterm_dict.null = nterm_dict.index(nterm_schema.null)
+        nterm_dict.leaf_index = nterm_dict.index(nterm_schema.null_leaf)
 
         return ParserTask(
             args,
@@ -188,7 +188,6 @@ class ParserTask(FairseqTask):
         target_spans, nterm_cats = DynamicLabelledSpanDataset.make_both(
             labelled_spans,
             self.nterm_dictionary,
-            rebinarize_fn=greynir_utils.rebinarize,
             seed=self.args.seed,
         )
 
