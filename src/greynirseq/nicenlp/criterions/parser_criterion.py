@@ -29,16 +29,6 @@ from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_
 Numeric = Union[int, float, Tensor]
 
 
-def gen_2d_diags(chart_width: Union[int, LongTensor]):  # pylint: disable=unsubscriptable-object
-    """Generator for all diagonal positions in a 2d matrix, starting with right of center diagonal from pos (0,1),
-    then diagonal starting at (0,2), etc."""
-    for span_length in range(1, chart_width):
-        for start in range(chart_width - span_length):
-            ii = start
-            jj = start + span_length
-            yield (ii, jj)
-
-
 ParseResult = namedtuple("ParseResult", ["score", "spans", "labels", "masked_lchart"])
 ParseStats = namedtuple("ParseStats", ["ncorrect", "ncorrect_spans", "npred", "ngold"])
 
@@ -55,19 +45,19 @@ def compute_parse_stats(
     npred, ngold = 0, 0
     ncorrect_lbls, ncorrect_spans = 0, 0
 
-    for idx in range(ntargets.numel()):
-        seq_ntargets = ntargets[idx]
-        seq_targets = mapped_target_labels[idx, :seq_ntargets]
-        seq_tgt_ii = target_spans[idx, 0, :seq_ntargets]
-        seq_tgt_jj = target_spans[idx, 1, :seq_ntargets]
+    for seq_idx in range(ntargets.numel()):
+        seq_ntargets = ntargets[seq_idx]
+        seq_targets = mapped_target_labels[seq_idx, :seq_ntargets]
+        seq_tgt_ii = target_spans[seq_idx, 0, :seq_ntargets]
+        seq_tgt_jj = target_spans[seq_idx, 1, :seq_ntargets]
         nrows, ncols = seq_tgt_ii.max() + 1, seq_tgt_jj.max() + 1
 
         tgt_chart = seq_targets.new_full((nrows, ncols), fill_value=pad_val, dtype=torch.long)
         tgt_chart[seq_tgt_ii, seq_tgt_jj] = seq_targets
-        lchart = lmask[idx, :nrows, :ncols, :].max(dim=-1)[1]
+        lchart = lmask[seq_idx, :nrows, :ncols, :].max(dim=-1)[1]
 
         tgt_mask = tgt_chart.ne(pad_val)
-        pred_mask = lmask[idx, :nrows, :ncols, :].any(dim=-1).bool()
+        pred_mask = lmask[seq_idx, :nrows, :ncols, :].any(dim=-1).bool()
         for ignore_idx in ignore_idxs or []:
             tgt_mask *= tgt_chart.ne(ignore_idx)
             pred_mask *= lchart.ne(ignore_idx)
@@ -172,12 +162,11 @@ class ParserCriterion(FairseqCriterion):
         # is so we can clamp each sentence separately
         best_lmask = best_lmask.to(scores.device).type_as(scores)
         bad_lmask = bad_lmask.to(scores.device).type_as(scores)
-        best_lbl_chart = best_lmask.long().max(-1)[1]
+        best_lbl_chart = best_lmask.long().max(-1).indices
 
-        ignore_leaves_mask = best_lmask.new_ones(*best_lbl_chart.shape)
-        ignore_leaves_mask[:, torch.arange(nwords.max()), torch.arange(1, 1 + nwords.max())] = 0
-        illegal_leaves_mask = (best_lbl_chart * ignore_leaves_mask) == null_leaf_dict_idx
-        illegal_leaves_loss = span_logits[:, :, :, null_leaf_dict_idx].masked_select(illegal_leaves_mask).sum()
+        illegal_leaves_mask = best_lmask.new_ones(*best_lbl_chart.shape, dtype=torch.bool)
+        illegal_leaves_mask[:, torch.arange(nwords.max()), torch.arange(1, 1 + nwords.max())] = 0
+        illegal_leaves_loss = span_logits[:, :, :, null_leaf_dict_idx].masked_select(illegal_leaves_mask).clamp(0).sum()
 
         tree_scores_best = (best_lmask * scores).sum_to_size(bsz, 1, 1, 1).squeeze()
         tree_scores_bad = (bad_lmask * scores).sum_to_size(bsz, 1, 1, 1).squeeze()

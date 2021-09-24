@@ -294,7 +294,7 @@ class NumWordsDataset(BaseWrapperDataset):
 
     def __getitem__(self, index: int):
         word_starts = [self.is_word_initial.get(int(v), 1) for v in self.dataset[index][self.start_offset : -1]]  # noqa
-        return torch.tensor(sum(word_starts)).long()
+        return sum(word_starts)
 
 
 class NumSpanDataset(BaseWrapperDataset):

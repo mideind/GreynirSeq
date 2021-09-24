@@ -44,7 +44,9 @@ class Node:
 
     @property
     def text(self):
-        pass
+        if self.terminal:
+            return self.text
+        return " ".join([node.text for node in self.children])
 
     @property
     def span(self):
@@ -175,12 +177,16 @@ class Node:
         return new_root
 
     @classmethod
-    def convert_to_nltk_tree(cls, node, simplify_leaves=False):
+    def convert_to_nltk_tree(cls, node, simplify_leaves=False, html_escape=False):
         if node.terminal:
             text = node.text.replace("(", r"\(").replace(")", r"\)")
+            if html_escape:
+                text = node.text.replace(r"\(", "&#40;").replace(r"\)", "&#41;")
             nltk_children = [text]
             if node.lemma is not None:
                 lemma = node.lemma.replace("(", r"\(").replace(")", r"\)")
+                if html_escape:
+                    lemma = lemma.replace(r"\(", "&#40;").replace(r"\)", "&#41;")
                 lemma_node = nltk.Tree("lemma", [lemma])
                 nltk_children.append(lemma_node)
             tag = node.tag
@@ -188,14 +194,33 @@ class Node:
                 tag = node.category
             return NltkTree(tag, nltk_children)
         return NltkTree(
-            node.tag, [cls.convert_to_nltk_tree(child, simplify_leaves=simplify_leaves) for child in node.children]
+            node.tag, [
+                cls.convert_to_nltk_tree(child, simplify_leaves=simplify_leaves, html_escape=html_escape)
+                for child in node.children
+            ]
         )
 
-    def as_nltk_tree(self, simplify_leaves=False):
-        return self.convert_to_nltk_tree(self, simplify_leaves=simplify_leaves)
+    @classmethod
+    def from_nltk_tree(cls, node):
+        if not isinstance(node, NltkTree):
+            assert isinstance(node, str)
+            assert False
+        label = node.label()
+        if label.islower():
+            new_node = TerminalNode(node[0], label)
+            assert len(node) == 1
+            return new_node
+        new_node = NonterminalNode(label, children=[
+            cls.from_nltk_tree(child) for child in node
+        ])
+        return new_node
 
-    def pretty_print(self, stream=None, simplify_leaves=False):
-        tree = self.as_nltk_tree(simplify_leaves=simplify_leaves)
+
+    def as_nltk_tree(self, simplify_leaves=False, html_escape=False):
+        return self.convert_to_nltk_tree(self, simplify_leaves=simplify_leaves, html_escape=html_escape)
+
+    def pretty_print(self, stream=None, simplify_leaves=False, html_escape=False):
+        tree = self.as_nltk_tree(simplify_leaves=simplify_leaves, html_escape=html_escape)
         tree.pretty_print(stream=stream)
         del tree
 
@@ -493,10 +518,10 @@ class Node:
         result.append(self.tag)
         return result
 
-    def uniform(self, nonterminal="A", allow_null=False):
+    def uniform(self, nonterminal="A", allow_null=True):
         if self.terminal:
             return self
-        new_children = [child.uniform(label, allow_null) for child in self.children]
+        new_children = [child.uniform(nonterminal, allow_null) for child in self.children]
         new_label = nonterminal
         if allow_null and self.nonterminal == NULL_CAT_NONTERM:
             new_label = NULL_CAT_NONTERM
@@ -1122,7 +1147,7 @@ def rebinarize(spans, labels):
     tree = Node.from_labelled_spans(spans, labels)
     tree = tree.debinarize()
     new_tree = tree.binarize()
-    nterms, terms = new_tree.labelled_spans(include_null=True, simplify=False)
+    nterms, _terms = new_tree.labelled_spans(include_null=True, simplify=False)
     new_spans, new_labels = zip(*[((it.span[0], it.span[1]), it.label) for it in nterms])
     return new_spans, new_labels
 
