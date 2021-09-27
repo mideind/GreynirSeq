@@ -6,7 +6,7 @@ from greynirseq.nicenlp.criterions import (
     parser_criterion,
 )
 from greynirseq.nicenlp.data import datasets
-from greynirseq.nicenlp.models import multiclass, multilabel, simple_parser
+from greynirseq.nicenlp.models import multiclass, multilabel, simple_parser, self_attentive_parser
 from greynirseq.nicenlp.tasks import (
     parser_task,
     multiclass_token_classification_task,
