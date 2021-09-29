@@ -10,7 +10,7 @@ The input to the parser is a text file (`${INPUT_FILE}`) where each line contain
 The output file will be located in `${OUTPUT_DIR}/output.txt` . To run the parser use the following:
 
 ```
-docker run --volume ${INPUT_FILE}:/data/input.txt --volume ${OUTPUT_DIR}:/data/ --tty --interactive mideind/neural-parser
+docker run --volume ${INPUT_FILE}:/data/input.txt --volume ${OUTPUT_DIR}:/data/ mideind/neural-parser
 ```
 
 ---
@@ -27,5 +27,5 @@ Inntakið í þáttarann er texta skrá (`${INPUT_FILE}`) þar sem hver lína ge
 Til að keyra þáttarann skal nota:
 
 ```
-docker run --volume ${INPUT_FILE}:/data/input.txt --volume ${OUTPUT_DIR}:/data/ --tty --interactive mideind/neural-parser
+docker run --volume ${INPUT_FILE}:/data/input.txt --volume ${OUTPUT_DIR}:/data/ mideind/neural-parser
 ```
