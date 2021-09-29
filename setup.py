@@ -42,7 +42,7 @@ setup(
                 include_dirs=[numpy.get_include()],
             ),
             Extension(
-                name="greynirseq.nicenlp.tree_dist",
+                name="greynirseq.nicenlp.utils.constituency.tree_dist",
                 sources=["src/greynirseq/nicenlp/utils/constituency/tree_dist.pyx"],
                 language="c++",
                 extra_compile_args=["-fopenmp"],

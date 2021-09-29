@@ -17,7 +17,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 import pyximport; pyximport.install()
 
-import greynirseq.nicenlp.chart_parser as chart_parser  # pylint: disable=no-name-in-module
+import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.data.datasets import (
     LabelledSpanDataset,

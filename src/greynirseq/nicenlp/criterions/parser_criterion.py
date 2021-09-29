@@ -21,7 +21,7 @@ from torch import LongTensor, Tensor
 import pyximport; pyximport.install()
 
 import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
-import greynirseq.nicenlp.utils.constituency.greynir_utils_new as greynir_utils
+import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
 

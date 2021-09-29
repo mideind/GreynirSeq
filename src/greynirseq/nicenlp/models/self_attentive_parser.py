@@ -19,7 +19,7 @@ from fairseq.data.data_utils import lengths_to_padding_mask
 
 import pyximport; pyximport.install()
 
-import greynirseq.nicenlp.chart_parser as chart_parser  # pylint: disable=no-name-in-module
+import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.data.datasets import (
     LabelledSpanDataset,

@@ -3,7 +3,7 @@
 # export parse trees as labelled spans
 #python github-greynirseq/src/greynirseq/nicenlp/utils/constituency/prep_greynir_new.py export gc01.gld throwaway/text throwaway/term throwaway/nonterm --binarize-trees
 WDIR=/data/scratch/haukur/parser
-EXPORTER=${WDIR}/github-greynirseq/src/greynirseq/nicenlp/utils/constituency/prep_greynir_new.py
+EXPORTER=${WDIR}/github-greynirseq/src/greynirseq/nicenlp/utils/constituency/prep_greynir.py
 DATA_BASE=${WDIR}/data
 DATA_DEBUG=${DATA_BASE}/debug
 
