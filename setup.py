@@ -34,7 +34,7 @@ setup(
     ext_modules=cythonize(
         [
             Extension(
-                name="greynirseq.nicenlp.chart_parser",
+                name="greynirseq.nicenlp.utils.constituency.chart_parser",
                 sources=["src/greynirseq/nicenlp/utils/constituency/chart_parser.pyx"],
                 language="c++",
                 extra_compile_args=["-fopenmp"],
