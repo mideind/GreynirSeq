@@ -1,5 +1,10 @@
 #!python
 #cython: language_level=3
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
+
 import cython
 from cython.parallel import parallel, prange
 

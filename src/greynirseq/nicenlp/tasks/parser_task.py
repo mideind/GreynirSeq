@@ -2,13 +2,10 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-# flake8: noqa
 
 import argparse
-import json
 import logging
 import os
-from collections import OrderedDict, namedtuple
 from pathlib import Path
 from typing import List
 
@@ -23,13 +20,11 @@ from fairseq.data import (
     PrependTokenDataset,
     RightPadDataset,
     SortDataset,
-    TruncateDataset,
     data_utils,
     encoders,
 )
 from fairseq.tasks import FairseqTask, register_task
 
-import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.data.datasets import (
     DynamicLabelledSpanDataset,
     NestedDictionaryDatasetFix,

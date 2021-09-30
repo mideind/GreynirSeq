@@ -1,41 +1,31 @@
-# flake8: noqa
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
 
-import itertools
 import logging
 from typing import List
 
+import pyximport
 import torch
-import torch.nn.functional as F
-from fairseq import utils
-from fairseq.data import BaseWrapperDataset, NestedDictionaryDataset, NumelDataset, RightPadDataset
+from fairseq.data.data_utils import lengths_to_padding_mask
 from fairseq.models import register_model, register_model_architecture
 from fairseq.models.roberta.hub_interface import RobertaHubInterface
-from fairseq.models.roberta.model import RobertaEncoder, RobertaModel, base_architecture
-from fairseq.modules import LayerNorm
+from fairseq.models.roberta.model import RobertaModel, base_architecture
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
-from fairseq.data.data_utils import lengths_to_padding_mask
-# from fairseq.modules.transformer_sentence_encoder import init_bert_params
-
-import pyximport; pyximport.install()
 
 import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
-import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
-from greynirseq.nicenlp.data.datasets import (
-    LabelledSpanDataset,
-    NestedDictionaryDatasetFix,
-    NestedDictionaryDatasetFix2,
-    NumSpanDataset,
-    ProductSpanDataset,
-    WordEndMaskDataset,
-)
+from greynirseq.nicenlp.models.simple_parser import ChartParserHead
+from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
-from greynirseq.nicenlp.utils.constituency import token_utils
-from greynirseq.nicenlp.models.simple_parser import ChartParserHead
+
+# from fairseq.modules.transformer_sentence_encoder import init_bert_params
+
+
+pyximport.install()
 
 logger = logging.getLogger(__name__)
-
 
 
 @register_model("icebert_parser")
@@ -55,7 +45,9 @@ class ParserModel(RobertaModel):
 
         layer = sentence_encoder.build_encoder_layer(args)
         if args.parser_layers > 0:
-            self.parser_layers = nn.ModuleList([sentence_encoder.build_encoder_layer(args) for _ in range(args.parser_layers)])
+            self.parser_layers = nn.ModuleList(
+                [sentence_encoder.build_encoder_layer(args) for _ in range(args.parser_layers)]
+            )
         else:
             self.parser_layers = None
 
@@ -114,7 +106,6 @@ class ParserModel(RobertaModel):
             batch_first=True,
         )
         word_padding_mask = lengths_to_padding_mask(nwords_w_bos)
-        wpm = word_padding_mask
 
         # B x T x C -> T x B x C
         x = words_w_bos_padded.transpose(0, 1)
@@ -180,16 +171,12 @@ class SimpleParserHubInterface(RobertaHubInterface):
             self.task.nterm_dictionary.string(cat_vec_idx_to_dict_idx[seq_lspans[:, 2].long()]).split(" ")
             for seq_lspans in lspans
         ]
-        spans = [
-            seq_lspans[:, :2] for seq_lspans in lspans
-        ]
+        spans = [seq_lspans[:, :2] for seq_lspans in lspans]
         src_tokens_unpadded = tokens[tokens != 1].split(sample["net_input"]["nsrc_tokens"].tolist())
         sentences_in_tokens = [self.decode(seq_tokens).strip().split(" ") for seq_tokens in src_tokens_unpadded]
         pred_trees = [
             Node.from_labelled_spans(seq_spans, seq_span_labels, sentence_tokens).debinarize()
-            for seq_spans, seq_span_labels, sentence_tokens in zip(
-                    spans, span_labels, sentences_in_tokens
-            )
+            for seq_spans, seq_span_labels, sentence_tokens in zip(spans, span_labels, sentences_in_tokens)
         ]
 
         return pred_trees, (lspans, span_labels, _lmask)
@@ -204,7 +191,9 @@ class SimpleParserHubInterface(RobertaHubInterface):
         return self.predict_sample(sample)
 
     def prepare_sentences(self, sentences: List[str]):
-        tokens = [self.encode(token_utils.tokenize_to_string(sentence, add_prefix_space=True)) for sentence in sentences]
+        tokens = [
+            self.encode(token_utils.tokenize_to_string(sentence, add_prefix_space=True)) for sentence in sentences
+        ]
         return self.task.prepare_tokens(tokens)
 
 

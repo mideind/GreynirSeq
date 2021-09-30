@@ -4,8 +4,6 @@
 # See the LICENSE file in the root of the project for terms of use.
 # Built on top of fairseqs fairseq_cli/preprocess.py
 
-# flake8: noqa
-
 """
 Data pre-processing: build vocabularies and binarize training data.
 """
@@ -15,27 +13,19 @@ import os
 import shutil
 import sys
 from collections import Counter
-from itertools import zip_longest
 from multiprocessing import Pool
 
 import torch
 from fairseq import options, tasks, utils
 from fairseq.binarizer import Binarizer
-from fairseq.data import Dictionary, indexed_dataset
-
-from greynirseq.nicenlp.tasks import parser_task  # pylint: disable=no-name-in-module
-
-try:
-    from icecream import ic
-
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
+from fairseq.data import indexed_dataset
 
 """
 example usage:
-python preprocess_labelled_spans.py --task multi_span_prediction --trainpref data/nonterm.gold --nonterm_suffix txt  --only-source
-
+    python preprocess_labelled_spans.py --only-source \
+    --trainpref data/nonterm.gold \
+    --nonterm_suffix txt \
+    --task multi_span_prediction
 """
 
 logging.basicConfig(
@@ -127,7 +117,6 @@ def main(args):
             pool.join()
             for worker_id in range(1, num_workers):
                 prefix = "{}{}".format(output_prefix, worker_id)
-                # temp_file_path = dataset_dest_prefix(args, prefix, None)
                 temp_file_path = "{}/{}".format(args.destdir, prefix)
                 ds.merge_file_(temp_file_path)
                 os.remove(indexed_dataset.data_file_path(temp_file_path))
@@ -309,10 +298,7 @@ def make_parse_labelled_spans(label_dictionary, label_schema):
 
     def parse_labelled_spans(line):
         items = line.strip().split()
-        try:
-            assert len(items) % 3 == 0, "Expected labelled span items to be multiple of 3"
-        except Exception as e:
-            breakpoint()
+        assert len(items) % 3 == 0, "Expected labelled span items to be multiple of 3"
         parsed_spans = torch.zeros(len(items), dtype=torch.int)
         for span_idx in range(len(items) // 3):
             span_start, span_end, span_label = items[3 * span_idx : 3 * span_idx + 3]
@@ -321,7 +307,7 @@ def make_parse_labelled_spans(label_dictionary, label_schema):
             encoded_label = label_dictionary.index(span_label)
             parsed_spans[3 * span_idx + 2] = encoded_label
             if not (0 <= encoded_label - label_dictionary.nspecial <= len(cat_set)) or span_label not in cat_set:
-                ic(
+                print(
                     (
                         span_label,
                         encoded_label,
@@ -337,7 +323,7 @@ def make_parse_labelled_spans(label_dictionary, label_schema):
             assert span_label in cat_set
             assert encoded_label - label_dictionary.nspecial <= len(cat_set)
             if encoded_label == label_dictionary.unk():
-                ic(span_label, line)
+                print(span_label, line)
         return parsed_spans
 
     return parse_labelled_spans

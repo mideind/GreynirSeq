@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
 
-# Assumes running inside docker container
+WDIR="/data/scratch/haukur/parser"
+DATA="${WDIR}/data/bin-finetune"
 
-MODEL=/model/checkpoint.pt
-DATA=/model/data
-INPUT_PATH=/data/input.txt
-OUTPUT_PATH=/data/output.txt
-
-python /github/greynirseq/src/greynirseq/nicenlp/examples/constituency_parsing/predict_file.py \
-    --data ${DATA} \
-    --checkpoint ${MODEL} \
-    --input-path ${INPUT_PATH} \
-    --output-path ${OUTPUT_PATH} \
+python github-greynirseq/src/greynirseq/nicenlp/examples/constituency_parsing/predict_file.py \
+    --data "${DATA}" \
+    --checkpoint "${WDIR}/checkpoints/pretrain-02/checkpoint30.pt" \
+    --input-path "${WDIR}/greynircorpus/testset/txt/greynir_corpus_00441.txt"
 

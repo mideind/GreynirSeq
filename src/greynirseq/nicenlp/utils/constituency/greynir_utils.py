@@ -1,22 +1,14 @@
-#!/usr/bin/env python3
 # Copyright (C) Miðeind ehf.
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-# flake8: noqa
 
-import json
-import re
-import time
-from collections import Counter, OrderedDict, namedtuple
-from operator import itemgetter
-from pprint import pprint
 import sys
+from collections import OrderedDict, namedtuple
 
 import nltk
 import numpy as np
 from nltk.tree import Tree as NltkTree
-
 from reynir import simpletree
 
 from greynirseq.nicenlp.utils.constituency import unary_branch_labels
@@ -97,7 +89,7 @@ class Node:
             if not tree_str.strip():
                 continue
             try:
-                reynir_tree =  simpletree.AnnoTree(tree_str).as_simple_tree()
+                reynir_tree = simpletree.AnnoTree(tree_str).as_simple_tree()
                 yield cls.from_simple_tree(reynir_tree), tree_str
             except Exception as exc:
                 print(f"Could not parse tree: \n{tree_str}")
@@ -108,7 +100,6 @@ class Node:
             if limit > 0 and num_trees_seen >= limit:
                 return
 
-
     @classmethod
     def from_simple_tree(cls, obj):
         if isinstance(obj, dict):
@@ -118,7 +109,6 @@ class Node:
     @classmethod
     def _from_simple_tree_inner(cls, obj):
         if obj.is_terminal:
-            cat = obj.cat
             term = obj.terminal_with_all_variants
             if obj.kind == "PUNCTUATION":
                 node = TerminalNode(obj.text, "grm")
@@ -194,10 +184,11 @@ class Node:
                 tag = node.category
             return NltkTree(tag, nltk_children)
         return NltkTree(
-            node.tag, [
+            node.tag,
+            [
                 cls.convert_to_nltk_tree(child, simplify_leaves=simplify_leaves, html_escape=html_escape)
                 for child in node.children
-            ]
+            ],
         )
 
     @classmethod
@@ -210,11 +201,8 @@ class Node:
             new_node = TerminalNode(node[0], label)
             assert len(node) == 1
             return new_node
-        new_node = NonterminalNode(label, children=[
-            cls.from_nltk_tree(child) for child in node
-        ])
+        new_node = NonterminalNode(label, children=[cls.from_nltk_tree(child) for child in node])
         return new_node
-
 
     def as_nltk_tree(self, simplify_leaves=False, html_escape=False):
         return self.convert_to_nltk_tree(self, simplify_leaves=simplify_leaves, html_escape=html_escape)
@@ -307,8 +295,6 @@ class Node:
         # if node.nonterminal and "NP-POSS" in node.nonterminal:
         #     import pdb; pdb.set_trace()
         start, end = node.span  # cache spans
-        # if start >= len(lemmas):
-        #     import pdb; pdb.set_trace()
         assert (start < len(lemmas)) or allow_partial
         if node.terminal and start < len(lemmas):
             start, _end = node.span
@@ -330,10 +316,6 @@ class Node:
     def add_lemmas(self, lemmas, allow_partial=False):
         return self._add_lemmas(self, lemmas, allow_partial=allow_partial)
 
-    def num_leaves(self):
-        start, end = node.span  # pylint: disable=undefined-variable
-        return end
-
     @classmethod
     def tree_to_spans(cls, tree, include_null=True, simplify=True):
         _ = tree.span  # compute and cache spans
@@ -354,12 +336,6 @@ class Node:
             tag = node.simple_label if simplify else node.tag
             lspan = LabelledSpan(node.span, tag, depth, node, None)
             nterms.append(lspan)
-
-            # if len(node.children) == 1:
-            #     traverse(node.children[0], depth=depth + 1, is_only_child=True)
-            # else:
-            #     for child in node.children:
-            #         traverse(child, depth=depth + 1, is_only_child=False)
 
             has_only_child = len(node.children) == 1
             for child in node.children:
@@ -939,33 +915,10 @@ def dedup_list(items):
 
 
 def make_nonterm_labels_decl():
-    # group_name_to_labels = {}
-    # label_cats = list(NONTERM_CATS)
-    # label_cats = []
-    # group_names = []
-    # category_to_group_names = dict((k, [k]) for k in NONTERM_SUFFIX.keys())
-
     nonterm_labels = list(NONTERM_CATS)
 
     for prefix, nt_with_suffixes in NONTERM_SUFFIX.items():
-        label_group = []
-        for nt_with_suffix in nt_with_suffixes:
-            nonterm_labels.append(nt_with_suffix)
-            # if "-" not in nt_with_suffix:
-            #     continue
-            # label = "ATTR-{}".format(nt_with_suffix)
-            # nonterm_labels.append(label)
-            # label_group.append(label)
-            # group_name_to_labels[prefix] = label_group
-
-    # group_names = list(group_name_to_labels)
-    # all_labels = list(label_cats)
-    # for label in nonterm_labels:
-    #     if label not in all_labels:
-    #         all_labels.append(label)
-    #         assert len(all_labels) == len(
-    #             set(all_labels)
-    #         ), "Expected no duplicate labels"
+        nonterm_labels.extend(nt_with_suffix)
 
     for extra in [
         unary_branch_labels.UNARY_BRANCH_LABELS,
@@ -974,7 +927,6 @@ def make_nonterm_labels_decl():
             nonterm_labels.append(composite_label)
 
     nonterm_labels = dedup_list(nonterm_labels)
-    # assert len(group_name_to_labels) >= len(label_cats)
     return {
         "category_to_group_names": {},
         "group_name_to_labels": {},
@@ -1035,7 +987,6 @@ def make_term_label_decl(sep="<sep>"):
             label_group.append(label)
         group_name_to_labels[gram_cat] = label_group
 
-    group_names = list(group_name_to_labels)
     all_labels = [sep]
     all_labels.extend(label_cats)
     for label in term_labels:
@@ -1123,10 +1074,6 @@ for extra in [
             continue
         ALL_LABELS.append(composite_label)
         NONTERM_LABELS.append(composite_label)
-        # if ">" in composite_label:
-        #     pass
-        # label_cat = composite_label.split("-")[0]
-        # LABEL_GROUP_NAME_TO_SUBLABELS[label_cat].append(composite_label)
 
 NONTERM_SUFFIXES_SIMPLIFIED = {
     "ADVP": ["ADVP"],
@@ -1187,8 +1134,8 @@ def split_flat_terminal(term):
     variants = {}
     cat = parts.pop(0)
 
-    case_control = []
-    if cat == "so" and not "lhþt" in term:
+    # case_control = []
+    if cat == "so" and "lhþt" not in term:
         first_var = parts[0]
         if first_var == "0":
             parts.pop(0)

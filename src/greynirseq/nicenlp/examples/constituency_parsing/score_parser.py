@@ -1,19 +1,15 @@
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
+
 from pathlib import Path
-import string
 
 import nltk
-import tokenizer
-from reynir import bintokenizer
-
-from greynirseq.nicenlp.utils.constituency.greynir_utils import Node, NonterminalNode, TerminalNode
-
 import parsingtestpipe.helpers as helpers
+import tokenizer
 
-try:
-    from icecream import ic
-    ic.configureOutput(includeContext=True)
-except ImportError:  # Graceful fallback if IceCream isn't installed.
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
+from greynirseq.nicenlp.utils.constituency.greynir_utils import Node, NonterminalNode
 
 
 def simplify_node_tree(tree):
@@ -41,7 +37,7 @@ def simplify_node_tree(tree):
     #     tree.pretty_print()
     tokenizer_tokens = [t for t in tokenizer.tokenize(tree.text) if t.txt]
     if len(tokenizer_tokens) == len(tree.leaves):
-        for leaf, tok  in zip(tree.leaves, tokenizer_tokens):
+        for leaf, tok in zip(tree.leaves, tokenizer_tokens):
             if tok.kind == tokenizer.TOK.PUNCTUATION and leaf.terminal in ("x", "null"):
                 leaf._terminal = "p"
             elif leaf.terminal == "null":
@@ -66,7 +62,6 @@ def simplify_filepaths(input_dir, output_dir, in_suffix):
         output_path = output_dir / input_path.relative_to(input_dir).with_suffix(".psd")
         output_path.parent.mkdir(exist_ok=True)
         print(f"Parsing {input_path}")
-        is_first = True
         with output_path.open("w", encoding="utf8") as out_fh:
             for tree_str in input_path.open("r").read().split("\n\n"):
                 # crude hack (until re-export)
@@ -74,14 +69,16 @@ def simplify_filepaths(input_dir, output_dir, in_suffix):
                 tree = nltk.tree.Tree.fromstring(tree_str)
                 tree = Node.from_nltk_tree(tree)
                 tree = simplify_node_tree(tree)
-                out_fh.write(tree.as_nltk_tree().pformat(margin=2**100).strip())
+                out_fh.write(tree.as_nltk_tree().pformat(margin=2 ** 100).strip())
                 out_fh.write("\n")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
+
     try:
-        import argcomplete
-    except ImportError as e:
+        import argcomplete  # noqa: F401
+    except ImportError as e:  # noqa: F841
         pass
     parser = argparse.ArgumentParser("Description")
 

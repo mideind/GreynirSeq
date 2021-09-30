@@ -4,14 +4,15 @@
 
 from collections import OrderedDict
 from functools import lru_cache
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple  # noqa: F401
 
 import torch
 from fairseq.data import BaseWrapperDataset, Dictionary, LRUCacheDataset, NestedDictionaryDataset, data_utils
 from fairseq.data.nested_dictionary_dataset import _unflatten
-from torch import LongTensor, Tensor
+from torch import Tensor
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
+
 from greynirseq.nicenlp.utils.constituency.greynir_utils import rebinarize as rebinarize_span_labels
 
 

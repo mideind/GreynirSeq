@@ -4,23 +4,23 @@ WDIR=/data/scratch/haukur/parser
 DATA_BASE="${WDIR}/data"
 
 SEED=1234
-TOTAL_NUM_UPDATES=200000 #
-WARMUP_UPDATES=1000     #  percent of the number of updates
-LR=5e-05                # Peak LR for polynomial LR scheduler.
-MAX_SENTENCES=50         # Batch size.
-ACCUM=1
+TOTAL_NUM_UPDATES=50000 #
+WARMUP_UPDATES=200 #  percent of the number of updates
+LR=1e-05 # Peak LR for polynomial LR scheduler.
+MAX_SENTENCES=32 # Batch size.
 
 # Pretrained model
-RESTORE_PATH=/data/models/icebert/icebert-base-igc-ic3-rmhvocab-IceBERT/checkpoint38.pt
-RESTORE_PATH=/data/models/icebert/icebert-first-rmh_different_vocab/icebert-base-36k/model.pt
+#RESTORE_PATH=/data/models/icebert/icebert-base-igc-ic3-rmhvocab-IceBERT/checkpoint38.pt
+#RESTORE_PATH=/data/scratch/haukur/parser/checkpoints/pretrain-02/checkpoint_1_4000.pt
+RESTORE_PATH=/data/scratch/haukur/parser/checkpoints/pretrainsilver.lr5e-05.ngpus1.accum1.bsz50.warmup1000.maxupdate200000/checkpoint_2_13000.pt
 ENCODER_JSON_PATH=/data/models/icebert/icebert-first-rmh_different_vocab/icebert-base-36k/icebert-bpe-vocab.json
 VOCAB_BPE_PATH=/data/models/icebert/icebert-first-rmh_different_vocab/icebert-base-36k/icebert-bpe-merges.txt
 
 FAIRSEQ_USER_DIR="${WDIR}/fairseq_user_dir"
 
-NGPUS=$(echo "$CUDA_VISIBLE_DEVICES" | grep -oP "[[:digit:]]" | wc -l)
-NAME=pretrain-02
-NAME="pretrainsilver.lr${LR}.ngpus${NGPUS}.accum${ACCUM}.bsz${MAX_SENTENCES}.warmup${WARMUP_UPDATES}.maxupdate${TOTAL_NUM_UPDATES}"
+#NAME=pretrain-02
+NAME="pretrainsilver.lr5e-05.ngpus1.accum1.bsz50.warmup1000.maxupdate200000"
+NAME="pretrainsilver.lr5e-05.ngpus1.accum1.bsz50.warmup1000.maxupdate200000.ft"
 TENSORBOARD_LOGDIR="${WDIR}/logs/tensorboard/$NAME"
 PROGRESS_LOG_DIR="${WDIR}/logs/progress/$NAME"
 SLURM_LOG_DIR="${WDIR}/logs/slurm"
@@ -28,7 +28,7 @@ CKPT_DIR="${WDIR}/checkpoints/$NAME"
 
 mkdir -p "${TENSORBOARD_LOGDIR}" "${PROGRESS_LOG_DIR}" "${SLURM_LOG_DIR}"
 
-DATA_BIN="${DATA_BASE}/bin-silver"
+DATA_BIN="${DATA_BASE}/bin-finetune"
 
 #export CUDA_LAUNCH_BLOCKING=1
 #export NCCL_DEBUG=INFO
@@ -58,11 +58,11 @@ fairseq-train "${DATA_BIN}" \
     --bpe='gpt2' \
     --gpt2-encoder-json $ENCODER_JSON_PATH \
     --gpt2-vocab-bpe $VOCAB_BPE_PATH \
-    --update-freq $ACCUM \
+    --update-freq 1 \
     --max-update $TOTAL_NUM_UPDATES \
     --save-dir "${CKPT_DIR}" \
     --restore-file $RESTORE_PATH \
     --reset-optimizer --reset-dataloader --reset-meters \
     --tensorboard-logdir "${TENSORBOARD_LOGDIR}/$NAME" \
-    --save-interval-updates 500 \
-    2>&1 | tee "$PROGRESS_LOG_DIR/log-$(date +'%Y-%m-%d-%H-%M').txt"
+    --save-interval-updates 100 \
+    #2>&1 | tee "$PROGRESS_LOG_DIR/log-$(date +'%Y-%m-%d-%H-%M').txt"

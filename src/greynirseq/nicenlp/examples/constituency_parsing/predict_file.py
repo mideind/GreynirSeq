@@ -1,19 +1,12 @@
-# flake8: noqa
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
 
-import time
-import os
-from pathlib import Path
+
 import sys
+from pathlib import Path
 
-import numpy as np
-import torch
-
-import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist
-from greynirseq.nicenlp.utils.constituency.token_utils import tokenize
-from greynirseq.nicenlp.criterions.parser_criterion import compute_parse_stats, safe_div, f1_score
 from greynirseq.nicenlp.models.simple_parser import SimpleParserModel
-from greynirseq.nicenlp.utils.constituency.greynir_utils import Node, NonterminalNode, TerminalNode
-from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
 
 
 def chunk(iterable, batch_size=10):
@@ -45,7 +38,8 @@ def main(ckpt_path, input_path, max_sentences=10, output_stream=None):
             pred_trees, _ = model_interface.predict(sentence_batch)
             for pred_tree in pred_trees:
                 pred_tree = pred_tree.separate_unary()
-                pred_tree.pretty_print(stream=output_stream)
+                output_stream.write(pred_tree.as_nltk_tree().pformat(margin=2 ** 100).strip())
+                output_stream.write("\n")
 
 
 if __name__ == "__main__":
@@ -62,9 +56,7 @@ if __name__ == "__main__":
 
     assert args.max_sentences > 0
     if args.output_path and args.output_path == "-":
-        main(
-            Path(args.checkpoint), Path(args.input_path), max_sentences=args.max_sentences, output_stream=sys.stdout
-        )
+        main(Path(args.checkpoint), Path(args.input_path), max_sentences=args.max_sentences, output_stream=sys.stdout)
     else:
         output_path = Path(args.output_path)
         output_path.parent.mkdir(exist_ok=True)

@@ -2,29 +2,22 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-# flake8: noqa
-
-import itertools
 import math
-import time
 from collections import namedtuple
 from typing import Any, Dict, List, Union
 
+import pyximport
 import torch
-import torch.nn.functional as F
-from fairseq import utils
 from fairseq.criterions import FairseqCriterion, register_criterion
-from fairseq.data import Dictionary
 from fairseq.models import FairseqModel
 from torch import LongTensor, Tensor
-
-import pyximport; pyximport.install()
 
 import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
 
+pyximport.install()
 
 Numeric = Union[int, float, Tensor]
 

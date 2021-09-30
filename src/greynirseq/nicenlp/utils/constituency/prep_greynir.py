@@ -3,20 +3,12 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-# flake8: noqa
 
-import code
 import json
-import os
 import random
-import readline
-import sys
 from pathlib import Path
-from pprint import pprint as pp
 
 import click
-import reynir
-import tokenizer
 
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 
@@ -41,7 +33,22 @@ def main():
 @click.option("--error-log", type=click.File("w"))
 @click.option("--append-errors", default=False, is_flag=True)
 @click.option("--limit", default=-1, type=int)
-def export(input_file, text_file, nonterm_file, term_file, sep, merge, seed, binarize_trees, simplify, append, ignore_errors, error_log, append_errors, limit):
+def export(
+    input_file,
+    text_file,
+    nonterm_file,
+    term_file,
+    sep,
+    merge,
+    seed,
+    binarize_trees,
+    simplify,
+    append,
+    ignore_errors,
+    error_log,
+    append_errors,
+    limit,
+):
     print(f"Extracting data from {input_file.name} to: {Path(nonterm_file.name).parent}")
     random.seed(seed)
 
@@ -77,7 +84,7 @@ def export(input_file, text_file, nonterm_file, term_file, sep, merge, seed, bin
             tree = tree.binarize()
 
             nterms, terms = tree.labelled_spans(include_null=binarize_trees, simplify=simplify)
-        except Exception as _:
+        except Exception as _:  # noqa: F841
             num_skipped += 1
             if error_log is not None:
                 error_log.write(tree_str)
