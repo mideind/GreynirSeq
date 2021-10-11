@@ -3,7 +3,7 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
-from typing import Iterable, List, Tuple
+from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -175,21 +175,17 @@ class MultiClassRobertaHubInterface(RobertaHubInterface):
         # Remove the leading space, see 'encode' comment.
         return super().decode(tokens)[1:]
 
-    def predict_labels(self, sentences: List[str], batch_size=1) -> Iterable[List[str]]:
+    def predict_labels(self, sentences: List[str]) -> List[List[str]]:
         """Predicts NER labels of the given sentences.
 
         Args:
-            sentences: An list of the rule-based tokenized sentences.
-            batch_size: The number of sentences to process in parallel.
+            sentences: A list of the rule-based tokenized sentences.
         Returns:
-            An iterable of the labels.
+            A list of NER labels for each sentence.
         """
-        length = len(sentences)
-        for ndx in range(0, length, batch_size):
-            batch = sentences[ndx : min(ndx + batch_size, length)]
-            labels, pred_idx = self._predict_labels(batch)
-            labels = BIOParser.parse(labels)
-            yield from labels
+        labels, _ = self._predict_labels(sentences)
+        labels = [BIOParser.parse(sent_labels) for sent_labels in labels]
+        return labels
 
     def _predict_labels(self, sentences: List[str]) -> Tuple[List[List[str]], torch.Tensor]:
         tokens_batch = []
