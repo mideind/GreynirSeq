@@ -183,11 +183,11 @@ class RightPad2dDataset(BaseWrapperDataset):
 
 class POSDataset(BaseWrapperDataset):
     @classmethod
-    def make_both(cls, dataset: Dataset, src_dictionary: Dictionary, label_dictionary: Dictionary):
+    def make_both(cls, dataset: Dataset, src_dictionary: Dictionary, label_dictionary: Dictionary, label_sep: str):
         dataset = LRUCacheDataset(dataset)
         return (
-            POSDataset(dataset, src_dictionary, label_dictionary, return_categories=True),
-            POSDataset(dataset, src_dictionary, label_dictionary, return_categories=False),
+            POSDataset(dataset, src_dictionary, label_dictionary, return_categories=True, label_sep=label_sep),
+            POSDataset(dataset, src_dictionary, label_dictionary, return_categories=False, label_sep=label_sep),
         )
 
     def __init__(
@@ -196,6 +196,7 @@ class POSDataset(BaseWrapperDataset):
         src_dictionary: Dictionary,
         label_dictionary: Dictionary,
         return_categories: bool = True,
+        label_sep: str = "<sep>",
     ):
         super().__init__(pos_labels_dataset)
         self.label_dict = label_dictionary
@@ -203,13 +204,14 @@ class POSDataset(BaseWrapperDataset):
         self.return_categories = return_categories
         self.start_offset = True if pos_labels_dataset[0][0] == self.label_dict.bos() else False
         self.has_eos = True if pos_labels_dataset[0][-1] == self.label_dict.eos() else False
+        self.label_sep = self.label_dict.index(label_sep)
 
     def __getitem__(self, index: int):
         item = self.dataset[index]
         end = item.numel() - 1 if self.has_eos else item.numel()
-        word_items = split_tensor_on(item[self.start_offset : end], self.label_dict.sep())  # noqa
+        word_items = split_tensor_on(item[self.start_offset : end], self.label_sep)  # noqa
         assert all(subseq.numel() > 0 for subseq in word_items)
-        assert len(word_items) == (item.eq(self.label_dict.sep()).sum() + 1)
+        assert len(word_items) == (item.eq(self.label_sep).sum() + 1)
         num_words = len(word_items)
         label_shift = self.label_dict.nspecial
         num_labels = len(self.label_dict) - label_shift
@@ -278,7 +280,7 @@ class IgnoreLabelsDataset(BaseWrapperDataset):
     def __init__(self, label_dataset, ignore_labels):
         super().__init__(label_dataset)
         self.labels = label_dataset
-        self.ignore_labels = ignore_labels
+        self.ignore_labels = tuple(ignore_labels)
 
     def __getitem__(self, index):
         labels = self.labels[index]
