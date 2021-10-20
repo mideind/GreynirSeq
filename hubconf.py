@@ -35,7 +35,8 @@ from fairseq.hub_utils import (  # noqa; noqa
     TokenizerHubInterface as tokenizer,
 )
 
-
+# We import the greynirseq.nicenlp.models to ensure that all those models are added to the fairseq MODEL_REGISTRY
+# This is done via the @register_model decorator.
 from greynirseq.nicenlp import models  # noqa
 from fairseq.models import MODEL_REGISTRY  # noqa
 
@@ -59,7 +60,6 @@ except ImportError:
             "Unable to build Cython components. Please make sure Cython is "
             "installed if the torch.hub model you are loading depends on it."
         )
-
 
 # automatically expose models defined in FairseqModel::hub_models
 for _model_type, _cls in MODEL_REGISTRY.items():

@@ -17,8 +17,8 @@ See `./train.sh` which trains all ten sets for cross-validation.
 Using the CLI is the easiest way of using the tagger, this downloads the necessary files, make sure you have space for around 1GB of data.
 
 ``` bash
-❯ pip install greynirseq
-❯ echo "Systurnar Guðrún og Monique átu einar um jólin á McDonalds ." | greynirseq pos --input -
+$ pip install greynirseq
+$ echo "Systurnar Guðrún og Monique átu einar um jólin á McDonalds ." | greynirseq pos --input -
 
 nvfng nven-s c n---s sfg3fþ lvfnsf af nhfog af n----s pl
 ```
@@ -31,7 +31,7 @@ This will download the model from our servers and return an instance for inferen
 
 ```python
 import torch
-model = torch.hub.load("mideind/GreynirSeq:main", "icebert.pos")
+model = torch.hub.load("mideind/GreynirSeq:main", "icebert-pos")
 model.eval()
 labels = model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds ."])
 ```

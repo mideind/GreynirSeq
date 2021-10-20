@@ -9,8 +9,8 @@ This example shows how to train an Icelandic NER tagger with F1 score 0.9274 on 
 Using the CLI is the easiest way of using the tagger, this downloads the necessary files, make sure you have space for around 1GB of data.
 
 ``` bash
-❯ pip install greynirseq
-❯ echo "Systurnar Guðrún og Monique átu einar um jólin á McDonalds ." | greynirseq ner --input -
+$ pip install greynirseq
+$ echo "Systurnar Guðrún og Monique átu einar um jólin á McDonalds ." | greynirseq ner --input -
 
 O B-Person O B-Person O O O O O B-Organization O
 ```
@@ -23,7 +23,7 @@ This will download the model from our servers and return an instance for inferen
 
 ```python
 import torch
-model = torch.hub.load("mideind/GreynirSeq:main", "icebert.ner")
+model = torch.hub.load("mideind/GreynirSeq:main", "icebert-ner")
 model.eval()
 labels = list(model.predict_labels(["Systurnar Guðrún og Monique átu einar um jólin á McDonalds ."])
 ```

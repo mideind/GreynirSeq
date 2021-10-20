@@ -59,7 +59,20 @@ class MultiLabelTokenClassificationHead(nn.Module):
 class MultiLabelRobertaModel(RobertaModel):
     @classmethod
     def hub_models(cls):
-        return {"icebert.pos": "https://data.greynir.is/icebert.pos.tar.gz"}
+        return {
+            "icebert.pos": {
+                "path": "https://data.greynir.is/icebert.pos.tar.gz",
+                "bpe": "gpt2",
+                "gpt2_encoder_json": "https://data.greynir.is/icebert-extras/icebert-bpe-vocab.json",
+                "gpt2_vocab_bpe": "https://data.greynir.is/icebert-extras/icebert-bpe-merges.txt",
+            },
+            "icebert-pos": {
+                "path": "https://data.greynir.is/icebert.pos.tar.gz",
+                "bpe": "gpt2",
+                "gpt2_encoder_json": "https://data.greynir.is/icebert-extras/icebert-bpe-vocab.json",
+                "gpt2_vocab_bpe": "https://data.greynir.is/icebert-extras/icebert-bpe-merges.txt",
+            },
+        }
 
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
