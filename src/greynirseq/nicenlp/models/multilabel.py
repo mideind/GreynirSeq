@@ -175,14 +175,17 @@ class MultiLabelRobertaModel(RobertaModel):
 
 
 class MultiLabelRobertaHubInterface(RobertaHubInterface):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
+
     def prepare_batch(self, sentences: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
         # Note, this assumes sensible batch size
         sentences_encoded = []
         word_masks = []
-        word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
         for sentence in sentences:
             tokens = self.encode(sentence)
-            word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
+            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
             word_mask[0] = 0
             word_mask[-1] = 0
             sentences_encoded.append(tokens)
