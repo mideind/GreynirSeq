@@ -59,7 +59,20 @@ class MultiLabelTokenClassificationHead(nn.Module):
 class MultiLabelRobertaModel(RobertaModel):
     @classmethod
     def hub_models(cls):
-        return {"icebert.pos": "https://data.greynir.is/icebert.pos.tar.gz"}
+        return {
+            "icebert.pos": {
+                "path": "https://data.greynir.is/icebert.pos.tar.gz",
+                "bpe": "gpt2",
+                "gpt2_encoder_json": "https://data.greynir.is/icebert-extras/icebert-bpe-vocab.json",
+                "gpt2_vocab_bpe": "https://data.greynir.is/icebert-extras/icebert-bpe-merges.txt",
+            },
+            "icebert-pos": {
+                "path": "https://data.greynir.is/icebert.pos.tar.gz",
+                "bpe": "gpt2",
+                "gpt2_encoder_json": "https://data.greynir.is/icebert-extras/icebert-bpe-vocab.json",
+                "gpt2_vocab_bpe": "https://data.greynir.is/icebert-extras/icebert-bpe-merges.txt",
+            },
+        }
 
     def __init__(self, args, encoder, task):
         super().__init__(args, encoder)
@@ -175,14 +188,17 @@ class MultiLabelRobertaModel(RobertaModel):
 
 
 class MultiLabelRobertaHubInterface(RobertaHubInterface):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
+
     def prepare_batch(self, sentences: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
         # Note, this assumes sensible batch size
         sentences_encoded = []
         word_masks = []
-        word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
         for sentence in sentences:
             tokens = self.encode(sentence)
-            word_mask = torch.tensor([word_start_dict[t] for t in tokens.tolist()])
+            word_mask = torch.tensor([self.word_start_dict[t] for t in tokens.tolist()])
             word_mask[0] = 0
             word_mask[-1] = 0
             sentences_encoded.append(tokens)
