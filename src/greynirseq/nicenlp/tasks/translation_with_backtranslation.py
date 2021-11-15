@@ -292,7 +292,7 @@ class GPT2WordDropout(GPT2Noising):
             modified_lengths.append(len(new_s))
         # re-construct input
         modified_lengths = torch.tensor(modified_lengths).long()
-        modified_x = torch.tensor(modified_lengths.max(), modified_lengths.size(0)).long().fill_(self.dictionary.pad())
+        modified_x = torch.full((int(modified_lengths.max().item()), modified_lengths.size(0)), self.dictionary.pad())
         for i in range(modified_lengths.size(0)):
             modified_x[: modified_lengths[i], i].copy_(torch.tensor(sentences[i]).long())
 
