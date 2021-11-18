@@ -1,12 +1,14 @@
 # Translation
 
-This example shows how to use trained translation models. 
+This example shows how to use trained translation models.
 
 ## Inference
 
 ### Using the CLI
+
 Input is accepted from file containing a single **untokenized** sentence per line, or from stdin.
-``` bash
+
+```bash
 # For en->is translation
 $ echo "This is an awesome test which shows how to use a pretrained translation model." | greynirseq translate --source-lang en --target-lang is
 
@@ -35,7 +37,11 @@ model.sample(["This is an awesome test which shows how to use a pretrained trans
 ['Þetta er æðislegt próf sem sýnir hvernig nota má formeðhöndlað þýðingarlíkan.[is_IS]']
 ```
 
-Similarly, for a Transformer model
+A few things to note about loading this model:
+
+- The model is based on mBART25 and needs to be specifically set to use sentencepiece as a BPE encoder.
+- The output contains the target language code (7 characters).
+- The model is large (~2.5GB disk space).
 
 ```python
 import torch
@@ -45,29 +51,43 @@ model.sample(["This is an awesome test which shows how to use a pretrained trans
 [' Þetta er frábært próf sem sýnir hvernig á að nota fyrirfram þjálfað þýðingalíkan.']
 ```
 
-Note: For mBART models the output contains the target language code.
-Note: For Transformer models, the output will begin with a space.
-Note: The length of the sentences has a ceiling set by the used model and direct inference may crash on long sentences. To run the models on GPU simply run `model.to("cuda")`, we refer to the pytorch documentation for further details.
+Notice here that:
 
-#### Using the BARTTranslate wrapper
+- The output begins with a space and no language code
+- This model is smaller (~200MB disk space)
 
-Due to a bug in fairseq, the first translated token might be incorrect when using mBART models.
-To avoid this problem you can use the BARTTranslate wrapper.
+In general:
+
+- You are responsible for making sure that the sequence length input to the model does not exceed what they support and/or the lengths of sequences used during training.
+- To run the models on GPU simply run `model.to("cuda")`, we refer to the pytorch documentation for further details.
+
+#### Using the TranslateBART wrapper
+
+Due to a bug in fairseq, the first translated token might be incorrect when using models trained using the BART objective (their names start with "mbart").
+To avoid this problem you can use the TranslateBART wrapper.
+
 ```
-from greynirseq.cli.greynirseq import BARTTranslate
-model = TranslateBART(device="cpu", 
+from greynirseq.cli.greynirseq import TranslateBART
+model = TranslateBART(device="cpu",
     batch_size=1,
     show_progress=False,
     max_input_words_split=250,
     model_args={"model_name_or_path": "mbart25-cont-ees-enis", "bpe": "sentencepiece"})
-for translation in model.run(["This is an awesome test which shows how to use a pretrained translation model."])
+for translation in model.run(["This is an awesome test which shows how to use a pretrained translation model."]):
     print(translation)
 ```
+
+In this wrapper we take care of a few things for you.
+
+- We fix the previously-mentioned fairseq bug.
+- We handling batching and longer sequence length splitting.
+- We remove the target language code from the output.
 
 ### Local inference
 
 Below is an example of how to use a model which is stored locally, or running a specific checkpoint.
-``` bash
+
+```bash
 $ echo "This is an awesome test which shows how to load a BART translation model from the file system." | greynirseq translate --additional-arguments mbart25-cont-enis.json
 
 Þetta er frábært próf sem sýnir hvernig hlaða á inn BART þýðingarmódeli úr skráakerfinu.
@@ -85,7 +105,9 @@ $ cat mbart25-cont-enis.json
     "sentencepiece_model": "/data/models/mbart25-cont-enis/sentence.bpe.model"
 }
 ```
+
 And for a Transformer translation model you should specify `"model_type": "transformer"`. Example:
+
 ```
 {
     "model_type": "transformer",
