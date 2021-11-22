@@ -517,6 +517,7 @@ class TranslationWithBacktranslationTask(TranslationTask):
         super(TranslationWithBacktranslationTask, TranslationWithBacktranslationTask).add_args(parser)
         """Add task-specific arguments to the parser."""
         # fmt: off
+        parser.add_argument('--skip-backtranslation-data', default=False, action='store_true', help='Should we skip reading the backtranslation data?')  # noqa
         parser.add_argument('--max-word-shuffle-distance', default=3.0, type=float, metavar='N',
                             help='maximum word shuffle distance for denoising autoencoding data generation')
         parser.add_argument('--word-dropout-prob', default=0.1, type=float, metavar='N',
@@ -596,7 +597,7 @@ class TranslationWithBacktranslationTask(TranslationTask):
             )
 
         # load backtranslation
-        if is_train_subset:
+        if is_train_subset and not self.args.skip_backtranslation_data:
             """
             noised vs unnoised valdation set? they might converge at different times
             """
