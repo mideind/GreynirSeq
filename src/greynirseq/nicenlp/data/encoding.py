@@ -1,9 +1,10 @@
 import argparse
+from typing import Dict, Optional
 
 from fairseq.data import Dictionary, encoders
 
 
-def get_word_beginnings(args: argparse.Namespace, dictionary: Dictionary):
+def get_word_beginnings(args: argparse.Namespace, dictionary: Dictionary) -> Optional[Dict[int, int]]:
     bpe = encoders.build_bpe(args)
     if bpe is not None:
 

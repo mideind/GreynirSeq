@@ -1,7 +1,11 @@
 import torch
 from fairseq.utils import make_positions
 
-from greynirseq.nicenlp.tasks.translation_with_glossary import make_positions_with_constraints
+from greynirseq.nicenlp.tasks.translation_with_glossary import (
+    make_positions_with_constraints,
+    masks_lengths,
+    whole_word_target_sampling,
+)
 
 
 def test_original_make_position():
@@ -133,3 +137,65 @@ def test_make_positions_with_constraints_apply_shift_and_padding_additional_sent
     )
     calculated_positions = make_positions_with_constraints(test, padding_idx=pad_idx, shift_from_symbol=shift_idx, shift_amount=shift_amount)
     assert torch.all(expected_positions.eq(calculated_positions))
+
+def test_masks_lengths():
+    test = torch.Tensor([0, 1, 0, 0, 1, 1, 1, 0, 0])
+    expected_lengths = torch.Tensor([3, 1, 1, 3])
+    calculated_lengths = masks_lengths(test)
+    assert torch.all(expected_lengths.eq(calculated_lengths))
+
+def test_whole_word_target_sampling():
+    test = torch.arange(0, 10).long()
+    whole_word_masker = {idx: 1 for idx in range(10)}
+    # Set some words as partial tokens
+    whole_word_masker[0] = 0
+    whole_word_masker[5] = 0
+    whole_word_masker[9] = 0
+    result = whole_word_target_sampling(test, whole_word_masker, seq_sample_ratio=1.0, mean_whole_word=2, stddev_whole_word=0, contains_eos=False)
+    assert len(result) == 2, "There should be two constraints"
+
+def test_whole_word_target_sampling_with_eos():
+    test = torch.arange(0, 10).long() # eos is the last element and is considered a whole word
+    whole_word_masker = {idx: 1 for idx in range(10)}
+    # Set some words as partial tokens
+    whole_word_masker[5] = 0
+    whole_word_masker[9] = 0
+    result = whole_word_target_sampling(test, whole_word_masker, seq_sample_ratio=1.0, mean_whole_word=2, stddev_whole_word=0, contains_eos=True)
+    assert len(result) == 2, "There should be two constraints"
+
+def test_whole_word_target_sampling_all_partial():
+    test = torch.arange(0, 10).long()
+    whole_word_masker = {idx: 1 for idx in range(10)}
+    # make sure that every other word is a partial token
+    whole_word_masker[1] = 0
+    whole_word_masker[3] = 0
+    whole_word_masker[5] = 0
+    whole_word_masker[7] = 0
+    whole_word_masker[9] = 0
+    result = whole_word_target_sampling(test, whole_word_masker, seq_sample_ratio=1.0, mean_whole_word=2, stddev_whole_word=0, contains_eos=False)
+    assert len(result) == 2, "There should be two constraints"
+    assert all(list(len(constraint) == 2 for constraint in result)), "All constraints should have two elements"
+
+def test_whole_word_target_sampling_stddev():
+    test = torch.arange(0, 10).long()
+    whole_word_masker = {idx: 1 for idx in range(10)}
+    # Set some words as partial tokens
+    whole_word_masker[0] = 0
+    whole_word_masker[5] = 0
+    whole_word_masker[9] = 0
+    # We need to perform the sampling a few times to make sure that some samples are not of length 2
+    total_result = []
+    for _ in range(10):
+        result = whole_word_target_sampling(test, whole_word_masker, seq_sample_ratio=1.0, mean_whole_word=2, stddev_whole_word=2, contains_eos=False)
+        total_result.append(len(result) != 2)
+    assert any(total_result), "There should be at least one sample that is not of length 2"
+
+def test_whole_word_target_sampling_mean_larger_than_length():
+    test = torch.arange(0, 10).long()
+    whole_word_masker = {idx: 1 for idx in range(10)}
+    # Set some words as partial tokens
+    whole_word_masker[0] = 0
+    whole_word_masker[5] = 0
+    whole_word_masker[9] = 0
+    result = whole_word_target_sampling(test, whole_word_masker, seq_sample_ratio=1.0, mean_whole_word=100, stddev_whole_word=0, contains_eos=False)
+    assert len(result) == 7, "There should be seven constraints"
