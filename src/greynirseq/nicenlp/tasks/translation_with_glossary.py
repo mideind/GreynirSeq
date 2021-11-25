@@ -1,3 +1,4 @@
+"""Translation with Glossary Task. Enables a model to leverage glossaries during translation."""
 #
 # Based on fairseq/tasks/translation.py that has the following license
 #
@@ -11,7 +12,7 @@ import logging
 import random
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import torch
 from fairseq.data import Dictionary, encoders
@@ -22,6 +23,7 @@ from torch.functional import Tensor
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
 from greynirseq.nicenlp.tasks.translation_with_backtranslation import TranslationWithBacktranslationTask
+from greynirseq.nicenlp.utils.dictionary import ensure_symbols_are_present
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ class GlossaryTaskConfig:
 
     @staticmethod
     def from_args(args):
+        """Create a config from the args object. Call this in task __init__"""
         # It is not ok to increase the dictionary size if we are loading a pretrained model.
         # TODO: verify that this is the case.
         ok_to_increase_dict_size = args.restore_file is None
@@ -53,7 +56,7 @@ class GlossaryTaskConfig:
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser) -> None:
-        """Add arguments to the parser for this task."""
+        """Add arguments to the parser for this task. Call this in the task's add_args()."""
         parser.add_argument(
             "--glossary-enabled", default=False, action="store_true", help="Should the glossary task be enabled?"
         )
@@ -79,7 +82,7 @@ class GlossaryTaskConfig:
             "--glossary-stddev-whole-word",
             default=2.0,
             type=float,
-            help="When sampling target whole words using a normal distribution, the standard deviation of the distribution.",
+            help="When sampling target whole words using a normal distribution, the stddev of the distribution.",
         )
 
 
@@ -90,7 +93,8 @@ def make_positions_with_constraints(
 
     Position numbers begin at padding_idx+1. Padding symbols are ignored.
 
-    This code is based on fairseq's make_positions with the addition of shifting all symbols from and with the "shift_from_symbol" by "shift_amount".
+    This code is based on fairseq's make_positions.
+    Addition includes shifting all symbols from and with the "shift_from_symbol" by "shift_amount".
     Comment makes it is clear what changes are added.
 
     """
@@ -115,54 +119,13 @@ def make_positions_with_constraints(
 
 
 def apply_monkey_patch_for_make_positions(shift_from_symbol: int, shift_amount: int):
-    # Monkey-patch the make_positions function to be aware of the glossary constraints.
-    from fairseq import utils
+    """Monkey-patch the make_positions function in fairseq to be aware of the glossary constraints.
+    The monkey patch only extends the original function."""
+    from fairseq import utils  # pylint: disable=import-outside-toplevel
 
     utils.make_positions = partial(
         make_positions_with_constraints, shift_from_symbol=shift_from_symbol, shift_amount=shift_amount
     )
-
-
-def remove_madeupwords_from_dictionary(dictionary: Dictionary) -> int:
-    """
-    Remove madeupwords from the dictionary. Changes are done in-place. Returns an int of the number of madeupwords removed.
-    """
-    # We remove the madeupwords from the dictionary.
-    # In symbols, a list of string symbols is stored.
-    # In indices, a dict of sym -> int is stored.
-    # In count, a list of ints is stored, corresponding to the symbols.
-    idx = 0
-    while (madeupword := f"madeupword{idx:04d}") in dictionary:
-        sym_idx = dictionary.indices[madeupword]
-        del dictionary.symbols[sym_idx - idx]
-        del dictionary.indices[madeupword]
-        del dictionary.count[sym_idx - idx]
-        idx += 1
-    return idx
-
-
-def ensure_symbols_are_present(
-    src_dict: Dictionary, tgt_dict: Dictionary, symbols: List[str], ok_to_increase_dict_size: bool
-) -> None:
-    """
-    Ensure that the symbols in the source and target dictionary are present.
-
-    Makes changes to the dictionaries in-place.
-    """
-    original_src_size, original_tgt_size = len(src_dict), len(tgt_dict)
-    _ = remove_madeupwords_from_dictionary(src_dict)
-    _ = remove_madeupwords_from_dictionary(tgt_dict)
-    for symbol in symbols:
-        src_dict.add_symbol(symbol)
-        tgt_dict.add_symbol(symbol)
-    src_dict.pad_to_multiple_(8)
-    tgt_dict.pad_to_multiple_(8)
-    if not ok_to_increase_dict_size:
-        # Let's not crash - but rather point out that we are not allowed to increase the dictionary size.
-        if len(src_dict) != original_src_size:
-            logger.warning("The dictionary size changed. The model loading will probably fail.")
-        if len(tgt_dict) != original_tgt_size:
-            logger.warning("The dictionary size changed. The model loading will probably fail.")
 
 
 @register_task("translation_with_glossary")
@@ -189,6 +152,10 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         # Ensure that <sep> and <c> are defined in the dictionaries.
         ensure_symbols_are_present(
             self.source_dictionary,
+            ["<c>", "<sep>"],
+            self.glossary_task_config.ok_to_increase_dict_size,
+        )
+        ensure_symbols_are_present(
             self.target_dictionary,
             ["<c>", "<sep>"],
             self.glossary_task_config.ok_to_increase_dict_size,
@@ -210,8 +177,8 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
 
     @staticmethod
     def add_args(parser) -> None:
-        super(TranslationWithGlossaryTask, TranslationWithGlossaryTask).add_args(parser)  # type: ignore
         """Add task-specific arguments to the parser."""
+        super(TranslationWithGlossaryTask, TranslationWithGlossaryTask).add_args(parser)  # type: ignore
         GlossaryTaskConfig.add_args(parser)
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs) -> None:
@@ -303,24 +270,10 @@ class TargetSamplingWholeWordDataset(BaseWrapperDataset):
         )
         constraint_src = apply_constraints(constraints, src, self.constraint_symbol_idx, self.sep_symbol_idx)
         constraint_src = constraint_src[: self.max_seq_len]
-        # logger.info(f"constraint_src: {self.bpe.decode(' '.join(str(x) for x in constraint_src.tolist() if x <= 32000))}")
+        # logger.info(
+        #     f"constraint_src: {self.bpe.decode(' '.join(str(x) for x in constraint_src.tolist() if x <= 32000))}"
+        # )
         return constraint_src
-
-    @property
-    def sizes(self):
-        return self._sizes
-
-    def num_tokens(self, index):
-        n = self.dataset.num_tokens(index)
-        if self.token is not None:
-            n += 1
-        return n
-
-    def size(self, index):
-        n = self.dataset.size(index)
-        if self.token is not None:
-            n += 1
-        return n
 
 
 def apply_constraints(constraints: List[Tensor], src: Tensor, constraint_idx: int, sep_idx: int) -> Tensor:
@@ -379,12 +332,12 @@ def whole_word_target_sampling(
     whole_word_lengths = masks_lengths(tgt_whole_word_mask)
     # The indices of the whole words in the original target
     whole_word_idxs = tgt_whole_word_mask.nonzero().squeeze()
-    sampled_whole_word_idxs = whole_word_idxs[sampled_whole_word_orders]
-    sampled_whole_word_lengths = whole_word_lengths[sampled_whole_word_orders]
+    sampled_whole_word_idxs = whole_word_idxs[sampled_whole_word_orders].tolist()
+    sampled_whole_word_lengths = whole_word_lengths[sampled_whole_word_orders].tolist()
     sampled_whole_words = [
         tgt[whole_word_idx : whole_word_idx + whole_word_length]
         for (whole_word_idx, whole_word_length) in zip(
-            sampled_whole_word_idxs.tolist(), sampled_whole_word_lengths.tolist()
+            sampled_whole_word_idxs, sampled_whole_word_lengths
         )
     ]
     return sampled_whole_words
@@ -404,4 +357,4 @@ def masks_lengths(mask: Tensor) -> Tensor:
         prev_idx = idx
     if prev_idx is not None:
         lengths.append(int(mask.shape[0]) - prev_idx)
-    return torch.tensor(lengths)
+    return torch.Tensor(lengths).long()
