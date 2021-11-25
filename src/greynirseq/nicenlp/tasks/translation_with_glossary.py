@@ -336,9 +336,7 @@ def whole_word_target_sampling(
     sampled_whole_word_lengths = whole_word_lengths[sampled_whole_word_orders].tolist()
     sampled_whole_words = [
         tgt[whole_word_idx : whole_word_idx + whole_word_length]
-        for (whole_word_idx, whole_word_length) in zip(
-            sampled_whole_word_idxs, sampled_whole_word_lengths
-        )
+        for (whole_word_idx, whole_word_length) in zip(sampled_whole_word_idxs, sampled_whole_word_lengths)
     ]
     return sampled_whole_words
 
