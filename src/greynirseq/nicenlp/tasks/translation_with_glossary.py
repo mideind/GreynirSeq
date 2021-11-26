@@ -19,7 +19,6 @@ from fairseq.data import Dictionary, encoders
 from fairseq.data.base_wrapper_dataset import BaseWrapperDataset
 from fairseq.data.language_pair_dataset import LanguagePairDataset
 from fairseq.tasks import register_task
-from numpy import zeros
 from torch.functional import Tensor
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
@@ -288,12 +287,13 @@ class TargetSamplingWholeWordDataset(BaseWrapperDataset):
         # logger.info(f"idx {idx}")
         # logger.info(f"src: {self.bpe.decode(' '.join(str(x) for x in src.tolist()))}")
         # logger.info(f"tgt: {self.bpe.decode(' '.join(str(x) for x in tgt.tolist()))}")
+        # Pure Python for a single number is faster
+        random_whole_word_count = random.gauss(self.mean_whole_word, self.stddev_whole_word)
         constraints = whole_word_target_sampling(
             tgt,
             self.whole_word_masker,
             self.seq_sample_ratio,
-            self.mean_whole_word,
-            self.stddev_whole_word,
+            word_count_to_sample=random_whole_word_count,
             contains_eos=True,
         )
         constraint_src = apply_constraints(constraints, src, self.constraint_symbol_idx, self.sep_symbol_idx)
@@ -318,61 +318,43 @@ def whole_word_target_sampling(
     tgt: Tensor,
     whole_word_masker: Dict[int, int],
     seq_sample_ratio: float,
-    mean_whole_word: float,
-    stddev_whole_word: float,
+    word_count_to_sample: float,
     contains_eos: bool,
 ) -> List[Tensor]:
     """
     Create target sampling constraints.
     """
-    fraction_sequences_to_constrain = seq_sample_ratio
-    mean_whole_words_as_constraints = mean_whole_word
-    std_dev_whole_words_as_contraints = stddev_whole_word
-    # Should we use this example as a constraint?
-    use_example_as_constraint = random.random() < fraction_sequences_to_constrain
-    if not use_example_as_constraint:
-        return []
+    sampled_whole_words: List[Tensor] = []
     if contains_eos:
         # We need to remove the eos symbol from the target sequence
         tgt = tgt[:-1]
-
-    tgt_whole_word_mask = torch.Tensor([whole_word_masker[elm] for elm in tgt.tolist()]).long()
+    tgt_whole_word_mask = [whole_word_masker[elm] for elm in tgt.tolist()]
     # The number whole words in the target
-    tgt_whole_word_count = int(tgt_whole_word_mask.sum().item())
+    tgt_whole_word_count = sum(tgt_whole_word_mask)
     # The number of whole words in the target that we want to use as contraints
-    tgt_contraints_whole_word_counts = int(
-        (
-            torch.normal(
-                mean_whole_words_as_constraints, std_dev_whole_words_as_contraints, size=(1,)
-            )  # Single point from a Normal distribution
-            .round()
-            .int()  # Round to integers
-            .clamp(
-                min=0, max=tgt_whole_word_count
-            )  # Map negative values to 0 and values greater than the whole word count to the whole word count
-        ).item()
-    )
+    word_count_to_sample = round(min(max(0, word_count_to_sample), tgt_whole_word_count))
+    
+    fraction_sequences_to_constrain = seq_sample_ratio
+    # Should we use this example as a constraint?
+    use_example_as_constraint = random.random() < fraction_sequences_to_constrain
+    if not use_example_as_constraint and word_count_to_sample == 0:
+        return sampled_whole_words
     # We sample the indices of the whole words we want to use.
-    sampled_whole_word_orders = torch.Tensor(
-        sorted(list(random.sample(range(tgt_whole_word_count), tgt_contraints_whole_word_counts)))
-    ).long()
+    sampled_idxs = sorted(list(random.sample(range(tgt_whole_word_count), word_count_to_sample)))
     # The number of subwords in the whole words
-    whole_word_lengths = masks_lengths(tgt_whole_word_mask)
+    tgt_whole_word_lengths = whole_word_lengths(tgt_whole_word_mask)
     # The indices of the whole words in the original target
-    whole_word_idxs = tgt_whole_word_mask.nonzero().squeeze()
-    sampled_whole_word_idxs = whole_word_idxs[sampled_whole_word_orders].tolist()
-    sampled_whole_word_lengths = whole_word_lengths[sampled_whole_word_orders].tolist()
-    sampled_whole_words = [
-        tgt[whole_word_idx : whole_word_idx + whole_word_length]
-        for (whole_word_idx, whole_word_length) in zip(sampled_whole_word_idxs, sampled_whole_word_lengths)
-    ]
+    tgt_whole_word_start_idxs = torch.Tensor(tgt_whole_word_mask).nonzero().squeeze().tolist()
+    for sampled_idx in sampled_idxs:
+        tgt_whole_word_start_idx = tgt_whole_word_start_idxs[sampled_idx]
+        tgt_whole_word_length = tgt_whole_word_lengths[sampled_idx]
+        sampled_whole_words.append(tgt[tgt_whole_word_start_idx: tgt_whole_word_start_idx + tgt_whole_word_length])
     return sampled_whole_words
 
 
-def masks_lengths(padding_mask: Tensor) -> Tensor:
+def whole_word_lengths(whole_word_mask: List[int]) -> List[int]:
     """Return the masks length, i.e. a padding_mask=[1,0,0,1,1,0] should return [3,1,2]"""
-    # TODO: This implementation could be improved.
-    mask_idxs = padding_mask.nonzero().squeeze()  # For some reason, nonzero returns a tensor of size (1,2)
+    mask_idxs = torch.Tensor(whole_word_mask).nonzero().squeeze()  # For some reason, nonzero returns a tensor of size (1,2)
     lengths = []
     prev_idx: Optional[int] = None
     for idx in mask_idxs.tolist():
@@ -382,5 +364,5 @@ def masks_lengths(padding_mask: Tensor) -> Tensor:
         lengths.append(idx - prev_idx)
         prev_idx = idx
     if prev_idx is not None:
-        lengths.append(int(padding_mask.shape[0]) - prev_idx)
-    return torch.Tensor(lengths).long()
+        lengths.append(len(whole_word_mask) - prev_idx)
+    return lengths
