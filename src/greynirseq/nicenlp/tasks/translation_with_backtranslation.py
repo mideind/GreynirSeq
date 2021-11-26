@@ -517,7 +517,8 @@ class TranslationWithBacktranslationTask(TranslationTask):
         super(TranslationWithBacktranslationTask, TranslationWithBacktranslationTask).add_args(parser)
         """Add task-specific arguments to the parser."""
         # fmt: off
-        parser.add_argument('--skip-backtranslation-data', default=False, action='store_true', help='Should we skip reading the backtranslation data?')  # noqa
+        parser.add_argument('--skip-backtranslation-data', default=False, action='store_true', help='Should we skip reading the backtranslation data? \
+This is useful to set if you have no backtranslation data but would like the BPE noise on the main training data.')  # noqa
         parser.add_argument('--max-word-shuffle-distance', default=3.0, type=float, metavar='N',
                             help='maximum word shuffle distance for denoising autoencoding data generation')
         parser.add_argument('--word-dropout-prob', default=0.1, type=float, metavar='N',
