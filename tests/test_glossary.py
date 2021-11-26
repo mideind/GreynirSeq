@@ -80,10 +80,10 @@ def test_make_positions_with_constraints_no_constraint_params_with_padding():
     assert torch.all(expected_positions.eq(calculated_positions))
 
 
-def test_make_positions_with_constraints_apply_shift():
+def test_make_positions_with_constraints_apply_offset():
     pad_idx = 0
-    shift_idx = 99
-    shift_amount = 10
+    positional_marker_symbol_idx = 99
+    positional_idx_restart_offset = 10
     test = torch.tensor(
         [
             [1, 1, 2, 3, 99, 4, 0],
@@ -92,20 +92,23 @@ def test_make_positions_with_constraints_apply_shift():
     )
     expected_positions = torch.tensor(
         [
-            [1, 2, 3, 4, 15, 16, 0],
-            [1, 2, 13, 14, 15, 0, 0],
+            [1, 2, 3, 4, 11, 12, 0],
+            [1, 2, 11, 12, 13, 0, 0],
         ]
     )
     calculated_positions = make_positions_with_constraints(
-        test, padding_idx=pad_idx, shift_from_symbol=shift_idx, shift_amount=shift_amount
+        test,
+        padding_idx=pad_idx,
+        positional_marker_symbol_idx=positional_marker_symbol_idx,
+        positional_idx_restart_offset=positional_idx_restart_offset,
     )
     assert torch.all(expected_positions.eq(calculated_positions))
 
 
 def test_make_positions_with_constraints_apply_shift_and_padding():
     pad_idx = 100
-    shift_idx = 99
-    shift_amount = 10
+    positional_marker_symbol_idx = 99
+    positional_idx_restart_offset = 10
     test = torch.tensor(
         [
             [1, 1, 2, 3, 99, 4, 100],
@@ -114,20 +117,23 @@ def test_make_positions_with_constraints_apply_shift_and_padding():
     )
     expected_positions = torch.tensor(
         [
-            [101, 102, 103, 104, 115, 116, 100],
-            [101, 102, 113, 114, 115, 100, 100],
+            [101, 102, 103, 104, 111, 112, 100],
+            [101, 102, 111, 112, 113, 100, 100],
         ]
     )
     calculated_positions = make_positions_with_constraints(
-        test, padding_idx=pad_idx, shift_from_symbol=shift_idx, shift_amount=shift_amount
+        test,
+        padding_idx=pad_idx,
+        positional_marker_symbol_idx=positional_marker_symbol_idx,
+        positional_idx_restart_offset=positional_idx_restart_offset,
     )
     assert torch.all(expected_positions.eq(calculated_positions))
 
 
 def test_make_positions_with_constraints_apply_shift_and_padding_additional_sent_with_no_constraints():
     pad_idx = 100
-    shift_idx = 99
-    shift_amount = 10
+    positional_marker_symbol_idx = 99
+    positional_idx_restart_offset = 10
     test = torch.tensor(
         [
             [1, 1, 2, 3, 99, 4, 100],
@@ -137,13 +143,43 @@ def test_make_positions_with_constraints_apply_shift_and_padding_additional_sent
     )
     expected_positions = torch.tensor(
         [
-            [101, 102, 103, 104, 115, 116, 100],
-            [101, 102, 113, 114, 115, 100, 100],
+            [101, 102, 103, 104, 111, 112, 100],
+            [101, 102, 111, 112, 113, 100, 100],
             [101, 102, 103, 104, 105, 100, 100],
         ]
     )
     calculated_positions = make_positions_with_constraints(
-        test, padding_idx=pad_idx, shift_from_symbol=shift_idx, shift_amount=shift_amount
+        test,
+        padding_idx=pad_idx,
+        positional_marker_symbol_idx=positional_marker_symbol_idx,
+        positional_idx_restart_offset=positional_idx_restart_offset,
+    )
+    assert torch.all(expected_positions.eq(calculated_positions))
+
+
+def test_make_positions_with_constraints_apply_shift_and_padding_all_sent_with_no_constraints():
+    pad_idx = 100
+    positional_marker_symbol_idx = 99
+    positional_idx_restart_offset = 10
+    test = torch.tensor(
+        [
+            [1, 1, 2, 3, 5, 4, 100],
+            [5, 6, 6, 7, 8, 100, 100],
+            [5, 6, 9, 7, 8, 100, 100],
+        ]
+    )
+    expected_positions = torch.tensor(
+        [
+            [101, 102, 103, 104, 105, 106, 100],
+            [101, 102, 103, 104, 105, 100, 100],
+            [101, 102, 103, 104, 105, 100, 100],
+        ]
+    )
+    calculated_positions = make_positions_with_constraints(
+        test,
+        padding_idx=pad_idx,
+        positional_marker_symbol_idx=positional_marker_symbol_idx,
+        positional_idx_restart_offset=positional_idx_restart_offset,
     )
     assert torch.all(expected_positions.eq(calculated_positions))
 

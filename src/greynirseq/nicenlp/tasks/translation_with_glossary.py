@@ -19,6 +19,7 @@ from fairseq.data import Dictionary, encoders
 from fairseq.data.base_wrapper_dataset import BaseWrapperDataset
 from fairseq.data.language_pair_dataset import LanguagePairDataset
 from fairseq.tasks import register_task
+from numpy import zeros
 from torch.functional import Tensor
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
@@ -34,7 +35,7 @@ class GlossaryTaskConfig:
 
     enabled: bool
     ok_to_increase_dict_size: bool
-    constraint_positional_shift: int
+    constraint_positional_start_idx: int
     seq_sample_ratio: float
     mean_whole_word: float
     stddev_whole_word: float
@@ -48,7 +49,7 @@ class GlossaryTaskConfig:
         return GlossaryTaskConfig(
             enabled=args.glossary_enabled,
             ok_to_increase_dict_size=ok_to_increase_dict_size,
-            constraint_positional_shift=args.glossary_constraint_positional_shift,
+            constraint_positional_start_idx=args.glossary_constraint_positional_start_idx,
             seq_sample_ratio=args.glossary_seq_sample_ratio,
             mean_whole_word=args.glossary_mean_whole_word,
             stddev_whole_word=args.glossary_stddev_whole_word,
@@ -62,7 +63,8 @@ class GlossaryTaskConfig:
             default=False,
             action="store_true",
             help="Should the glossary task be enabled? \
-This will add soft constraints automatically during training and their effectiveness can be evaluated given a glossary.",
+This will add soft constraints automatically during training and \
+their effectiveness can be evaluated given a glossary.",
         )
         parser.add_argument(
             "--glossary-seq-sample-ratio",
@@ -84,56 +86,73 @@ The sampling distribution is the normal distribution and this parameter is the m
             type=float,
             help="During training, soft constraints are sampled from the target. \
 The sampling selects whole-words (potentially multiple subwords). \
-The sampling distribution is the normal distribution and this parameter is the standard deviation of that distribution.",
+The sampling distribution is the normal distribution and this parameter is the stddev of that distribution.",
         )
         parser.add_argument(
-            "--glossary-constraint-positional-shift",
-            default=1024,
+            "--glossary-constraint-positional-start-idx",
+            default=0,
             type=int,
             help="When constraints are added as a part of the input, their positional indices are changed by the task. \
-This parameter sets the starting index of the positional indices of the constraints.",
+This parameter sets the starting index of the positional indices of the constraints. \
+Starting from 0 will 'restart' the positional indicies for the constraints.",
         )
 
 
 def make_positions_with_constraints(
-    tensor: Tensor, padding_idx: int, onnx_trace: bool = False, shift_amount=0, shift_from_symbol=None
+    tensor: Tensor,
+    padding_idx: int,
+    onnx_trace: bool = False,
+    positional_idx_restart_offset=0,
+    positional_marker_symbol_idx: Optional[int] = None,
 ):
     """Replace non-padding symbols with their position numbers.
 
     Position numbers begin at padding_idx+1. Padding symbols are ignored.
 
     This code is based on fairseq's make_positions.
-    Addition includes shifting all symbols from and with the "shift_from_symbol" by "shift_amount".
-    Comment makes it is clear what changes are added.
-
+    The change allows the positional indices to be restarted when encountering the 'positional_marker_symbol_idx'.
+    The positional indices after the restart are additionally offset by the 'positional_idx_restart_offset'.
     """
     # The series of casts and type-conversions here are carefully
     # balanced to both work with ONNX export and XLA. In particular XLA
     # prefers ints, cumsum defaults to output longs, and ONNX doesn't know
     # how to handle the dtype kwarg in cumsum.
-    mask = tensor.ne(padding_idx).int()
-    # CHANGES START HERE
-    positions = torch.cumsum(mask, dim=1).type_as(mask)
+    padding_mask = tensor.ne(padding_idx).int()
+    positional_marker_mask = torch.ones_like(padding_mask)
+    positional_marker_idx = torch.zeros_like(padding_mask).bool().nonzero()
+    if positional_marker_symbol_idx is not None:
+        positional_marker_idx = tensor.eq(positional_marker_symbol_idx).nonzero()
+    # TODO: find a way to do this efficently using tensors
+    for marker_idx in positional_marker_idx:
+        positional_marker_mask[marker_idx[0], marker_idx[1] :] = 0
+    before_positional_marker_mask = positional_marker_mask
+    after_positional_marker_mask = (~positional_marker_mask.bool()).int()  # int -> bool -> negation -> int again
 
-    if shift_from_symbol is not None and shift_amount > 0:
-        # This makes sure that the constraints are not simply added at the end of the target.
-        # Find if the shift_symbol is present in the tensor
-        shift_symbol_idxs = tensor.eq(shift_from_symbol).nonzero()
-        # TODO: maybe we can do this directly using tensor operations
-        # Using positions[shift_symbol_idxs] += shift_amount only adds the shift to a single element
-        for shift_symbol_idx in shift_symbol_idxs:
-            positions[int(shift_symbol_idx[0].item()), int(shift_symbol_idx[1].item()) :] += shift_amount
-    positions = positions * mask + padding_idx
+    # First the positions before the positional_marker_mask
+    before_positional_marker_mask_and_padding = before_positional_marker_mask * padding_mask
+    positions = (
+        torch.cumsum(before_positional_marker_mask_and_padding, dim=1).type_as(padding_mask)
+        * before_positional_marker_mask_and_padding
+    )
+    # Then the positions after the positional_marker_mask
+    after_positional_marker_mask_and_padding = after_positional_marker_mask * padding_mask
+    positions += (
+        torch.cumsum(after_positional_marker_mask_and_padding, dim=1).type_as(padding_mask)
+        + positional_idx_restart_offset
+    ) * after_positional_marker_mask_and_padding
+    positions += padding_idx
     return positions.long()
 
 
-def apply_monkey_patch_for_make_positions(shift_from_symbol: int, shift_amount: int):
+def apply_monkey_patch_for_make_positions(positional_marker_symbol_idx: int, positional_idx_restart_offset: int):
     """Monkey-patch the make_positions function in fairseq to be aware of the glossary constraints.
     The monkey patch only extends the original function."""
     from fairseq import utils  # pylint: disable=import-outside-toplevel
 
     utils.make_positions = partial(
-        make_positions_with_constraints, shift_from_symbol=shift_from_symbol, shift_amount=shift_amount
+        make_positions_with_constraints,
+        positional_marker_symbol_idx=positional_marker_symbol_idx,
+        positional_idx_restart_offset=positional_idx_restart_offset,
     )
 
 
@@ -179,8 +198,8 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         self.is_word_initial = is_word_initial
 
         apply_monkey_patch_for_make_positions(
-            shift_from_symbol=self.source_dictionary.index("<sep>"),
-            shift_amount=self.glossary_task_config.constraint_positional_shift,
+            positional_marker_symbol_idx=self.source_dictionary.index("<sep>"),
+            positional_idx_restart_offset=self.glossary_task_config.constraint_positional_start_idx,
         )
         self.bpe = encoders.build_bpe(args)
 
@@ -350,10 +369,10 @@ def whole_word_target_sampling(
     return sampled_whole_words
 
 
-def masks_lengths(mask: Tensor) -> Tensor:
-    """Return the masks length, i.e. a mask=[1,0,0,1,1,0] should return [3,1,2]"""
+def masks_lengths(padding_mask: Tensor) -> Tensor:
+    """Return the masks length, i.e. a padding_mask=[1,0,0,1,1,0] should return [3,1,2]"""
     # TODO: This implementation could be improved.
-    mask_idxs = mask.nonzero().squeeze()  # For some reason, nonzero returns a tensor of size (1,2)
+    mask_idxs = padding_mask.nonzero().squeeze()  # For some reason, nonzero returns a tensor of size (1,2)
     lengths = []
     prev_idx: Optional[int] = None
     for idx in mask_idxs.tolist():
@@ -363,5 +382,5 @@ def masks_lengths(mask: Tensor) -> Tensor:
         lengths.append(idx - prev_idx)
         prev_idx = idx
     if prev_idx is not None:
-        lengths.append(int(mask.shape[0]) - prev_idx)
+        lengths.append(int(padding_mask.shape[0]) - prev_idx)
     return torch.Tensor(lengths).long()
