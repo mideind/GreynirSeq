@@ -185,6 +185,7 @@ def test_make_positions_with_constraints_apply_shift_and_padding_all_sent_with_n
 
 
 def test_masks_lengths():
+    # The test sequence does not start with a whole word, so it is not included in the lengths.
     test = torch.Tensor([0, 1, 0, 0, 1, 1, 1, 0, 0])
     expected_lengths = torch.Tensor([3, 1, 1, 3])
     calculated_lengths = masks_lengths(test)
