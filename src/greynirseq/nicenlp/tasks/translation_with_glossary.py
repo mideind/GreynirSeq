@@ -58,31 +58,40 @@ class GlossaryTaskConfig:
     def add_args(parser: argparse.ArgumentParser) -> None:
         """Add arguments to the parser for this task. Call this in the task's add_args()."""
         parser.add_argument(
-            "--glossary-enabled", default=False, action="store_true", help="Should the glossary task be enabled?"
-        )
-        parser.add_argument(
-            "--glossary-constraint-positional-shift",
-            default=1024,
-            type=int,
-            help="By how much should we shift the positional encoding of the glossary constraints?",
+            "--glossary-enabled",
+            default=False,
+            action="store_true",
+            help="Should the glossary task be enabled? \
+This will add soft constraints automatically during training and their effectiveness can be evaluated given a glossary.",
         )
         parser.add_argument(
             "--glossary-seq-sample-ratio",
-            default=1.0,
+            default=0.2,
             type=float,
-            help="The ratio of training sequences which we will add constraints to.",
+            help="During training, soft constraints are automatically added to this fraction of sequences.",
         )
         parser.add_argument(
             "--glossary-mean-whole-word",
             default=1.0,
             type=float,
-            help="When sampling target whole words using a normal distribution, the mean of the distribution.",
+            help="During training, soft constraints are sampled from the target. \
+The sampling selects whole-words (potentially multiple subwords). \
+The sampling distribution is the normal distribution and this parameter is the mean of that distribution.",
         )
         parser.add_argument(
             "--glossary-stddev-whole-word",
             default=2.0,
             type=float,
-            help="When sampling target whole words using a normal distribution, the stddev of the distribution.",
+            help="During training, soft constraints are sampled from the target. \
+The sampling selects whole-words (potentially multiple subwords). \
+The sampling distribution is the normal distribution and this parameter is the standard deviation of that distribution.",
+        )
+        parser.add_argument(
+            "--glossary-constraint-positional-shift",
+            default=1024,
+            type=int,
+            help="When constraints are added as a part of the input, their positional indices are changed by the task. \
+This parameter sets the starting index of the positional indices of the constraints.",
         )
 
 
