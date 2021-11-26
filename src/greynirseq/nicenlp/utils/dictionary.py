@@ -18,10 +18,13 @@ def remove_madeupwords_from_dictionary(dictionary: Dictionary) -> int:
     # In count, a list of ints is stored, corresponding to the symbols.
     idx = 0
     while (madeupword := f"madeupword{idx:04d}") in dictionary:
+        removed_elements = idx
         sym_idx = dictionary.indices[madeupword]
-        del dictionary.symbols[sym_idx - idx]
+        # Since sym_idx refers to a index in a list we are removing from,
+        # we need to take into account how many elements we have removed from the list.
+        del dictionary.symbols[sym_idx - removed_elements]
         del dictionary.indices[madeupword]
-        del dictionary.count[sym_idx - idx]
+        del dictionary.count[sym_idx - removed_elements]
         idx += 1
     return idx
 
