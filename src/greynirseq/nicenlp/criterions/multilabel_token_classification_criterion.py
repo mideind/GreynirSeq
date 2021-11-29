@@ -10,28 +10,11 @@ import torch.nn.functional as F
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.models import FairseqModel
 
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    make_dict_idx_to_vec_idx,
-    make_group_masks,
-    make_group_name_to_group_attr_vec_idxs,
-)
-
 Numeric = Union[float, int]  # pylint: disable=unsubscriptable-object
 
 
 @register_criterion("multilabel_token_classification")
 class MultiLabelTokenClassificationCriterion(FairseqCriterion):
-    def __init__(self, task, label_dictionary=None, label_schema=None):
-        super().__init__(task)
-        self.task = task
-        self.label_dictionary = label_dictionary if label_dictionary is not None else self.task.label_dictionary
-        self.label_schema = label_schema if label_schema is not None else self.task.label_schema
-        self.group_masks = make_group_masks(self.label_dictionary, self.label_schema)
-        self.group_name_to_group_attr_vec_idxs = make_group_name_to_group_attr_vec_idxs(
-            self.label_dictionary, self.label_schema
-        )
-        self.cat_dict_to_vec_idx = make_dict_idx_to_vec_idx(self.label_dictionary, self.label_schema.label_categories)
-
     def forward(self, model: FairseqModel, sample: Dict[str, Any], reduce: bool = True):
         """Compute the loss for the given sample.
 
@@ -41,46 +24,29 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
         assert hasattr(model, "task_head"), "model must provide task specific classification head"
-        (cat_logits, attr_logits), _extra = model(**sample["net_input"], features_only=True)
-        loss, nwords_total, logging_output = self.compute_loss(
-            sample,
-            cat_logits,
-            attr_logits,
-            target_cats=sample["target_cats"],
-            target_exclude_mask=sample["target_exclude_mask"],
-            target_attrs=sample["target_attrs"],
-            reduce=reduce,
-        )
-        return loss, nwords_total, logging_output
 
-    def compute_loss_from_logits(
-        self,
-        sample: Dict[str, Any],
-        cat_logits: Any,
-        attr_logits: Any,
-        target_attrs: Any,
-        target_cats: Any,
-        target_exclude_mask: Any,
-        reduce: bool = True,
-    ):
+        target_cats = sample["target_cats"]
+        target_exclude_mask = sample["exclude_cats_mask"]
+        target_attrs = sample["target_attrs"]
+        nwords = sample["nwords"]
+
         bsz, _max_nwords = target_cats.shape
         bsz, _max_nwords, _num_attrs = target_attrs.shape
 
-        pad_idx = self.label_dictionary.pad()
+        (cat_logits, attr_logits), _extra = model(**sample["net_input"], features_only=True)
+
+        pad_idx = model.task.label_dictionary.pad()
         padding_mask = target_cats.ne(pad_idx)
 
         device = cat_logits.device
-        for k, v in self.group_name_to_group_attr_vec_idxs.items():
-            if device == v.device:
-                break
-            self.group_name_to_group_attr_vec_idxs[k] = v.to(device)
-        if self.group_masks.device != device:
-            self.group_masks = self.group_masks.to(device)
-        if self.cat_dict_to_vec_idx.device != device:
-            self.cat_dict_to_vec_idx = self.cat_dict_to_vec_idx.to(device)
+        cat_dict_to_vec_idx = model.task.cat_dict_idx_to_vec_idx.clone().to(device)
 
         # Batch x Time x Depth -> Batch x Depth x Time
-        cat_loss = F.cross_entropy(cat_logits.transpose(2, 1), self.cat_dict_to_vec_idx[target_cats], reduction="none")
+        cat_loss = F.cross_entropy(
+            cat_logits.transpose(2, 1),
+            cat_dict_to_vec_idx[target_cats],
+            reduction="none",
+        )
 
         # padding_value is -100 which as special semantics in cross_entropy
         cat_loss = (cat_loss * target_exclude_mask).sum()
@@ -90,15 +56,21 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         group_losses = []
         correct_attrs = torch.ones_like(target_cats).bool()
 
+        group_name_to_group_attr_vec_idxs = {}
+        for k, v in self.task.group_name_to_group_attr_vec_idxs.items():
+            group_name_to_group_attr_vec_idxs[k] = v.clone().to(device)
+        group_names = self.task.label_schema.group_names
+        group_masks = self.task.group_mask.clone().to(device)
+
         missing_binary_targets = torch.zeros_like(target_attrs)
-        cat_vec_idxs = self.cat_dict_to_vec_idx[target_cats.clone()]
+        cat_vec_idxs = cat_dict_to_vec_idx[target_cats.clone()]
         target_pad_val = -100
         cat_vec_idxs = cat_vec_idxs * cat_vec_idxs.ne(target_pad_val)  # make padding select 0th index
 
         # we want fixed iteration order of group names
-        for i, group_name in enumerate(self.label_schema.group_names):
-            group_idxs = self.group_name_to_group_attr_vec_idxs[group_name]
-            group_loss_mask = self.group_masks[cat_vec_idxs][:, :, i]
+        for i, group_name in enumerate(group_names):
+            group_idxs = group_name_to_group_attr_vec_idxs[group_name]
+            group_loss_mask = group_masks[cat_vec_idxs][:, :, i]
             group_loss_mask *= (
                 padding_mask * target_exclude_mask
             )  # reset padding to zero, since 0th vector was selected where padding is
@@ -148,19 +120,24 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
             correct_attrs *= correct + keep_unchanged
 
         correct_attrs *= padding_mask * target_exclude_mask.bool()  # Only count words, not padding
+
         correct_cat = (
-            (cat_logits.max(-1).indices == self.cat_dict_to_vec_idx[target_cats]) * padding_mask.bool()
+            (cat_logits.max(-1).indices == cat_dict_to_vec_idx[target_cats]) * padding_mask.bool()
         ) * target_exclude_mask.bool()
-        nwords_total = (target_exclude_mask == 1).sum().item()
+
+        nwords_total = nwords.sum().item() - (target_exclude_mask == 0).sum().item()
+
         correct_all = correct_attrs * correct_cat
 
         # NOTE: Just target attrs does not suffice for the binary labels
         # since 0 has a meaning, hence adding missing_binary_targets
         attrs_divisor = target_attrs.sum(-1) + missing_binary_targets.sum(-1)
+
         attrs_divisor[attrs_divisor == 0] = 1
 
         # average attributes per word, sum across sequence&batch
         attr_loss = (torch.stack(group_losses, dim=-1).sum(-1) / attrs_divisor).sum()
+
         loss = cat_loss + attr_loss
 
         logging_output = {
@@ -192,12 +169,12 @@ class MultiLabelTokenClassificationCriterion(FairseqCriterion):
         attr_loss = float(sum(log.get("attr_loss", 0.0) for log in logging_outputs))
 
         agg_output = {
-            "loss": round(float((cat_loss + attr_loss) / float(sample_size) / math.log(2)), 3),
-            "ppl": round(float(cat_loss) / float(sample_size) / math.log(2), 3),
-            "attr_loss": round(float(attr_loss) / float(sample_size) / math.log(2), 3),
-            "cat_acc": round(float(ncorrect_cat) / float(sample_size), 3),
-            "acc_exact": round(float(ncorrect_exact) / float(sample_size), 3),
-            "attrs_acc": round(float(ncorrect_attrs) / float(sample_size), 3),
+            "loss": float((cat_loss + attr_loss) / float(sample_size) / math.log(2)),
+            "ppl": float(cat_loss) / float(sample_size) / math.log(2),
+            "attr_loss": float(attr_loss) / float(sample_size) / math.log(2),
+            "acc_cat": float(ncorrect_cat) / float(sample_size),
+            "acc_exact": float(ncorrect_exact) / float(sample_size),
+            "acc_attrs": float(ncorrect_attrs) / float(sample_size),
             "ntokens": ntokens,
             "nwords": nwords,
             "nsentences": nsentences,

@@ -918,7 +918,7 @@ def make_nonterm_labels_decl():
     nonterm_labels = list(NONTERM_CATS)
 
     for prefix, nt_with_suffixes in NONTERM_SUFFIX.items():
-        nonterm_labels.extend(nt_with_suffixes)
+        nonterm_labels.extend(nt_with_suffix)
 
     for extra in [
         unary_branch_labels.UNARY_BRANCH_LABELS,

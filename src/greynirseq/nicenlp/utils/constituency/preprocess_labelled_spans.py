@@ -72,7 +72,7 @@ def main(args):
             padding_factor=args.padding_factor,
         )
 
-    label_dictionary, label_schema = task.load_label_dictionary(args, args.label_schema)
+    label_dictionary, label_schema = task.load_label_dictionary(args, args.nonterm_schema)
     labelled_span_parser = make_parse_labelled_spans(label_dictionary, label_schema)
 
     def make_binary_labelled_spans_dataset(input_prefix, output_prefix, num_workers):
@@ -352,7 +352,7 @@ def get_offsets(input_file, num_workers):
 
 def cli_main():
     parser = options.get_preprocessing_parser()
-    parser.add_argument("--label_schema", type=str, default=None)
+    parser.add_argument("--nonterm_schema", type=str, default=None)
     parser.add_argument("--term_schema", type=str, default=None)
     parser.add_argument("--nonterm_suffix", type=str, default=None)
     parser.add_argument("--term_suffix", type=str, default=None)
