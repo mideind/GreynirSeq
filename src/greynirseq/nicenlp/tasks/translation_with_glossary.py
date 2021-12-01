@@ -221,16 +221,22 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         # We make sure that the loaded ds is LanguagePairDataset - since we make assumptions about the ds structure.
         ds = self.datasets[split]
         assert isinstance(ds, LanguagePairDataset)
-        src_dataset = TargetSamplingWholeWordDataset(
-            src_dataset=ds.src,
-            tgt_dataset=ds.tgt,
+        # We sample whole words from the target side to use as constraints.
+        constraints = SampleWholeWordDataset(
+            dataset=ds.tgt,
             whole_word_masker=self.is_word_initial,
             seq_sample_ratio=self.glossary_task_config.seq_sample_ratio,
             mean_whole_word=self.glossary_task_config.mean_whole_word,
             stddev_whole_word=self.glossary_task_config.stddev_whole_word,
+            pad_idx=self.target_dictionary.index("<pad>"),
+            bpe=self.bpe,
+        )
+        # We append the constraints to the source.
+        src_dataset = AppendConstraintsDataset(
+            dataset=ds.src,
+            constraints=constraints,
             sep_symbol_idx=self.target_dictionary.index("<sep>"),
             constraint_symbol_idx=self.target_dictionary.index("<c>"),
-            pad_idx=self.target_dictionary.index("<pad>"),
             max_seq_len=self.args.max_source_positions,
             bpe=self.bpe,
         )
@@ -250,53 +256,36 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         )
 
 
-class TargetSamplingWholeWordDataset(BaseWrapperDataset):
+class AppendConstraintsDataset(BaseWrapperDataset):
+    """A Dataset class which appends constraints to 'dataset'.
+
+    A separator symbol is inserted between the original example and the constraints.
+    Between each constraint, a constraint symbol is inserted.
+    If the example goes over the max_seq_len, the example is truncated.
+    Assumes that the 'constraints' dataset returns a List[Tensor] when indexed."""
+
     def __init__(
         self,
-        src_dataset: BaseWrapperDataset,
-        tgt_dataset: BaseWrapperDataset,
-        whole_word_masker: Dict[int, int],
-        seq_sample_ratio: float,
-        mean_whole_word: float,
-        stddev_whole_word: float,
+        dataset: BaseWrapperDataset,
+        constraints: BaseWrapperDataset,
         sep_symbol_idx: int,
         constraint_symbol_idx: int,
-        pad_idx: int,
         max_seq_len: int,
         bpe,
     ):
-        super().__init__(src_dataset)
-        self.tgt_dataset = tgt_dataset
-        self.whole_word_masker = whole_word_masker
-        self.seq_sample_ratio = seq_sample_ratio
-        self.mean_whole_word = mean_whole_word
-        self.stddev_whole_word = stddev_whole_word
+        super().__init__(dataset)
+        self.constraints = constraints
         self.sep_symbol_idx = sep_symbol_idx
         self.constraint_symbol_idx = constraint_symbol_idx
-        self.pad_idx = pad_idx
         self.max_seq_len = max_seq_len
         # Just for debugging now
         self.bpe = bpe
 
     def __getitem__(self, idx):
         # Dim = (seq_len)
-        tgt: Tensor = self.tgt_dataset[idx]
-        src: Tensor = self.dataset[idx]
-        # For debugging
-        # logger.info(f"tgt {tgt}")
-        # logger.info(f"idx {idx}")
-        # logger.info(f"src: {self.bpe.decode(' '.join(str(x) for x in src.tolist()))}")
-        # logger.info(f"tgt: {self.bpe.decode(' '.join(str(x) for x in tgt.tolist()))}")
-        # Pure Python for a single number is faster
-        random_whole_word_count = random.gauss(self.mean_whole_word, self.stddev_whole_word)
-        constraints = whole_word_target_sampling(
-            tgt,
-            self.whole_word_masker,
-            self.seq_sample_ratio,
-            word_count_to_sample=random_whole_word_count,
-            contains_eos=True,
-        )
-        constraint_src = apply_constraints(constraints, src, self.constraint_symbol_idx, self.sep_symbol_idx)
+        example: Tensor = self.dataset[idx]
+        constraints: List[Tensor] = self.constraints[idx]
+        constraint_src = apply_constraints(constraints, example, self.constraint_symbol_idx, self.sep_symbol_idx)
         constraint_src = constraint_src[: self.max_seq_len]
         # logger.info(
         #     f"constraint_src: {self.bpe.decode(' '.join(str(x) for x in constraint_src.tolist() if x <= 32000))}"
@@ -304,36 +293,85 @@ class TargetSamplingWholeWordDataset(BaseWrapperDataset):
         return constraint_src
 
 
-def apply_constraints(constraints: List[Tensor], src: Tensor, constraint_idx: int, sep_idx: int) -> Tensor:
+class SampleWholeWordDataset(BaseWrapperDataset):
+    """A Dataset class which samples whole words from 'dataset'.
+
+    For each example, we sample a random number (0, 1] and if it is less than the 'seq_sample_ratio'
+    then we will sample whole words from that example.
+    The whole words samples are drawn based on a normal distribution.
+    The mean and standard deviation are given by the 'mean_whole_word' and 'stddev_whole_word' parameters.
+    This Dataset returns List[Tensor] when indexed."""
+
+    def __init__(
+        self,
+        dataset: BaseWrapperDataset,
+        whole_word_masker: Dict[int, int],
+        seq_sample_ratio: float,
+        mean_whole_word: float,
+        stddev_whole_word: float,
+        pad_idx: int,
+        bpe,
+    ):
+        super().__init__(dataset)
+        self.whole_word_masker = whole_word_masker
+        self.seq_sample_ratio = seq_sample_ratio
+        self.mean_whole_word = mean_whole_word
+        self.stddev_whole_word = stddev_whole_word
+        self.pad_idx = pad_idx
+        # Just for debugging now
+        self.bpe = bpe
+
+    def __getitem__(self, idx):
+        # Dim = (seq_len)
+        example: Tensor = self.dataset[idx]
+        # For debugging
+        # logger.info(f"example {example}")
+        # logger.info(f"idx {idx}")
+        # Pure Python for a single number is faster
+        random_whole_word_count = random.gauss(self.mean_whole_word, self.stddev_whole_word)
+        constraints = whole_word_sampling(
+            example,
+            self.whole_word_masker,
+            self.seq_sample_ratio,
+            word_count_to_sample=random_whole_word_count,
+            contains_eos=True,
+        )
+        return constraints
+
+
+def apply_constraints(constraints: List[Tensor], t: Tensor, constraint_idx: int, sep_idx: int) -> Tensor:
     """
     Apply constraints to a source sequence.
     """
-    src = torch.cat((src, torch.Tensor([sep_idx]).long()), dim=0)
+    # t = t_1, t_2, ..., t_n (t_i are subwords)
+    # t = t + <sep>
+    t = torch.cat((t, torch.Tensor([sep_idx]).long()), dim=0)
     for constraint in constraints:
-        src = torch.cat((src, constraint, torch.Tensor([constraint_idx]).long()), dim=0)
-    return src
+        # t = t + c_i + <c>
+        t = torch.cat((t, constraint, torch.Tensor([constraint_idx]).long()), dim=0)
+    return t
 
 
-def whole_word_target_sampling(
-    tgt: Tensor,
+def whole_word_sampling(
+    example: Tensor,
     whole_word_masker: Dict[int, int],
     seq_sample_ratio: float,
     word_count_to_sample: float,
     contains_eos: bool,
 ) -> List[Tensor]:
     """
-    Create target sampling constraints.
+    Create sampling constraints.
     """
     sampled_whole_words: List[Tensor] = []
     if contains_eos:
         # We need to remove the eos symbol from the target sequence
-        tgt = tgt[:-1]
-    tgt_whole_word_mask = [whole_word_masker[elm] for elm in tgt.tolist()]
+        example = example[:-1]
+    tgt_whole_word_mask = [whole_word_masker[elm] for elm in example.tolist()]
     # The number whole words in the target
     tgt_whole_word_count = sum(tgt_whole_word_mask)
     # The number of whole words in the target that we want to use as contraints
     word_count_to_sample = round(min(max(0, word_count_to_sample), tgt_whole_word_count))
-    
+
     fraction_sequences_to_constrain = seq_sample_ratio
     # Should we use this example as a constraint?
     use_example_as_constraint = random.random() < fraction_sequences_to_constrain
@@ -348,13 +386,15 @@ def whole_word_target_sampling(
     for sampled_idx in sampled_idxs:
         tgt_whole_word_start_idx = tgt_whole_word_start_idxs[sampled_idx]
         tgt_whole_word_length = tgt_whole_word_lengths[sampled_idx]
-        sampled_whole_words.append(tgt[tgt_whole_word_start_idx: tgt_whole_word_start_idx + tgt_whole_word_length])
+        sampled_whole_words.append(example[tgt_whole_word_start_idx : tgt_whole_word_start_idx + tgt_whole_word_length])
     return sampled_whole_words
 
 
 def whole_word_lengths(whole_word_mask: List[int]) -> List[int]:
     """Return the masks length, i.e. a padding_mask=[1,0,0,1,1,0] should return [3,1,2]"""
-    mask_idxs = torch.Tensor(whole_word_mask).nonzero().squeeze()  # For some reason, nonzero returns a tensor of size (1,2)
+    mask_idxs = (
+        torch.Tensor(whole_word_mask).nonzero().squeeze()
+    )  # For some reason, nonzero returns a tensor of size (1,2)
     lengths = []
     prev_idx: Optional[int] = None
     for idx in mask_idxs.tolist():

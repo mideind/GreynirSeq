@@ -4,7 +4,7 @@ from fairseq.utils import make_positions
 from greynirseq.nicenlp.tasks.translation_with_glossary import (
     make_positions_with_constraints,
     whole_word_lengths,
-    whole_word_target_sampling,
+    whole_word_sampling,
 )
 
 
@@ -199,7 +199,7 @@ def test_whole_word_target_sampling():
     whole_word_masker[0] = 0
     whole_word_masker[5] = 0
     whole_word_masker[9] = 0
-    result = whole_word_target_sampling(
+    result = whole_word_sampling(
         test, whole_word_masker, seq_sample_ratio=1.0, word_count_to_sample=2, contains_eos=False
     )
     assert len(result) == 2, "There should be two constraints"
@@ -211,7 +211,7 @@ def test_whole_word_target_sampling_with_eos():
     # Set some words as partial tokens
     whole_word_masker[5] = 0
     whole_word_masker[9] = 0
-    result = whole_word_target_sampling(
+    result = whole_word_sampling(
         test, whole_word_masker, seq_sample_ratio=1.0, word_count_to_sample=2, contains_eos=True
     )
     assert len(result) == 2, "There should be two constraints"
@@ -226,7 +226,7 @@ def test_whole_word_target_sampling_all_partial():
     whole_word_masker[5] = 0
     whole_word_masker[7] = 0
     whole_word_masker[9] = 0
-    result = whole_word_target_sampling(
+    result = whole_word_sampling(
         test, whole_word_masker, seq_sample_ratio=1.0, word_count_to_sample=2, contains_eos=False
     )
     assert len(result) == 2, "There should be two constraints"
@@ -240,10 +240,11 @@ def test_whole_word_target_sampling_count_larger_than_length():
     whole_word_masker[0] = 0
     whole_word_masker[5] = 0
     whole_word_masker[9] = 0
-    result = whole_word_target_sampling(
+    result = whole_word_sampling(
         test, whole_word_masker, seq_sample_ratio=1.0, word_count_to_sample=10, contains_eos=False
     )
     assert len(result) == 7, "There should be seven constraints"
+
 
 def test_whole_word_target_sampling_count_negative():
     test = torch.arange(0, 10).long()
@@ -252,7 +253,7 @@ def test_whole_word_target_sampling_count_negative():
     whole_word_masker[0] = 0
     whole_word_masker[5] = 0
     whole_word_masker[9] = 0
-    result = whole_word_target_sampling(
+    result = whole_word_sampling(
         test, whole_word_masker, seq_sample_ratio=1.0, word_count_to_sample=-10, contains_eos=False
     )
     assert len(result) == 0, "There should be no constraints"
