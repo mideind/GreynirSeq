@@ -10,4 +10,5 @@ from greynirseq.nicenlp.tasks import (
     multiclass_token_classification_task,
     multilabel_token_classification_task,
     translation_with_backtranslation,
+    translation_with_glossary,
 )
