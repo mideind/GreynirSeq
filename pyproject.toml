@@ -63,6 +63,7 @@ transformers = "^4.3.2"
 spacy = "^2"
 pyjarowinkler = "^1.8"
 scipy = "^1.5"
+sentencepiece = "^0.1.96"
 
 [tool.poetry.dev-dependencies]
 pydocstyle = "^5.0.2"

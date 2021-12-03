@@ -55,7 +55,18 @@ class MultiClassTokenClassificationHead(nn.Module):
 class MultiClassRobertaModel(RobertaModel):
     @classmethod
     def hub_models(cls):
-        return {"icebert.ner": "https://data.greynir.is/icebert.ner.tar.gz"}
+        return {
+            "icebert.ner": {
+                "path": "https://data.greynir.is/icebert.ner.tar.gz",
+                "gpt2_encoder_json": "https://data.greynir.is/icebert-extras/icebert-bpe-vocab.json",
+                "gpt2_vocab_bpe": "https://data.greynir.is/icebert-extras/icebert-bpe-merges.txt",
+            },
+            "icebert-ner": {
+                "path": "https://data.greynir.is/icebert.ner.tar.gz",
+                "gpt2_encoder_json": "https://data.greynir.is/icebert-extras/icebert-bpe-vocab.json",
+                "gpt2_vocab_bpe": "https://data.greynir.is/icebert-extras/icebert-bpe-merges.txt",
+            },
+        }
 
     def __init__(self, args, encoder: RobertaEncoder, task: FairseqTask):
         super().__init__(args, encoder)
