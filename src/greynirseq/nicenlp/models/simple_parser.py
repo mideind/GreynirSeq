@@ -5,7 +5,6 @@
 import logging
 from typing import List
 
-import pyximport
 import torch
 from fairseq import utils
 from fairseq.models import register_model, register_model_architecture
@@ -19,8 +18,6 @@ import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pyl
 from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
-
-pyximport.install()
 
 logger = logging.getLogger(__name__)
 

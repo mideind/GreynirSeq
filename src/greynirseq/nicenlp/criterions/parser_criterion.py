@@ -6,7 +6,6 @@ import math
 from collections import namedtuple
 from typing import Any, Dict, List, Union
 
-import pyximport
 import torch
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.models import FairseqModel
@@ -16,8 +15,6 @@ import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pyl
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
-
-pyximport.install()
 
 Numeric = Union[int, float, Tensor]
 
