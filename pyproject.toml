@@ -6,10 +6,6 @@ profile = "black"
 multi_line_output = 3
 line_length = 120
 
-[tool.pytest.ini_options]
-testpaths = [
-    "tests"
-]
 
 [tool.poetry]
 name = "greynirseq"
@@ -64,6 +60,7 @@ spacy = "^2"
 pyjarowinkler = "^1.8"
 scipy = "^1.5"
 sentencepiece = "^0.1.96"
+jaro-winkler = {git = "https://github.com/richmilne/JaroWinkler"}
 
 [tool.poetry.dev-dependencies]
 pydocstyle = "^5.0.2"

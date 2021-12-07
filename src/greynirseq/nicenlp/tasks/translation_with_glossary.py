@@ -10,10 +10,13 @@
 import argparse
 import logging
 import random
+import re
 from dataclasses import dataclass
 from functools import partial
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
+import jaro
 import torch
 from fairseq.data import Dictionary, encoders
 from fairseq.data.base_wrapper_dataset import BaseWrapperDataset
@@ -27,6 +30,8 @@ from greynirseq.nicenlp.utils.dictionary import ensure_symbols_are_present
 
 logger = logging.getLogger(__name__)
 
+non_letters_numbers = re.compile(r"\W", flags=re.UNICODE | re.IGNORECASE)
+
 
 @dataclass
 class GlossaryTaskConfig:
@@ -38,6 +43,9 @@ class GlossaryTaskConfig:
     seq_sample_ratio: float
     mean_whole_word: float
     stddev_whole_word: float
+    glossary_file: str
+    glossary_subset_prefix: str
+    fuzzy_match_threshold: int
 
     @staticmethod
     def from_args(args):
@@ -52,6 +60,9 @@ class GlossaryTaskConfig:
             seq_sample_ratio=args.glossary_seq_sample_ratio,
             mean_whole_word=args.glossary_mean_whole_word,
             stddev_whole_word=args.glossary_stddev_whole_word,
+            glossary_file=args.glossary_lookup_file,
+            glossary_subset_prefix=args.glossary_glosspref,
+            fuzzy_match_threshold=args.glossary_fuzzy_match_threshold,
         )
 
     @staticmethod
@@ -94,6 +105,34 @@ The sampling distribution is the normal distribution and this parameter is the s
             help="When constraints are added as a part of the input, their positional indices are changed by the task. \
 This parameter sets the starting index of the positional indices of the constraints. \
 Starting from 0 will 'restart' the positional indicies for the constraints.",
+        )
+        parser.add_argument(
+            "--glossary-lookup-file",
+            default="",
+            type=str,
+            help="The file which defines the glossary/lookup which should be used when evaluating the glossary functionality. \
+The file should be in DATA_DIR, i.e. a relative path. \
+This file is expected to be a tsv file with SRC *tab* TGT, where TGT is the translation of SRC. \
+Currently, we only support single word SRCs. \
+The glossary is used when we translate the validation/test subset defined in --glossary-glosspref. \
+We perform a fuzzy search for SRC in the input. \
+If the fuzzy match is above --glossary-fuzzy-match-threshold the corresponding TGT is added as a constraint.",
+        )
+        parser.add_argument(
+            "--glossary-glosspref",
+            default="",
+            type=str,
+            help="The subset name of the validation or testing data which should use the --glossary-lookup-file. \
+See --glossary-lookup-file help for more details",
+        )
+        parser.add_argument(
+            "--glossary-fuzzy-match-threshold",
+            default=100,
+            type=int,
+            help="The fuzzy match threshold when searching for SRC in the input. \
+If the fuzzy match is greater than the threshold, we append the corresponding glossary TGT as constraints. \
+The threshold is in [0, 100], 100 means exact match. \
+See --glossary-lookup-file help for more details",
         )
 
 
@@ -155,6 +194,14 @@ def apply_monkey_patch_for_make_positions(positional_marker_symbol_idx: int, pos
     )
 
 
+def read_glossary(path: Path) -> Dict[str, str]:
+    """Read the glossary from the given file. Return an empty dict if it does not exist."""
+    if not path.exists():
+        return {}
+    with path.open("r") as f:
+        return {line.split("\t")[0]: line.split("\t")[1].strip() for line in f}
+
+
 @register_task("translation_with_glossary")
 class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
     """
@@ -196,6 +243,10 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
             raise ValueError("The is_word_initial function is None.")
         self.is_word_initial = is_word_initial
 
+        # Get the data path
+        data_path = args.data.split(":")[0]
+        self.glossary = read_glossary(Path(data_path) / self.glossary_task_config.glossary_file)
+
         apply_monkey_patch_for_make_positions(
             positional_marker_symbol_idx=self.source_dictionary.index("<sep>"),
             positional_idx_restart_offset=self.glossary_task_config.constraint_positional_start_idx,
@@ -212,34 +263,56 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         """Load a given dataset split."""
         # Load the super stuff
         super().load_dataset(split=split, epoch=epoch, combine=combine, **kwargs)
+        logger.info(f"Split: {split}")
         if not self.glossary_task_config.enabled:
             return
+        is_glossary_pref = split == self.glossary_task_config.glossary_subset_prefix
         is_train_subset = split == getattr(self.args, "train_subset", None)
-        if not is_train_subset:
-            # We are not training - no need to add training constraints
-            return
+
         # We make sure that the loaded ds is LanguagePairDataset - since we make assumptions about the ds structure.
         ds = self.datasets[split]
+        src_dataset = ds.src
         assert isinstance(ds, LanguagePairDataset)
-        # We sample whole words from the target side to use as constraints.
-        constraints = SampleWholeWordDataset(
-            dataset=ds.tgt,
-            whole_word_masker=self.is_word_initial,
-            seq_sample_ratio=self.glossary_task_config.seq_sample_ratio,
-            mean_whole_word=self.glossary_task_config.mean_whole_word,
-            stddev_whole_word=self.glossary_task_config.stddev_whole_word,
-            pad_idx=self.target_dictionary.index("<pad>"),
-            bpe=self.bpe,
-        )
-        # We append the constraints to the source.
-        src_dataset = AppendConstraintsDataset(
-            dataset=ds.src,
-            constraints=constraints,
-            sep_symbol_idx=self.target_dictionary.index("<sep>"),
-            constraint_symbol_idx=self.target_dictionary.index("<c>"),
-            max_seq_len=self.args.max_source_positions,
-            bpe=self.bpe,
-        )
+        if is_train_subset:
+            logger.info("Training subset. Sampling whole words from target")
+            # We sample whole words from the target side to use as constraints.
+            constraints = SampleWholeWordDataset(
+                dataset=ds.tgt,
+                whole_word_masker=self.is_word_initial,
+                seq_sample_ratio=self.glossary_task_config.seq_sample_ratio,
+                mean_whole_word=self.glossary_task_config.mean_whole_word,
+                stddev_whole_word=self.glossary_task_config.stddev_whole_word,
+                pad_idx=self.target_dictionary.index("<pad>"),
+                bpe=self.bpe,
+            )
+            logger.info("Training subset. Appending constraints to SRC")
+            # We append the constraints to the source.
+            src_dataset = AppendConstraintsDataset(
+                dataset=ds.src,
+                constraints=constraints,
+                sep_symbol_idx=self.target_dictionary.index("<sep>"),
+                constraint_symbol_idx=self.target_dictionary.index("<c>"),
+                max_seq_len=self.args.max_source_positions,
+                bpe=self.bpe,
+            )
+        elif is_glossary_pref:
+            logger.info("Glossary subset. Fuzzy matching glossary SRC to input.")
+            constraints = FuzzyGlossaryConstraintsDataset(
+                dataset=ds.src,
+                glossary=self.glossary,
+                fuzzy_match_threshold=self.glossary_task_config.fuzzy_match_threshold,
+                bpe=self.bpe,
+            )
+            src_dataset = AppendConstraintsDataset(
+                dataset=ds.src,
+                constraints=constraints,
+                sep_symbol_idx=self.target_dictionary.index("<sep>"),
+                constraint_symbol_idx=self.target_dictionary.index("<c>"),
+                max_seq_len=self.args.max_source_positions,
+                bpe=self.bpe,
+            )
+            logger.info("Glossary subset. Appending constraints to SRC")
+
         self.datasets[split] = LanguagePairDataset(
             src_dataset,
             ds.src.sizes,
@@ -254,6 +327,36 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
             num_buckets=self.args.num_batch_buckets,
             shuffle=ds.shuffle,
         )
+
+    def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):
+        """Build a dataset used for inference."""
+        return super().build_dataset_for_inference(src_tokens, src_lengths, constraints=None)  # type: ignore
+
+
+class FuzzyGlossaryConstraintsDataset(BaseWrapperDataset):
+    """A Dataset class which fuzzy matches glossary entries to 'dataset'.
+
+    TODO: More explaination"""
+
+    def __init__(self, dataset, glossary: Dict[str, str], fuzzy_match_threshold: int, bpe):
+        super().__init__(dataset)
+        self.glossary = glossary
+        self.fuzzy_match_threshold = fuzzy_match_threshold
+        self.bpe = bpe
+
+    def __getitem__(self, idx):
+        # Dim = (seq_len)
+        example: Tensor = self.dataset[idx]
+        # TODO: Remove assumption that the fairseq source dictionary is irrelevant.
+        sentence = self.bpe.decode(" ".join(str(x) for x in tensor_to_list(example)))
+        fuzzy_matches = fuzzy_match_glossary(sentence, glossary=self.glossary)
+        glossary_constraints = [x[0] for x in filter(lambda x: x[1] >= self.fuzzy_match_threshold, fuzzy_matches)]
+        constraints = [
+            torch.Tensor([int(x) for x in self.bpe.encode(constraint).split(" ")]).long()
+            for constraint in glossary_constraints
+        ]
+        logger.info(f"Original sentence: {sentence}\nConstraints: {constraints}")
+        return constraints
 
 
 class AppendConstraintsDataset(BaseWrapperDataset):
@@ -285,6 +388,7 @@ class AppendConstraintsDataset(BaseWrapperDataset):
         # Dim = (seq_len)
         example: Tensor = self.dataset[idx]
         constraints: List[Tensor] = self.constraints[idx]
+        random.shuffle(constraints)
         constraint_src = apply_constraints(constraints, example, self.constraint_symbol_idx, self.sep_symbol_idx)
         constraint_src = constraint_src[: self.max_seq_len]
         # logger.info(
@@ -366,7 +470,7 @@ def whole_word_sampling(
     if contains_eos:
         # We need to remove the eos symbol from the target sequence
         example = example[:-1]
-    tgt_whole_word_mask = [whole_word_masker[elm] for elm in example.tolist()]
+    tgt_whole_word_mask = [whole_word_masker[elm] for elm in tensor_to_list(example)]
     # The number whole words in the target
     tgt_whole_word_count = sum(tgt_whole_word_mask)
     # The number of whole words in the target that we want to use as contraints
@@ -382,7 +486,7 @@ def whole_word_sampling(
     # The number of subwords in the whole words
     tgt_whole_word_lengths = whole_word_lengths(tgt_whole_word_mask)
     # The indices of the whole words in the original target
-    tgt_whole_word_start_idxs = torch.Tensor(tgt_whole_word_mask).nonzero().squeeze().tolist()
+    tgt_whole_word_start_idxs = tensor_to_list(torch.Tensor(tgt_whole_word_mask).nonzero().squeeze())
     for sampled_idx in sampled_idxs:
         tgt_whole_word_start_idx = tgt_whole_word_start_idxs[sampled_idx]
         tgt_whole_word_length = tgt_whole_word_lengths[sampled_idx]
@@ -392,12 +496,15 @@ def whole_word_sampling(
 
 def whole_word_lengths(whole_word_mask: List[int]) -> List[int]:
     """Return the masks length, i.e. a padding_mask=[1,0,0,1,1,0] should return [3,1,2]"""
-    mask_idxs = (
+    lengths: List[int] = []
+    if len(whole_word_mask) == 0:
+        return lengths
+    mask_idxs_ten = (
         torch.Tensor(whole_word_mask).nonzero().squeeze()
     )  # For some reason, nonzero returns a tensor of size (1,2)
-    lengths = []
+    mask_idxs = tensor_to_list(mask_idxs_ten)
     prev_idx: Optional[int] = None
-    for idx in mask_idxs.tolist():
+    for idx in mask_idxs:
         if prev_idx is None:
             prev_idx = idx
             continue
@@ -406,3 +513,41 @@ def whole_word_lengths(whole_word_mask: List[int]) -> List[int]:
     if prev_idx is not None:
         lengths.append(len(whole_word_mask) - prev_idx)
     return lengths
+
+
+Translation = str
+Source = str
+Original = str
+FuzzyResults = List[Tuple[Translation, float, Source, Original]]
+
+
+def fuzzy_match_glossary(sentence: str, glossary: Dict[str, str], token_limit=5) -> FuzzyResults:
+    """
+    Return a list of glossary translations that are fuzzy matches of the sentence.
+
+    Threshold is an integer between 0 and 100.
+    """
+    glossary_translations: FuzzyResults = []
+
+    # Since we just 'split', some tokens will contain punctuation, we remove it.
+    sentence = re.sub(non_letters_numbers, " ", sentence)
+    for token in sentence.split():
+        token_matches: FuzzyResults = []
+        for key, value in glossary.items():
+            score = jaro.jaro_winkler_metric(token, key)
+            token_matches.append((value, score, key, token))
+        token_matches.sort(key=lambda x: x[1], reverse=True)
+        glossary_translations.extend(token_matches[:token_limit])
+    return glossary_translations
+
+
+def tensor_to_list(tensor: Tensor) -> List:
+    """
+    Convert a tensor to a list.
+
+    tensor.tolist() returns a list of numbers OR a single number if the tensor only contains one element.
+    """
+    t = tensor.tolist()
+    if isinstance(t, list):
+        return t
+    return [t]

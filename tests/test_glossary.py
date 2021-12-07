@@ -1,8 +1,13 @@
+from pathlib import Path
+
+import pytest
 import torch
 from fairseq.utils import make_positions
 
 from greynirseq.nicenlp.tasks.translation_with_glossary import (
+    fuzzy_match_glossary,
     make_positions_with_constraints,
+    read_glossary,
     whole_word_lengths,
     whole_word_sampling,
 )
@@ -257,3 +262,98 @@ def test_whole_word_target_sampling_count_negative():
         test, whole_word_masker, seq_sample_ratio=1.0, word_count_to_sample=-10, contains_eos=False
     )
     assert len(result) == 0, "There should be no constraints"
+
+
+def test_fuzzy_match_glossary_exact_match():
+    test_glossary = {"hello": "hæ", "world": "heimur"}
+    test_sentence = "hello world"
+    expected_result = ["hæ", "heimur"]
+    results = fuzzy_match_glossary(sentence=test_sentence, glossary=test_glossary)
+    threshold = 1.0
+    print(results)
+    assert [x[0] for x in filter(lambda x: x[1] >= threshold, results)] == expected_result
+
+
+def test_fuzzy_match_glossary_not_exact():
+    test_glossary = {"hello": "hæ", "world": "heimur"}
+    test_sentence = "hell worl"
+    expected_result = []
+    results = fuzzy_match_glossary(sentence=test_sentence, glossary=test_glossary)
+    threshold = 1.0
+    print(results)
+    assert [x[0] for x in filter(lambda x: x[1] >= threshold, results)] == expected_result
+
+def test_fuzzy_match_glossary_threshold():
+    test_glossary = {"hello": "hæ", "world": "heimur"}
+    test_sentence = "hell worl"
+    expected_result = ["hæ", "heimur"]
+    results = fuzzy_match_glossary(sentence=test_sentence, glossary=test_glossary)
+    threshold = 0.8
+    print(results)
+    assert [x[0] for x in filter(lambda x: x[1] >= threshold, results)] == expected_result
+
+
+# Do we want a single result or multiple per token?
+# Collection of cases we want to test
+
+
+@pytest.fixture(scope="session")
+def glossary_data():
+    p = Path("tests/test_glossary.tsv")
+    return read_glossary(p)
+
+
+# flake8: noqa
+# @pytest.mark.skip(reason="Test for finding good hyperparameters. Not to be run automatically.")
+@pytest.mark.parametrize(
+    "src,tgt,expected",
+    [
+        (
+            "Upp úr 1830 áttaði Thomas Brisbane sig á að π1 Gruis var mun nálægara tvístirni en hin stjarnan.",
+            "Thomas Brisbane realised in the 1830s that π1 Gruis was itself also a much closer binary star system.",
+            ["binary"],
+        ),
+        (
+            "Stóra Magellansskýið er risavaxið en mjög lítið í samanburði við Vetrarbrautina okkar, eða aðeins 14.000 ljósár í þvermál - næstum tífallt minni en Vetrarbrautin okkar.",
+            "The Large Magellanic Cloud is enormous, but when compared to our own galaxy it is very modest in extent, spanning just 14 000 light-years - about ten times smaller than the Milky Way.",
+            [
+                "light-year",
+            ],  # 'Vetrarbrautina okkar' er 'Milky-way', en það er ekki í glossary, bara 'vetrarbraut' sem 'galaxy'
+        ),
+        (
+            "Stjörnufræðingarnir hafa nú notað gögnin til að setja saman stærstu skrá sem til er yfir stjörnur í miðju vetrarbrautarinnar [2].",
+            "The team has now used these data to compile the largest catalogue of the central concentration of stars in the Milky Way ever created [2].",
+            [],
+        ),
+        (
+            "Öflug geislun frá glóandi heitum afkvæmum þess hefur haft feikilega mikil áhrif á skýið.",
+            "It has been dramatically affected by the powerful radiation coming from its smoldering offspring.",
+            ["radiation"],
+        ),
+        (
+            "Ekki er hægt að útiloka slíkan staðbundinn lofthjúp, sem er fræðilega mögulegur, með þessari rannsókn.",
+            "Such a local atmosphere, which is possible in theory, is not excluded by the observations.",
+            ["atmosphere"],
+        ),
+        (
+            "Mikill massi þyrpingarinnar brýtur ljós fjarlægu vetrarbrautarinnar og verkar því eins og þyngdarlinsa [2].",
+            "The vast mass of this cluster bends the light of the more distant galaxy, acting as a gravitational lens [2].",
+            ["cluster", "galaxy"],
+        ),
+    ],
+)
+def test_glossary_matching(src, tgt, expected, glossary_data):
+    """Testing the fuzzy matching used to pair glossary entries.
+
+    Not all the test cases will (probably ever) pass but are left here to try different hyperparameters/heuristics.
+    The threshold chosen should preferably allow more matches than too few, since the training is done with negative examples as well.
+    This test case should not be run automatically."""
+    results = fuzzy_match_glossary(sentence=src, glossary=glossary_data)
+    results = sorted(results, key=lambda x: x[1], reverse=True)
+    threshold = 0.95
+    print(results[:10])
+    assert [x[0] for x in filter(lambda x: x[1] >= threshold, results)] == expected
+
+
+# ljósmæling	photometry
+# ljósmælir	photometer
