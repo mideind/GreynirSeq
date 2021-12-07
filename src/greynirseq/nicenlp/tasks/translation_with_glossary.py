@@ -424,12 +424,10 @@ class SampleWholeWordDataset(BaseWrapperDataset):
         # Dim = (seq_len)
         constraints: List[Tensor] = []
         sampled_whole_word_count = poisson.rvs(self.mean_whole_word)
-        logger.debug(f"Random whole word count: {sampled_whole_word_count}")
         positive_whole_word_count = sampled_whole_word_count
         if self.include_negative_examples:
             negative_whole_word_mean = sampled_whole_word_count * self.negative_example_ratio
             negative_whole_word_count = min(poisson.rvs(negative_whole_word_mean), positive_whole_word_count)
-            logger.debug(f"Negative examples whole word count: {negative_whole_word_count}")
             positive_whole_word_count -= negative_whole_word_count
             random_idx = random.choice(range(len(self.dataset)))
             negative_example = self.dataset[random_idx]
@@ -442,7 +440,6 @@ class SampleWholeWordDataset(BaseWrapperDataset):
                     contains_eos=True,
                 )
             )
-        logger.debug(f"Positive examples whole word count: {positive_whole_word_count}")
         positive_example: Tensor = self.dataset[idx]
         constraints.extend(
             whole_word_sampling(
