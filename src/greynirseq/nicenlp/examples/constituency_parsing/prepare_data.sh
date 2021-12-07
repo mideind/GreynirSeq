@@ -39,8 +39,6 @@ get_fixed_random_byte_stream()
 set -ex
 
 ### data is kept in many separate .gld files, we need to merge them
-rm -f "${DATA_VALID_GOLD_FILESNAMES}"
-rm -f "${DATA_FINETUNE}/text.txt" "${DATA_FINETUNE}/term.txt" "${DATA_FINETUNE}/nonterm.txt"
 if [ ! -f "${DATA_VALID_GOLD_FILESNAMES}" ] ; then
     # total number of files 453
     NUM_DEV=100
@@ -61,6 +59,7 @@ python "${EXPORTER}" export "${DATA_DEBUG_PSD}" \
     --binarize-trees --ignore-errors --error-log="${WDIR}/data/error_trees_gold.psd" --append-errors
 
 ### Prepare finetuning set (using part of gold devset data)
+rm -f "${DATA_FINETUNE}/text.txt" "${DATA_FINETUNE}/term.txt" "${DATA_FINETUNE}/nonterm.txt"
 while read -r FILEPATH ; do
     python "${EXPORTER}" export "${FILEPATH}" \
         "${DATA_FINETUNE}/text.txt" "${DATA_FINETUNE}/term.txt" "${DATA_FINETUNE}/nonterm.txt" \
@@ -68,6 +67,7 @@ while read -r FILEPATH ; do
 done < "${DATA_FINETUNE_FILENAMES}"
 
 ## Prepare gold validation set
+rm -f "${DATA_VALID}/text.txt" "${DATA_VALID}/term.txt" "${DATA_VALID}/nonterm.txt"
 while read -r FILEPATH ; do
     python "${EXPORTER}" export "${FILEPATH}" \
         "${DATA_VALID}/text.txt" "${DATA_VALID}/term.txt" "${DATA_VALID}/nonterm.txt" \
@@ -89,7 +89,7 @@ python "${EXPORTER}" export "${DATA_SILVER_PSD}" \
 
 # Prepare copper set (rest of data from cfg parser)
 mkdir -p "${DATA_BASE}/data/copper"
-rm -f "${WDIR}/data/copper/nonterm.txt" "${WDIR}/data/copper/term.txt" > "${WDIR}/data/copper/text.txt"
+rm -f "${WDIR}/data/copper/nonterm.txt" "${WDIR}/data/copper/term.txt" "${WDIR}/data/copper/text.txt"
 for IDX in {01..10} ; do
     python "${EXPORTER}" export "${WDIR}/greynircorpus/psd/copper/copper${IDX}" \
         "${DATA_COPPER}/text.txt" "${DATA_COPPER}/term.txt" "${DATA_COPPER}/nonterm.txt" \

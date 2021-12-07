@@ -134,6 +134,7 @@ def dump_nonterm_schema(output_file, simplify):
 @click.option("--sep", default="<sep>", type=str)
 def dump_term_schema(output_file, sep):
     obj = greynir_utils.make_term_label_decl(sep=sep)
+    obj["ignore_categories"] = []
     json.dump(obj, output_file, indent=4, ensure_ascii=False)
 
 

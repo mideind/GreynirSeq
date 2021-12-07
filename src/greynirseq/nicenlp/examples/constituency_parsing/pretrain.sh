@@ -11,7 +11,6 @@ MAX_SENTENCES=50         # Batch size.
 ACCUM=1
 
 # Pretrained model
-RESTORE_PATH=/data/models/icebert/icebert-base-igc-ic3-rmhvocab-IceBERT/checkpoint38.pt
 RESTORE_PATH=/data/models/icebert/icebert-first-rmh_different_vocab/icebert-base-36k/model.pt
 ENCODER_JSON_PATH=/data/models/icebert/icebert-first-rmh_different_vocab/icebert-base-36k/icebert-bpe-vocab.json
 VOCAB_BPE_PATH=/data/models/icebert/icebert-first-rmh_different_vocab/icebert-base-36k/icebert-bpe-merges.txt
