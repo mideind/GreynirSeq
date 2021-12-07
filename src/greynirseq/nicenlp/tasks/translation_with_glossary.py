@@ -395,6 +395,8 @@ class SampleWholeWordDataset(BaseWrapperDataset):
     then we will sample whole words from that example.
     The whole words samples are drawn based on a possion distribution.
     The mean is given by the 'mean_whole_word' parameter.
+    Additionally, a fraction of the whole words are negative examples.
+
     This Dataset returns List[Tensor] when indexed."""
 
     def __init__(
@@ -405,26 +407,51 @@ class SampleWholeWordDataset(BaseWrapperDataset):
         mean_whole_word: float,
         pad_idx: int,
         bpe,
+        include_negative_examples=True,
+        negative_example_ratio=0.3,
     ):
         super().__init__(dataset)
         self.whole_word_masker = whole_word_masker
         self.seq_sample_ratio = seq_sample_ratio
         self.mean_whole_word = mean_whole_word
         self.pad_idx = pad_idx
+        self.include_negative_examples = include_negative_examples
+        self.negative_example_ratio = negative_example_ratio
         # Just for debugging now
         self.bpe = bpe
 
     def __getitem__(self, idx):
         # Dim = (seq_len)
-        example: Tensor = self.dataset[idx]
-        random_whole_word_count = poisson.rvs(self.mean_whole_word)
-        logger.debug(f"Random whole word count: {random_whole_word_count}")
-        constraints = whole_word_sampling(
-            example,
-            self.whole_word_masker,
-            self.seq_sample_ratio,
-            word_count_to_sample=random_whole_word_count,
-            contains_eos=True,
+        constraints: List[Tensor] = []
+        sampled_whole_word_count = poisson.rvs(self.mean_whole_word)
+        logger.debug(f"Random whole word count: {sampled_whole_word_count}")
+        positive_whole_word_count = sampled_whole_word_count
+        if self.include_negative_examples:
+            negative_whole_word_mean = sampled_whole_word_count * self.negative_example_ratio
+            negative_whole_word_count = min(poisson.rvs(negative_whole_word_mean), positive_whole_word_count)
+            logger.debug(f"Negative examples whole word count: {negative_whole_word_count}")
+            positive_whole_word_count -= negative_whole_word_count
+            random_idx = random.choice(range(len(self.dataset)))
+            negative_example = self.dataset[random_idx]
+            constraints.extend(
+                whole_word_sampling(
+                    negative_example,
+                    self.whole_word_masker,
+                    self.seq_sample_ratio,
+                    word_count_to_sample=positive_whole_word_count,
+                    contains_eos=True,
+                )
+            )
+        logger.debug(f"Positive examples whole word count: {positive_whole_word_count}")
+        positive_example: Tensor = self.dataset[idx]
+        constraints.extend(
+            whole_word_sampling(
+                positive_example,
+                self.whole_word_masker,
+                self.seq_sample_ratio,
+                word_count_to_sample=positive_whole_word_count,
+                contains_eos=True,
+            )
         )
         return constraints
 
