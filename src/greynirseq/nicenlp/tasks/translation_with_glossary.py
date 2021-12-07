@@ -22,6 +22,7 @@ from fairseq.data import Dictionary, encoders
 from fairseq.data.base_wrapper_dataset import BaseWrapperDataset
 from fairseq.data.language_pair_dataset import LanguagePairDataset
 from fairseq.tasks import register_task
+from scipy.stats import poisson
 from torch.functional import Tensor
 
 from greynirseq.nicenlp.data.encoding import get_word_beginnings
@@ -42,7 +43,6 @@ class GlossaryTaskConfig:
     constraint_positional_start_idx: int
     seq_sample_ratio: float
     mean_whole_word: float
-    stddev_whole_word: float
     glossary_file: str
     glossary_subset_prefix: str
     fuzzy_match_threshold: int
@@ -59,7 +59,6 @@ class GlossaryTaskConfig:
             constraint_positional_start_idx=args.glossary_constraint_positional_start_idx,
             seq_sample_ratio=args.glossary_seq_sample_ratio,
             mean_whole_word=args.glossary_mean_whole_word,
-            stddev_whole_word=args.glossary_stddev_whole_word,
             glossary_file=args.glossary_lookup_file,
             glossary_subset_prefix=args.glossary_glosspref,
             fuzzy_match_threshold=args.glossary_fuzzy_match_threshold,
@@ -84,19 +83,11 @@ their effectiveness can be evaluated given a glossary.",
         )
         parser.add_argument(
             "--glossary-mean-whole-word",
-            default=1.0,
+            default=3.0,
             type=float,
             help="During training, soft constraints are sampled from the target. \
 The sampling selects whole-words (potentially multiple subwords). \
-The sampling distribution is the normal distribution and this parameter is the mean of that distribution.",
-        )
-        parser.add_argument(
-            "--glossary-stddev-whole-word",
-            default=2.0,
-            type=float,
-            help="During training, soft constraints are sampled from the target. \
-The sampling selects whole-words (potentially multiple subwords). \
-The sampling distribution is the normal distribution and this parameter is the stddev of that distribution.",
+The sampling distribution is the poisson distribution and this parameter is the mean of that distribution.",
         )
         parser.add_argument(
             "--glossary-constraint-positional-start-idx",
@@ -127,11 +118,11 @@ See --glossary-lookup-file help for more details",
         )
         parser.add_argument(
             "--glossary-fuzzy-match-threshold",
-            default=100,
-            type=int,
+            default=1.0,
+            type=float,
             help="The fuzzy match threshold when searching for SRC in the input. \
 If the fuzzy match is greater than the threshold, we append the corresponding glossary TGT as constraints. \
-The threshold is in [0, 100], 100 means exact match. \
+The threshold is in [0, 1.0], 1.0 means exact match. \
 See --glossary-lookup-file help for more details",
         )
 
@@ -263,7 +254,7 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         """Load a given dataset split."""
         # Load the super stuff
         super().load_dataset(split=split, epoch=epoch, combine=combine, **kwargs)
-        logger.info(f"Split: {split}")
+        logger.debug(f"Split: {split}")
         if not self.glossary_task_config.enabled:
             return
         is_glossary_pref = split == self.glossary_task_config.glossary_subset_prefix
@@ -274,18 +265,17 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         src_dataset = ds.src
         assert isinstance(ds, LanguagePairDataset)
         if is_train_subset:
-            logger.info("Training subset. Sampling whole words from target")
+            logger.debug("Training subset. Sampling whole words from target")
             # We sample whole words from the target side to use as constraints.
             constraints = SampleWholeWordDataset(
                 dataset=ds.tgt,
                 whole_word_masker=self.is_word_initial,
                 seq_sample_ratio=self.glossary_task_config.seq_sample_ratio,
                 mean_whole_word=self.glossary_task_config.mean_whole_word,
-                stddev_whole_word=self.glossary_task_config.stddev_whole_word,
                 pad_idx=self.target_dictionary.index("<pad>"),
                 bpe=self.bpe,
             )
-            logger.info("Training subset. Appending constraints to SRC")
+            logger.debug("Training subset. Appending constraints to SRC")
             # We append the constraints to the source.
             src_dataset = AppendConstraintsDataset(
                 dataset=ds.src,
@@ -296,7 +286,7 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
                 bpe=self.bpe,
             )
         elif is_glossary_pref:
-            logger.info("Glossary subset. Fuzzy matching glossary SRC to input.")
+            logger.debug("Glossary subset. Fuzzy matching glossary SRC to input.")
             constraints = FuzzyGlossaryConstraintsDataset(
                 dataset=ds.src,
                 glossary=self.glossary,
@@ -311,7 +301,7 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
                 max_seq_len=self.args.max_source_positions,
                 bpe=self.bpe,
             )
-            logger.info("Glossary subset. Appending constraints to SRC")
+            logger.debug("Glossary subset. Appending constraints to SRC")
 
         self.datasets[split] = LanguagePairDataset(
             src_dataset,
@@ -351,11 +341,12 @@ class FuzzyGlossaryConstraintsDataset(BaseWrapperDataset):
         sentence = self.bpe.decode(" ".join(str(x) for x in tensor_to_list(example)))
         fuzzy_matches = fuzzy_match_glossary(sentence, glossary=self.glossary)
         glossary_constraints = [x[0] for x in filter(lambda x: x[1] >= self.fuzzy_match_threshold, fuzzy_matches)]
+        logger.debug(f"Glossary Constraints: {glossary_constraints}")
         constraints = [
             torch.Tensor([int(x) for x in self.bpe.encode(constraint).split(" ")]).long()
             for constraint in glossary_constraints
         ]
-        logger.info(f"Original sentence: {sentence}\nConstraints: {constraints}")
+        logger.debug(f"Original sentence: {sentence}")
         return constraints
 
 
@@ -402,8 +393,8 @@ class SampleWholeWordDataset(BaseWrapperDataset):
 
     For each example, we sample a random number (0, 1] and if it is less than the 'seq_sample_ratio'
     then we will sample whole words from that example.
-    The whole words samples are drawn based on a normal distribution.
-    The mean and standard deviation are given by the 'mean_whole_word' and 'stddev_whole_word' parameters.
+    The whole words samples are drawn based on a possion distribution.
+    The mean is given by the 'mean_whole_word' parameter.
     This Dataset returns List[Tensor] when indexed."""
 
     def __init__(
@@ -412,7 +403,6 @@ class SampleWholeWordDataset(BaseWrapperDataset):
         whole_word_masker: Dict[int, int],
         seq_sample_ratio: float,
         mean_whole_word: float,
-        stddev_whole_word: float,
         pad_idx: int,
         bpe,
     ):
@@ -420,7 +410,6 @@ class SampleWholeWordDataset(BaseWrapperDataset):
         self.whole_word_masker = whole_word_masker
         self.seq_sample_ratio = seq_sample_ratio
         self.mean_whole_word = mean_whole_word
-        self.stddev_whole_word = stddev_whole_word
         self.pad_idx = pad_idx
         # Just for debugging now
         self.bpe = bpe
@@ -428,11 +417,8 @@ class SampleWholeWordDataset(BaseWrapperDataset):
     def __getitem__(self, idx):
         # Dim = (seq_len)
         example: Tensor = self.dataset[idx]
-        # For debugging
-        # logger.info(f"example {example}")
-        # logger.info(f"idx {idx}")
-        # Pure Python for a single number is faster
-        random_whole_word_count = random.gauss(self.mean_whole_word, self.stddev_whole_word)
+        random_whole_word_count = poisson.rvs(self.mean_whole_word)
+        logger.debug(f"Random whole word count: {random_whole_word_count}")
         constraints = whole_word_sampling(
             example,
             self.whole_word_masker,

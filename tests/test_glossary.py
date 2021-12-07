@@ -304,7 +304,7 @@ def glossary_data():
 
 
 # flake8: noqa
-# @pytest.mark.skip(reason="Test for finding good hyperparameters. Not to be run automatically.")
+@pytest.mark.skip(reason="Test for finding good hyperparameters. Not to be run automatically.")
 @pytest.mark.parametrize(
     "src,tgt,expected",
     [
