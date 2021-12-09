@@ -11,17 +11,21 @@ import argparse
 import logging
 import random
 import re
+from abc import ABCMeta
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import jaro
+import spacy
+import tokenizer
 import torch
 from fairseq.data import Dictionary, encoders
 from fairseq.data.base_wrapper_dataset import BaseWrapperDataset
 from fairseq.data.language_pair_dataset import LanguagePairDataset
 from fairseq.tasks import register_task
+from islenska import Bin
 from scipy.stats import poisson
 from torch.functional import Tensor
 
@@ -207,23 +211,22 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         tgt_dict: Dictionary,
     ):
         super().__init__(args, src_dict, tgt_dict)  # type: ignore
-        config = GlossaryTaskConfig.from_args(args)
-        if config.enabled:
+        self.config = GlossaryTaskConfig.from_args(args)
+        if self.config.enabled:
             logger.info("Glossary is ENABLED")
-            logger.info(f"Glossary config: {config}")
+            logger.info(f"Glossary config: {self.config}")
         else:
             logger.info("Glossary is DISABLED")
-        self.glossary_task_config = config
         # Ensure that <sep> and <c> are defined in the dictionaries.
         ensure_symbols_are_present(
             self.source_dictionary,
             ["<c>", "<sep>"],
-            self.glossary_task_config.ok_to_increase_dict_size,
+            self.config.ok_to_increase_dict_size,
         )
         ensure_symbols_are_present(
             self.target_dictionary,
             ["<c>", "<sep>"],
-            self.glossary_task_config.ok_to_increase_dict_size,
+            self.config.ok_to_increase_dict_size,
         )
         assert (
             self.target_dictionary == self.source_dictionary
@@ -236,13 +239,17 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
 
         # Get the data path
         data_path = args.data.split(":")[0]
-        self.glossary = read_glossary(Path(data_path) / self.glossary_task_config.glossary_file)
+        self.glossary = read_glossary(Path(data_path) / self.config.glossary_file)
 
+        # Apply the monkey patch for make_positions so that we glossary items are placed at the right position.
         apply_monkey_patch_for_make_positions(
             positional_marker_symbol_idx=self.source_dictionary.index("<sep>"),
-            positional_idx_restart_offset=self.glossary_task_config.constraint_positional_start_idx,
+            positional_idx_restart_offset=self.config.constraint_positional_start_idx,
         )
         self.bpe = encoders.build_bpe(args)
+
+        self.src_lemmatizer = get_lemmatizer_for_lang(self.args.source_lang)
+        self.tgt_lemmatizer = get_lemmatizer_for_lang(self.args.target_lang)
 
     @staticmethod
     def add_args(parser) -> None:
@@ -255,9 +262,9 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         # Load the super stuff
         super().load_dataset(split=split, epoch=epoch, combine=combine, **kwargs)
         logger.debug(f"Split: {split}")
-        if not self.glossary_task_config.enabled:
+        if not self.config.enabled:
             return
-        is_glossary_pref = split == self.glossary_task_config.glossary_subset_prefix
+        is_glossary_pref = split == self.config.glossary_subset_prefix
         is_train_subset = split == getattr(self.args, "train_subset", None)
 
         # We make sure that the loaded ds is LanguagePairDataset - since we make assumptions about the ds structure.
@@ -270,8 +277,8 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
             constraints = SampleWholeWordDataset(
                 dataset=ds.tgt,
                 whole_word_masker=self.is_word_initial,
-                seq_sample_ratio=self.glossary_task_config.seq_sample_ratio,
-                mean_whole_word=self.glossary_task_config.mean_whole_word,
+                seq_sample_ratio=self.config.seq_sample_ratio,
+                mean_whole_word=self.config.mean_whole_word,
                 pad_idx=self.target_dictionary.index("<pad>"),
                 bpe=self.bpe,
             )
@@ -289,8 +296,10 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
             logger.debug("Glossary subset. Fuzzy matching glossary SRC to input.")
             constraints = FuzzyGlossaryConstraintsDataset(
                 dataset=ds.src,
+                dictionary=self.source_dictionary,
                 glossary=self.glossary,
-                fuzzy_match_threshold=self.glossary_task_config.fuzzy_match_threshold,
+                fuzzy_match_threshold=self.config.fuzzy_match_threshold,
+                lemmatizer=self.src_lemmatizer,
                 bpe=self.bpe,
             )
             src_dataset = AppendConstraintsDataset(
@@ -323,22 +332,81 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         return super().build_dataset_for_inference(src_tokens, src_lengths, constraints=None)  # type: ignore
 
 
+class Lemmatizer(metaclass=ABCMeta):
+    def lemmatize(self, sent: str) -> List[str]:
+        ...
+
+
+class ENLemmatizer(Lemmatizer):
+    """A basic English Lemmatizer"""
+
+    def __init__(self):
+        self.nlp = spacy.load("en_core_web_md")
+
+    def lemmatize(self, sent) -> List[str]:
+        lemmas = []
+        for sent in self.nlp(sent).sents:
+            lemmas.extend(sent.lemma_.split(" "))
+        return lemmas
+
+
+class ISLemmatizer(Lemmatizer):
+    """A basic Icelandic Lemmatizer"""
+
+    def __init__(self):
+        self.bin = Bin()
+
+    def lemmatize(self, sent) -> List[str]:
+        sents = tokenizer.split_into_sentences(sent)
+        return [self.lemma_is(w) for s in sents for w in s.split(" ")]
+
+    def lemma_is(self, word: str, **kwargs) -> str:
+        _, m = self.bin.lookup(word, **kwargs)
+        if m:
+            return m[0].ord.replace("-", "")
+        return word
+
+
+def get_lemmatizer_for_lang(lang: str) -> Lemmatizer:
+    if lang.lower() in {"is_is", "is"}:
+        return ISLemmatizer()
+    elif lang.lower() in {"en_xx", "en"}:
+        return ENLemmatizer()
+    else:
+        raise ValueError(f"Missing lemmatizer for {lang}")
+
+
 class FuzzyGlossaryConstraintsDataset(BaseWrapperDataset):
     """A Dataset class which fuzzy matches glossary entries to 'dataset'.
 
     TODO: More explaination"""
 
-    def __init__(self, dataset, glossary: Dict[str, str], fuzzy_match_threshold: int, bpe):
+    def __init__(
+        self,
+        dataset,
+        dictionary: Dictionary,
+        glossary: Dict[str, str],
+        fuzzy_match_threshold: int,
+        lemmatizer: Lemmatizer,
+        bpe,
+    ):
         super().__init__(dataset)
         self.glossary = glossary
         self.fuzzy_match_threshold = fuzzy_match_threshold
+        self.dictionary = dictionary
+        self.lemmatizer = lemmatizer
         self.bpe = bpe
 
     def __getitem__(self, idx):
         # Dim = (seq_len)
         example: Tensor = self.dataset[idx]
-        # TODO: Remove assumption that the fairseq source dictionary is irrelevant.
-        sentence = self.bpe.decode(" ".join(str(x) for x in tensor_to_list(example)))
+
+        sentence = self.bpe.decode(
+            self.dictionary.string(
+                example, extra_symbols_to_ignore=[self.dictionary.index("<sep>"), self.dictionary.index("<c>")]
+            )
+        )
+        sentence = " ".join(self.lemmatizer.lemmatize(sent=sentence))
         fuzzy_matches = fuzzy_match_glossary(sentence, glossary=self.glossary)
         glossary_constraints = [x[0] for x in filter(lambda x: x[1] >= self.fuzzy_match_threshold, fuzzy_matches)]
         logger.debug(f"Glossary Constraints: {glossary_constraints}")
@@ -531,6 +599,17 @@ Original = str
 FuzzyResults = List[Tuple[Translation, float, Source, Original]]
 
 
+def match_glossary(
+    sentence: str, glossary: Dict[str, str], lemmatizer: Lemmatizer = None, token_limit=5
+) -> FuzzyResults:
+    """
+    Match a sentence to a glossary.
+    """
+    if lemmatizer is not None:
+        sentence = " ".join(lemmatizer.lemmatize(sentence))
+    return fuzzy_match_glossary(sentence, glossary, token_limit)
+
+
 def fuzzy_match_glossary(sentence: str, glossary: Dict[str, str], token_limit=5) -> FuzzyResults:
     """
     Return a list of glossary translations that are fuzzy matches of the sentence.
@@ -539,8 +618,6 @@ def fuzzy_match_glossary(sentence: str, glossary: Dict[str, str], token_limit=5)
     """
     glossary_translations: FuzzyResults = []
 
-    # Since we just 'split', some tokens will contain punctuation, we remove it.
-    sentence = re.sub(non_letters_numbers, " ", sentence)
     for token in sentence.split():
         token_matches: FuzzyResults = []
         for key, value in glossary.items():

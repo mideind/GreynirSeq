@@ -5,8 +5,10 @@ import torch
 from fairseq.utils import make_positions
 
 from greynirseq.nicenlp.tasks.translation_with_glossary import (
-    fuzzy_match_glossary,
+    ENLemmatizer,
+    ISLemmatizer,
     make_positions_with_constraints,
+    match_glossary,
     read_glossary,
     whole_word_lengths,
     whole_word_sampling,
@@ -264,37 +266,52 @@ def test_whole_word_target_sampling_count_negative():
     assert len(result) == 0, "There should be no constraints"
 
 
-def test_fuzzy_match_glossary_exact_match():
+def test_is_lemmatization():
+    test = "[1] Skammstöfunin „OB“ vísar til heitra, bjartra og skammlífra stjarna af litrófsgerð O og B sem enn skína skært í gisnum stjörnuþyrpingum sem ferðast um Vetrarbrautina."
+    lemmatizer = ISLemmatizer()
+    assert (
+        " ".join(lemmatizer.lemmatize(test))
+        == "[ 1 ] skammstöfun „ OB “ vís til heitur , bjartur og skammlífur stjarna af litrófsgera O og B sem enn skína skær í gisinn stjörnuþyrping sem ferðast um Vetrarbrautin ."
+    )
+
+
+def test_en_lemmatization():
+    test = "If this is indeed the case, the currently-held picture of how galaxies formed in the early Universe may also require a complete overhaul."
+    lemmatizer = ENLemmatizer()
+    assert (
+        " ".join(lemmatizer.lemmatize(test))
+        == "if this be indeed the case , the currently - hold picture of how galaxy form in the early Universe may also require a complete overhaul ."
+    )
+
+
+def test_match_glossary_exact_match():
     test_glossary = {"hello": "hæ", "world": "heimur"}
     test_sentence = "hello world"
     expected_result = ["hæ", "heimur"]
-    results = fuzzy_match_glossary(sentence=test_sentence, glossary=test_glossary)
+    results = match_glossary(sentence=test_sentence, glossary=test_glossary)
     threshold = 1.0
     print(results)
     assert [x[0] for x in filter(lambda x: x[1] >= threshold, results)] == expected_result
 
 
-def test_fuzzy_match_glossary_not_exact():
+def test_match_glossary_not_exact():
     test_glossary = {"hello": "hæ", "world": "heimur"}
     test_sentence = "hell worl"
     expected_result = []
-    results = fuzzy_match_glossary(sentence=test_sentence, glossary=test_glossary)
+    results = match_glossary(sentence=test_sentence, glossary=test_glossary)
     threshold = 1.0
     print(results)
     assert [x[0] for x in filter(lambda x: x[1] >= threshold, results)] == expected_result
 
-def test_fuzzy_match_glossary_threshold():
+
+def test_match_glossary_threshold():
     test_glossary = {"hello": "hæ", "world": "heimur"}
     test_sentence = "hell worl"
     expected_result = ["hæ", "heimur"]
-    results = fuzzy_match_glossary(sentence=test_sentence, glossary=test_glossary)
+    results = match_glossary(sentence=test_sentence, glossary=test_glossary)
     threshold = 0.8
     print(results)
     assert [x[0] for x in filter(lambda x: x[1] >= threshold, results)] == expected_result
-
-
-# Do we want a single result or multiple per token?
-# Collection of cases we want to test
 
 
 @pytest.fixture(scope="session")
@@ -304,7 +321,7 @@ def glossary_data():
 
 
 # flake8: noqa
-@pytest.mark.skip(reason="Test for finding good hyperparameters. Not to be run automatically.")
+# pytest.mark.skip(reason="Test for finding good hyperparameters. Not to be run automatically.")
 @pytest.mark.parametrize(
     "src,tgt,expected",
     [
@@ -323,7 +340,7 @@ def glossary_data():
         (
             "Stjörnufræðingarnir hafa nú notað gögnin til að setja saman stærstu skrá sem til er yfir stjörnur í miðju vetrarbrautarinnar [2].",
             "The team has now used these data to compile the largest catalogue of the central concentration of stars in the Milky Way ever created [2].",
-            [],
+            ["galaxy"],  # enskan er ekki rétt miðað við að vetrarbraut er ekki með hástaf
         ),
         (
             "Öflug geislun frá glóandi heitum afkvæmum þess hefur haft feikilega mikil áhrif á skýið.",
@@ -348,9 +365,10 @@ def test_glossary_matching(src, tgt, expected, glossary_data):
     Not all the test cases will (probably ever) pass but are left here to try different hyperparameters/heuristics.
     The threshold chosen should preferably allow more matches than too few, since the training is done with negative examples as well.
     This test case should not be run automatically."""
-    results = fuzzy_match_glossary(sentence=src, glossary=glossary_data)
+    lemmatizer = ISLemmatizer()
+    results = match_glossary(sentence=src, glossary=glossary_data, lemmatizer=lemmatizer)
     results = sorted(results, key=lambda x: x[1], reverse=True)
-    threshold = 0.95
+    threshold = 0.96
     print(results[:10])
     assert [x[0] for x in filter(lambda x: x[1] >= threshold, results)] == expected
 
