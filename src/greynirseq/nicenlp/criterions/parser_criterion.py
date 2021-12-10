@@ -233,12 +233,6 @@ class ParserCriterion(FairseqCriterion):
         ncorrect_spans = float(sum(log.get("ncorrect_spans", 0) for log in logging_outputs))
         bracketing_errors = best_nlabels_roof + gold_nlabels_roof - 2 * ncorrect_spans
 
-        ncorrect_cat = sum(log.get("ncorrect_cat", 0) for log in logging_outputs)
-        ncorrect_exact = sum(log.get("ncorrect_exact", 0) for log in logging_outputs)
-        ncorrect_attrs = sum(log.get("ncorrect_attrs", 0) for log in logging_outputs)
-        cat_loss = float(sum(log.get("cat_loss", 0.0) for log in logging_outputs))
-        attr_loss = float(sum(log.get("attr_loss", 0.0) for log in logging_outputs))
-
         label_recall = float(ncorrect_labels) / float(gold_nlabels_roof)
         label_precision = safe_div(ncorrect_labels, best_nlabels_roof)
         bracketing_precision = safe_div(ncorrect_spans, best_nlabels_roof)

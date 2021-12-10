@@ -43,7 +43,7 @@ def load_parser(ckpt_path, data_bin, nonterm_schema, merges_txt, vocab_json, cpu
     return model_interface
 
 
-def main(model_interface, input_path, output_stream=None, extra_line):
+def main(model_interface, input_path, output_stream=None, extra_line=False):
     assert input_path.exists()
 
     outputs = []
