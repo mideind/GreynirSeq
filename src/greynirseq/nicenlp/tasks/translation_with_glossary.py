@@ -50,13 +50,15 @@ class GlossaryTaskConfig:
     glossary_file: str
     glossary_subset_prefix: str
     fuzzy_match_threshold: int
+    negative_example_ratio: float
 
     @staticmethod
-    def from_args(args):
+    def from_args(args: argparse.Namespace):
         """Create a config from the args object. Call this in task __init__"""
         # It is not ok to increase the dictionary size if we are loading a pretrained model.
+        # Or when we are loading for inference
         # TODO: verify that this is the case.
-        ok_to_increase_dict_size = args.restore_file is None
+        ok_to_increase_dict_size = "restore_file" not in args and "path" not in args
         return GlossaryTaskConfig(
             enabled=args.glossary_enabled,
             ok_to_increase_dict_size=ok_to_increase_dict_size,
@@ -66,6 +68,7 @@ class GlossaryTaskConfig:
             glossary_file=args.glossary_lookup_file,
             glossary_subset_prefix=args.glossary_glosspref,
             fuzzy_match_threshold=args.glossary_fuzzy_match_threshold,
+            negative_example_ratio=args.glossary_negative_example_ratio,
         )
 
     @staticmethod
@@ -128,6 +131,12 @@ See --glossary-lookup-file help for more details",
 If the fuzzy match is greater than the threshold, we append the corresponding glossary TGT as constraints. \
 The threshold is in [0, 1.0], 1.0 means exact match. \
 See --glossary-lookup-file help for more details",
+        )
+        parser.add_argument(
+            "--glossary-negative-example-ratio",
+            default=0.1,
+            type=float,
+            help="The fraction of negative constraint examples to use against positive examples.",
         )
 
 
@@ -280,6 +289,7 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
                 seq_sample_ratio=self.config.seq_sample_ratio,
                 mean_whole_word=self.config.mean_whole_word,
                 pad_idx=self.target_dictionary.index("<pad>"),
+                negative_example_ratio=self.config.negative_example_ratio,
                 bpe=self.bpe,
             )
             logger.debug("Training subset. Appending constraints to SRC")
@@ -329,7 +339,38 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):
         """Build a dataset used for inference."""
-        return super().build_dataset_for_inference(src_tokens, src_lengths, constraints=None)  # type: ignore
+        ds = super().build_dataset_for_inference(src_tokens, src_lengths, constraints=None)  # type: ignore
+        if not self.config.enabled:
+            return ds
+
+        logger.debug("Using glossary for inference.")
+        constraints = FuzzyGlossaryConstraintsDataset(
+            dataset=ds.src,
+            dictionary=self.source_dictionary,
+            glossary=self.glossary,
+            fuzzy_match_threshold=self.config.fuzzy_match_threshold,
+            lemmatizer=self.src_lemmatizer,
+            bpe=self.bpe,
+        )
+        src_dataset = AppendConstraintsDataset(
+            dataset=ds.src,
+            constraints=constraints,
+            sep_symbol_idx=self.target_dictionary.index("<sep>"),
+            constraint_symbol_idx=self.target_dictionary.index("<c>"),
+            max_seq_len=self.args.max_source_positions,
+            bpe=self.bpe,
+        )
+        return LanguagePairDataset(
+            src_dataset,
+            src_lengths,
+            ds.src_dict,
+            left_pad_source=ds.left_pad_source,
+            left_pad_target=ds.left_pad_target,
+            align_dataset=ds.align_dataset,
+            eos=ds.eos,
+            num_buckets=self.args.num_batch_buckets,
+            shuffle=ds.shuffle,
+        )
 
 
 class Lemmatizer(metaclass=ABCMeta):
