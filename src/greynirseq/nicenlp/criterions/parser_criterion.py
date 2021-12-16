@@ -4,6 +4,7 @@
 
 import math
 from collections import namedtuple
+from logging import getLogger
 from typing import Any, Dict, List, Union
 
 import torch
@@ -11,10 +12,15 @@ from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.models import FairseqModel
 from torch import LongTensor, Tensor
 
-import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
-import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
+
+logger = getLogger(__name__)
+try:
+    import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
+    import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
+except ImportError:
+    logger.warn("Unable to import parsing dependencies, missing cython compilation. Parsing will not work")
 
 Numeric = Union[int, float, Tensor]
 

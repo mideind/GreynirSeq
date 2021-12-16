@@ -14,12 +14,16 @@ from fairseq.modules import LayerNorm
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
-import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.constituency import token_utils
 from greynirseq.nicenlp.utils.constituency.greynir_utils import Node
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_vec_idx_to_dict_idx
 
 logger = logging.getLogger(__name__)
+
+try:
+    import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
+except ImportError:
+    logger.warn("Unable to import parsing dependencies, missing cython compilation. Parsing will not work")
 
 
 class ChartParserHead(nn.Module):
