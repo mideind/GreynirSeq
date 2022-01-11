@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GlossaryTaskConfig:
-    """ Configuration for the glossary task."""
+    """Configuration for the glossary task."""
 
     enabled: bool
     ok_to_increase_dict_size: bool
