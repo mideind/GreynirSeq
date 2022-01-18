@@ -11,27 +11,27 @@ import argparse
 import logging
 import random
 import re
-from abc import ABCMeta
+from collections import Counter
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Container, Dict, List, Optional, Tuple
 
 import jaro
-import spacy
-import tokenizer
 import torch
+from fairseq import utils
 from fairseq.data import Dictionary, encoders
 from fairseq.data.base_wrapper_dataset import BaseWrapperDataset
 from fairseq.data.language_pair_dataset import LanguagePairDataset
+from fairseq.logging import metrics
 from fairseq.tasks import register_task
-from islenska import Bin
 from scipy.stats import poisson
 from torch.functional import Tensor
 
-from greynirseq.nicenlp.data.encoding import get_word_beginnings
+from greynirseq.nicenlp.data.encoding import decode_line, encode_line, get_word_beginnings
 from greynirseq.nicenlp.tasks.translation_with_backtranslation import TranslationWithBacktranslationTask
 from greynirseq.nicenlp.utils.dictionary import ensure_symbols_are_present
+from greynirseq.utils.lemmatizer import Lemmatizer, get_lemmatizer_for_lang
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ class GlossaryTaskConfig:
     glossary_subset_prefix: str
     fuzzy_match_threshold: int
     negative_example_ratio: float
+    eval_glossary: bool
 
     @staticmethod
     def from_args(args: argparse.Namespace):
@@ -69,6 +70,7 @@ class GlossaryTaskConfig:
             glossary_subset_prefix=args.glossary_glosspref,
             fuzzy_match_threshold=args.glossary_fuzzy_match_threshold,
             negative_example_ratio=args.glossary_negative_example_ratio,
+            eval_glossary=args.glossary_eval,
         )
 
     @staticmethod
@@ -81,6 +83,14 @@ class GlossaryTaskConfig:
             help="Should the glossary task be enabled? \
 This will add soft constraints automatically during training and \
 their effectiveness can be evaluated given a glossary.",
+        )
+        parser.add_argument(
+            "--glossary-eval",
+            default=False,
+            action="store_true",
+            help="Should we evaluate the glossary functionality on ALL the validation sets? \
+This measures the how often a term is used in the source and how often the corresponding term translation \
+is in the target?",
         )
         parser.add_argument(
             "--glossary-seq-sample-ratio",
@@ -189,8 +199,6 @@ def make_positions_with_constraints(
 def apply_monkey_patch_for_make_positions(positional_marker_symbol_idx: int, positional_idx_restart_offset: int):
     """Monkey-patch the make_positions function in fairseq to be aware of the glossary constraints.
     The monkey patch only extends the original function."""
-    from fairseq import utils  # pylint: disable=import-outside-toplevel
-
     utils.make_positions = partial(
         make_positions_with_constraints,
         positional_marker_symbol_idx=positional_marker_symbol_idx,
@@ -227,16 +235,18 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         else:
             logger.info("Glossary is DISABLED")
         # Ensure that <sep> and <c> are defined in the dictionaries.
+        self.added_extra_symbols = ["<c>", "<sep>"]
         ensure_symbols_are_present(
             self.source_dictionary,
-            ["<c>", "<sep>"],
+            self.added_extra_symbols,
             self.config.ok_to_increase_dict_size,
         )
         ensure_symbols_are_present(
             self.target_dictionary,
-            ["<c>", "<sep>"],
+            self.added_extra_symbols,
             self.config.ok_to_increase_dict_size,
         )
+
         assert (
             self.target_dictionary == self.source_dictionary
         ), "The target dictionary must be the same as the source dictionary, \
@@ -373,52 +383,165 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         )
 
 
-class Lemmatizer(metaclass=ABCMeta):
-    def lemmatize(self, sent: str) -> List[str]:
-        ...
+    def valid_step(self, sample, model, criterion):
+        loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
+        # We have no way of knowing whether the sample is from glosspref or not...
+        if self.config.eval_glossary:
+            src_glossary_counts, tgt_glossary_counts = self.get_initial_glossary_counts()
+            self._inference_with_glossary_counting(
+                self.sequence_generator,  # type: ignore
+                sample,
+                model,
+                src_glossary_counts=src_glossary_counts,
+                tgt_glossary_counts=tgt_glossary_counts,
+            )
+            logging_output["_glossary_src_counts"] = src_glossary_counts
+            logging_output["_glossary_tgt_counts"] = tgt_glossary_counts
+        return loss, sample_size, logging_output
+
+    def _inference_with_glossary_counting(
+        self, generator, sample, model, tgt_glossary_counts: Dict[str, int], src_glossary_counts: Dict[str, int]
+    ) -> None:
+        """Take an inference step and update the glossary counts (in-place) with the number of terms in sample."""
+        gen_out = self.inference_step(generator, [model], sample, prefix_tokens=None)
+
+        def get_term_count_in_sents(
+            sents: Tensor, glossary: Container[str], idx_dict: Dictionary, lemmatizer: Lemmatizer
+        ) -> Dict[str, int]:
+            decoded_sent = decode_line(
+                sents,
+                bpe=self.bpe,
+                dictionary=idx_dict,
+                extra_symbols_to_ignore=[
+                    idx_dict.index(added_extra_symbol) for added_extra_symbol in self.added_extra_symbols
+                ],
+            )
+            # We also lower-case the lemmas, since we count against lower-cased terms.
+            lemmas = [lemma.lower() for lemma in lemmatizer.lemmatize(decoded_sent)]
+            counts: Dict[str, int] = dict()
+            for lemma in lemmas:
+                if lemma in glossary:
+                    counts[lemma] = counts.get(lemma, 0) + 1
+            return counts
+
+        for i in range(len(gen_out)):
+            best_translation = gen_out[i][0]["tokens"]
+            source = utils.strip_pad(sample["net_input"]["src_tokens"][i], self.source_dictionary.pad())
+            src_term_counts = get_term_count_in_sents(
+                source, self._glossary_lower.keys(), self.target_dictionary, self.src_lemmatizer
+            )
+            tgt_term_counts = get_term_count_in_sents(
+                best_translation, self._glossary_lower.values(), self.source_dictionary, self.tgt_lemmatizer
+            )
+            for term, count in src_term_counts.items():
+                src_glossary_counts[term] += count
+                tgt_term_count_true_positive = tgt_term_counts.get(self._glossary_lower[term], 0)
+                # We do not overcount the number of times a term is used in the target.
+                tgt_glossary_counts[self._glossary_lower[term]] += min(tgt_term_count_true_positive, count)
+
+    def reduce_metrics(self, logging_outputs, criterion):
+        super().reduce_metrics(logging_outputs, criterion)
+        if self.config.eval_glossary:
+            total_src_counts = Counter(self.get_initial_glossary_counts()[0])
+            total_tgt_counts = Counter(self.get_initial_glossary_counts()[1])
+            for logging_output in logging_outputs:
+                try:
+                    total_src_counts.update(Counter(logging_output["_glossary_src_counts"]))
+                    total_tgt_counts.update(Counter(logging_output["_glossary_tgt_counts"]))
+                # reduce_metrics is also called during training and then we do not have access to these keys.
+                except KeyError:
+                    return
+
+            def compute_glossary_accuracy(src_counts: Counter, tgt_counts: Counter) -> float:
+                total_count = sum(src_counts.values())
+                total_correct = sum(tgt_counts.values())
+                try:
+                    return round(total_correct / total_count, 4)
+                except ZeroDivisionError:
+                    return 0.0
+
+            metrics.log_scalar("glossary_accuracy", compute_glossary_accuracy(total_src_counts, total_tgt_counts))
 
 
-class ENLemmatizer(Lemmatizer):
-    """A basic English Lemmatizer"""
-
-    def __init__(self):
-        self.nlp = spacy.load("en_core_web_md")
-
-    def lemmatize(self, sent) -> List[str]:
-        lemmas = []
-        for sent in self.nlp(sent).sents:
-            lemmas.extend(sent.lemma_.split(" "))
-        return lemmas
-
-
-class ISLemmatizer(Lemmatizer):
-    """A basic Icelandic Lemmatizer"""
-
-    def __init__(self):
-        self.bin = Bin()
-
-    def lemmatize(self, sent) -> List[str]:
-        sents = tokenizer.split_into_sentences(sent)
-        return [self.lemma_is(w) for s in sents for w in s.split(" ")]
-
-    def lemma_is(self, word: str, **kwargs) -> str:
-        _, m = self.bin.lookup(word, **kwargs)
-        if m:
-            return m[0].ord.replace("-", "")
-        return word
+def apply_constraints(constraints: List[Tensor], t: Tensor, constraint_idx: int, sep_idx: int) -> Tensor:
+    """
+    Apply constraints to a source sequence.
+    """
+    # t = t_1, t_2, ..., t_n (t_i are subwords)
+    # t = t + <sep>
+    # We do not add the <sep> when there are no constraints
+    if len(constraints) == 0:
+        return t
+    t = torch.cat((t, torch.Tensor([sep_idx]).long()), dim=0)
+    for constraint in constraints:
+        # t = t + c_i + <c>
+        t = torch.cat((t, constraint, torch.Tensor([constraint_idx]).long()), dim=0)
+    return t
 
 
-def get_lemmatizer_for_lang(lang: str) -> Lemmatizer:
-    if lang.lower() in {"is_is", "is"}:
-        return ISLemmatizer()
-    elif lang.lower() in {"en_xx", "en"}:
-        return ENLemmatizer()
-    else:
-        raise ValueError(f"Missing lemmatizer for {lang}")
+def whole_word_sampling(
+    example: Tensor,
+    whole_word_masker: Dict[int, int],
+    seq_sample_ratio: float,
+    word_count_to_sample: float,
+    contains_eos: bool,
+) -> List[Tensor]:
+    """
+    Create sampling constraints.
+    """
+    sampled_whole_words: List[Tensor] = []
+    if contains_eos:
+        # We need to remove the eos symbol from the target sequence
+        example = example[:-1]
+    tgt_whole_word_mask = [whole_word_masker[elm] for elm in tensor_to_list(example)]
+    # The number whole words in the target
+    tgt_whole_word_count = sum(tgt_whole_word_mask)
+    # The number of whole words in the target that we want to use as contraints
+    word_count_to_sample = round(min(max(0, word_count_to_sample), tgt_whole_word_count))
+
+    fraction_sequences_to_constrain = seq_sample_ratio
+    # Should we use this example as a constraint?
+    use_example_as_constraint = random.random() < fraction_sequences_to_constrain
+    if not use_example_as_constraint and word_count_to_sample == 0:
+        return sampled_whole_words
+    # We sample the indices of the whole words we want to use.
+    sampled_idxs = sorted(list(random.sample(range(tgt_whole_word_count), word_count_to_sample)))
+    # The number of subwords in the whole words
+    tgt_whole_word_lengths = whole_word_lengths(tgt_whole_word_mask)
+    # The indices of the whole words in the original target
+    tgt_whole_word_start_idxs = tensor_to_list(torch.Tensor(tgt_whole_word_mask).nonzero().squeeze())
+    for sampled_idx in sampled_idxs:
+        tgt_whole_word_start_idx = tgt_whole_word_start_idxs[sampled_idx]
+        tgt_whole_word_length = tgt_whole_word_lengths[sampled_idx]
+        sampled_whole_words.append(example[tgt_whole_word_start_idx : tgt_whole_word_start_idx + tgt_whole_word_length])
+    return sampled_whole_words
+
+
+def whole_word_lengths(whole_word_mask: List[int]) -> List[int]:
+    """Return the masks length, i.e. a padding_mask=[1,0,0,1,1,0] should return [3,1,2]"""
+    lengths: List[int] = []
+    if len(whole_word_mask) == 0:
+        return lengths
+    mask_idxs_ten = (
+        torch.Tensor(whole_word_mask).nonzero().squeeze()
+    )  # For some reason, nonzero returns a tensor of size (1,2)
+    mask_idxs = tensor_to_list(mask_idxs_ten)
+    prev_idx: Optional[int] = None
+    for idx in mask_idxs:
+        if prev_idx is None:
+            prev_idx = idx
+            continue
+        lengths.append(idx - prev_idx)
+        prev_idx = idx
+    if prev_idx is not None:
+        lengths.append(len(whole_word_mask) - prev_idx)
+    return lengths
+
 
 
 class FuzzyGlossaryConstraintsDataset(BaseWrapperDataset):
-    """A Dataset class which fuzzy matches glossary entries to 'dataset'.
+    """A Dataset which lemmatizes and then fuzzy matches  glossary entries to 'dataset'.
+
 
     TODO: More explaination"""
 
@@ -442,19 +565,18 @@ class FuzzyGlossaryConstraintsDataset(BaseWrapperDataset):
         # Dim = (seq_len)
         example: Tensor = self.dataset[idx]
 
-        sentence = self.bpe.decode(
-            self.dictionary.string(
-                example, extra_symbols_to_ignore=[self.dictionary.index("<sep>"), self.dictionary.index("<c>")]
-            )
+        sentence = decode_line(
+            example,
+            self.bpe,
+            self.dictionary,
+            extra_symbols_to_ignore=[self.dictionary.index("<sep>"), self.dictionary.index("<c>")],
         )
+        # since the example is only a 1-dim tensor, the sentences should only contain one sentence
         sentence = " ".join(self.lemmatizer.lemmatize(sent=sentence))
         fuzzy_matches = fuzzy_match_glossary(sentence, glossary=self.glossary)
         glossary_constraints = [x[0] for x in filter(lambda x: x[1] >= self.fuzzy_match_threshold, fuzzy_matches)]
         logger.debug(f"Glossary Constraints: {glossary_constraints}")
-        constraints = [
-            torch.Tensor([int(x) for x in self.bpe.encode(constraint).split(" ")]).long()
-            for constraint in glossary_constraints
-        ]
+        constraints = [encode_line(constraint, self.bpe, self.dictionary) for constraint in glossary_constraints]
         logger.debug(f"Original sentence: {sentence}")
         return constraints
 
@@ -560,79 +682,6 @@ class SampleWholeWordDataset(BaseWrapperDataset):
             )
         )
         return constraints
-
-
-def apply_constraints(constraints: List[Tensor], t: Tensor, constraint_idx: int, sep_idx: int) -> Tensor:
-    """
-    Apply constraints to a source sequence.
-    """
-    # t = t_1, t_2, ..., t_n (t_i are subwords)
-    # t = t + <sep>
-    t = torch.cat((t, torch.Tensor([sep_idx]).long()), dim=0)
-    for constraint in constraints:
-        # t = t + c_i + <c>
-        t = torch.cat((t, constraint, torch.Tensor([constraint_idx]).long()), dim=0)
-    return t
-
-
-def whole_word_sampling(
-    example: Tensor,
-    whole_word_masker: Dict[int, int],
-    seq_sample_ratio: float,
-    word_count_to_sample: float,
-    contains_eos: bool,
-) -> List[Tensor]:
-    """
-    Create sampling constraints.
-    """
-    sampled_whole_words: List[Tensor] = []
-    if contains_eos:
-        # We need to remove the eos symbol from the target sequence
-        example = example[:-1]
-    tgt_whole_word_mask = [whole_word_masker[elm] for elm in tensor_to_list(example)]
-    # The number whole words in the target
-    tgt_whole_word_count = sum(tgt_whole_word_mask)
-    # The number of whole words in the target that we want to use as contraints
-    word_count_to_sample = round(min(max(0, word_count_to_sample), tgt_whole_word_count))
-
-    fraction_sequences_to_constrain = seq_sample_ratio
-    # Should we use this example as a constraint?
-    use_example_as_constraint = random.random() < fraction_sequences_to_constrain
-    if not use_example_as_constraint and word_count_to_sample == 0:
-        return sampled_whole_words
-    # We sample the indices of the whole words we want to use.
-    sampled_idxs = sorted(list(random.sample(range(tgt_whole_word_count), word_count_to_sample)))
-    # The number of subwords in the whole words
-    tgt_whole_word_lengths = whole_word_lengths(tgt_whole_word_mask)
-    # The indices of the whole words in the original target
-    tgt_whole_word_start_idxs = tensor_to_list(torch.Tensor(tgt_whole_word_mask).nonzero().squeeze())
-    for sampled_idx in sampled_idxs:
-        tgt_whole_word_start_idx = tgt_whole_word_start_idxs[sampled_idx]
-        tgt_whole_word_length = tgt_whole_word_lengths[sampled_idx]
-        sampled_whole_words.append(example[tgt_whole_word_start_idx : tgt_whole_word_start_idx + tgt_whole_word_length])
-    return sampled_whole_words
-
-
-def whole_word_lengths(whole_word_mask: List[int]) -> List[int]:
-    """Return the masks length, i.e. a padding_mask=[1,0,0,1,1,0] should return [3,1,2]"""
-    lengths: List[int] = []
-    if len(whole_word_mask) == 0:
-        return lengths
-    mask_idxs_ten = (
-        torch.Tensor(whole_word_mask).nonzero().squeeze()
-    )  # For some reason, nonzero returns a tensor of size (1,2)
-    mask_idxs = tensor_to_list(mask_idxs_ten)
-    prev_idx: Optional[int] = None
-    for idx in mask_idxs:
-        if prev_idx is None:
-            prev_idx = idx
-            continue
-        lengths.append(idx - prev_idx)
-        prev_idx = idx
-    if prev_idx is not None:
-        lengths.append(len(whole_word_mask) - prev_idx)
-    return lengths
-
 
 Translation = str
 Source = str
