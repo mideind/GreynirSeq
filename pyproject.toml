@@ -52,7 +52,7 @@ include = [
 ]
 
 [tool.poetry.scripts]
-greynirseq = "greynirseq.cli.greynirseq:main"
+greynirseq = "greynirseq.cli.greynirseq_main:main"
 
 [tool.poetry.dependencies]
 python = "^3.7.2"
