@@ -21,10 +21,33 @@ def _simplify_nonterminal(nonterminal):
     return ">".join(labels)
 
 
+def mark_preorder(node, include_terminals=False):
+    preorder_list, _ = _mark_preorder_inner(node, include_terminals=include_terminals)
+    return preorder_list
+
+def _mark_preorder_inner(node, include_terminals=False, preorder_index=-1):
+    if node.terminal and include_terminals:
+        return [node], preorder_index + 1
+    elif node.terminal:
+        return [], preorder_index
+
+    assert node.nonterminal
+    preorder_index += 1
+    node.preorder_index = preorder_index
+
+    ret = [node]
+    for child in node.children:
+        desc, preorder_index = _mark_preorder_inner(child, include_terminals=include_terminals, preorder_index=preorder_index)
+        ret.extend(desc)
+
+    return ret, preorder_index
+
+
 class Node:
     def __init__(self):
         self._span = None
-        pass
+        self._depth = None
+        self._preorder_index = None
 
     @property
     def nonterminal(self):
@@ -81,6 +104,18 @@ class Node:
     @property
     def simple_tag(self):
         pass
+
+    @property
+    def depth(self):
+        pass
+
+    @property
+    def depth(self):
+        return self._depth
+
+    @property
+    def preorder_index(self):
+        return self._preorder_index
 
     @classmethod
     def from_psd_file_obj(cls, file_obj, ignore_errors=False, limit=-1):
@@ -391,6 +426,9 @@ class Node:
             new_node.children.append(child.separate_unary())
         return new_root
 
+    def uncollapse_unary(self):
+        return self.separate_unary()
+
     def remove_null_leaves(self):
         cleaned = self._remove_null_leaves_inner()
         if len(cleaned) == 1:
@@ -519,12 +557,36 @@ class Node:
             new_children.append(new_child)
         return NonterminalNode(self.nonterminal, new_children)
 
+    def clone(self):
+        raise NotImplementedError()
+
+    def preorder_list(self, include_terminals=False):
+        return self._preorder_list(include_terminals=include_terminals)[0]
+
+    def _preorder_list(self, include_terminals=False, preorder_index=0):
+        if self.terminal and not include_terminals:
+            return [], preorder_index - 1
+
+        ret = [self]
+        self._preorder_index = preorder_index
+
+        if self.terminal:
+            return [self], preorder_index
+
+        for child in self.children:
+            desc, preorder_index = child._preorder_list(include_terminals=include_terminals, preorder_index=preorder_index + 1)
+            ret.extend(desc)
+
+        return ret, preorder_index
+
 
 class NonterminalNode(Node):
     def __init__(self, nonterminal_label, children=None):
         super(NonterminalNode, self).__init__()
         self._nonterminal = nonterminal_label
         self._children = children if children is not None else []
+        if not isinstance(self.children, list):
+            raise ValueError(f"Expected children to be a list but got '{children}'")
 
     @property
     def nonterminal(self):
@@ -559,13 +621,22 @@ class NonterminalNode(Node):
     def split_multiword_tokens(self):
         return self._split_multiword_tokens(self)
 
+    def clone(self):
+        return NonterminalNode(self.nonterminal, [child.clone() for child in self.children])
+
 
 class TerminalNode(Node):
-    def __init__(self, text, terminal_label, category=None, lemma=None):
+    def __init__(self, text, terminal_label, category=None, lemma=None, skip_terminal_check=False):
         super(TerminalNode, self).__init__()
         self._text = text
         self._terminal = terminal_label
         self._lemma = lemma
+        self._category = category
+        self._flags = []
+        self._skipped_check = skip_terminal_check
+
+        if self._skipped_check:
+            return
 
         if self._terminal:
             flags = []
@@ -575,9 +646,6 @@ class TerminalNode(Node):
                 flags.append("{}-{}".format(var_name, val))
             self._flags = flags
             self._category = cat
-        else:
-            self._flags = []
-            self._category = category
 
     def add_empty_variants(self):
         flags = []
@@ -647,13 +715,18 @@ class TerminalNode(Node):
         for idx, token in enumerate(self.text.split(" ")):
             term = self.terminal if idx == 0 else CAT_INSIDE_MW_TOKEN
             cat = self.category if idx == 0 else CAT_INSIDE_MW_TOKEN
-            new_node = TerminalNode(
-                token,
-                term,
-                category=cat,
-            )
+            new_node = TerminalNode(token, term, category=cat)
             new_terminals.append(new_node)
         return new_terminals
+
+    def clone(self):
+        return TerminalNode(
+            self._text,
+            terminal_label=self._terminal,
+            category=self._category,
+            lemma=self._lemma,
+            skip_terminal_check=self._skipped_check,
+        )
 
 
 NULL_CAT_NONTERM = "NULL"
@@ -793,14 +866,7 @@ NONTERM_SUFFIX = {
         "CP-THT-PRD",
         "CP-THT-SUBJ",
     ],
-    "IP": [
-        "IP",
-        "IP-INF",
-        "IP-INF-IOBJ",
-        "IP-INF-OBJ",
-        "IP-INF-PRD",
-        "IP-INF-SUBJ",
-    ],
+    "IP": ["IP", "IP-INF", "IP-INF-IOBJ", "IP-INF-OBJ", "IP-INF-PRD", "IP-INF-SUBJ"],
     "NP": [
         "NP",
         "NP-ADDR",
@@ -920,9 +986,7 @@ def make_nonterm_labels_decl():
     for prefix, nt_with_suffixes in NONTERM_SUFFIX.items():
         nonterm_labels.extend(nt_with_suffixes)
 
-    for extra in [
-        unary_branch_labels.UNARY_BRANCH_LABELS,
-    ]:
+    for extra in [unary_branch_labels.UNARY_BRANCH_LABELS]:
         for composite_label, freq in extra.items():
             nonterm_labels.append(composite_label)
 
@@ -1066,9 +1130,7 @@ LABEL_CAT_TO_LABEL_MASK = {label_cat: label_cat_to_label_mask(label_cat) for lab
 LABEL_CAT_TO_GROUP_MASK = {label_cat: label_cat_to_label_group_mask(label_cat) for label_cat in LABEL_CATS}
 LABEL_IDX_TO_GROUP_MASK = {LABEL_CATS.index(label): mask for (label, mask) in LABEL_CAT_TO_GROUP_MASK.items()}
 
-for extra in [
-    unary_branch_labels.UNARY_BRANCH_LABELS,
-]:
+for extra in [unary_branch_labels.UNARY_BRANCH_LABELS]:
     for composite_label, freq in extra.items():
         if composite_label in ALL_LABELS:
             continue

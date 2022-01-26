@@ -69,7 +69,7 @@ class MultiParserCriterion(FairseqCriterion):
         self.greynir_parser_dict_idx_to_vec_idx = make_dict_idx_to_vec_idx(
             task.nterm_dictionary, task.nterm_schema.label_categories, device="cpu"
         )
-        self.greynir_parser_criterion = ParserCriterion(task, log_valid_dists=False)
+        self.greynir_parser_criterion = ParserCriterion(task)
         self.greynir_pos_criterion = MultiLabelTokenClassificationCriterion(
             task, label_dictionary=task.term_dictionary, label_schema=task.term_schema
         )
