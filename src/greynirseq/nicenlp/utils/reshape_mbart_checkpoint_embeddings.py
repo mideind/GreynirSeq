@@ -35,16 +35,20 @@ def main(in_path, out_path, seed, num_extra_vecs):
 if __name__ == "__main__":
     import argparse
 
+    # fmt: off
     parser = argparse.ArgumentParser(
         "Embedding extension",
-        description="Extend the embedding matrix of a Pytorch model checkpoint by a set of vectors. The k new embeddings are created with Xavier intialization",
+        description="Extend the embedding matrix of a Pytorch model checkpoint "
+                    "by a set of vectors. The k new embeddings are created "
+                    "with Xavier intialization",
     )
-
 
     parser.add_argument("--input", type=str, help="Input checkpoint file", required=True)
     parser.add_argument("--output", type=str, help="Output checkpoint file", required=True)
     parser.add_argument("--nvecs", type=int, help="Number of additional vectors", required=True)
     parser.add_argument("--seed", type=int, default=1)
+    # fmt: on
+
 
     args = parser.parse_args()
 
