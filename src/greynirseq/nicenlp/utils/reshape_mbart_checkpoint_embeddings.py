@@ -49,7 +49,6 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=1)
     # fmt: on
 
-
     args = parser.parse_args()
 
     if not Path(args.input).exists():
