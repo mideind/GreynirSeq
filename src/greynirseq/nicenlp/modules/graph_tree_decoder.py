@@ -36,6 +36,10 @@ from greynirseq.nicenlp.criterions.incremental_parser import IncrementalParserCr
 from icecream import ic
 
 
+SYMBOL_ROOT, SYMBOL_NULL = "ROOT", "NULL"
+PADDING_VALUE_FOR_NON_INDEX = -100
+
+
 @dataclass
 class TreeGraphDecoderConfig:
     embed_dim: int = field(default=64, metadata={"help": "Embedding dimension"})
@@ -569,22 +573,28 @@ def make_example_tree_08():
 
 
 def make_example_tree():
-    #                  S0>IP
-    #       _____________|____
-    #      |                  VP
+    #            S0-TOP>S0>IP
+    #      ___________|_______
+    #   NP-SUBJ               VP
     #      |       ___________|_____
-    #      NP   VP-AUX       ADVP   VP
-    #      |      |           |     |
-    #      x      x           x     x
-    #      |      |           |     |
-    #   bíllinn hafði        ekki runnið
-    billinn = NonterminalNode("NP", [TerminalNode("bíllinn", "x")])
+    #   NP-FAKE  VP-AUX  ADVP    VP
+    #      |       |      |      |
+    #      NP      x      x      x
+    #      |       |      |      |
+    #      x     hafði   ekki  runnið
+    #      |
+    #   bíllinn
+    #
+    billinn = NonterminalNode("NP1", [TerminalNode("bíllinn", "x")])
+    billinn = NonterminalNode("NP2", [billinn])
+    billinn = NonterminalNode("NP3", [billinn])
     hafdi = NonterminalNode("VP-AUX", [TerminalNode("hafði", "x")])
     ekki = NonterminalNode("ADVP", [TerminalNode("ekki", "x")])
     runnid = NonterminalNode("VP", [TerminalNode("runnið", "x")])
     hafdi_ekki_runnid = NonterminalNode("VP", [hafdi, ekki, runnid])
     ip = NonterminalNode("IP", [billinn, hafdi_ekki_runnid])
     sentence = NonterminalNode("S0", [ip]).collapse_unary()
+    sentence = NonterminalNode("S0-TOP", [sentence]).collapse_unary()
     return sentence
 
 
@@ -598,17 +608,6 @@ def test_example():
     for action in actions:
         parser.add(action, strict=True)
     return sentence
-
-
-@dataclass
-class ParseNodeInfo:
-    # this is just temporary for debugging purposes (delete me)
-    preorder_index: int
-    nonterminal: str
-    is_preterminal: bool
-    span: Any
-    is_right_chain: bool
-    depth: int
 
 
 def test_forward():
@@ -628,60 +627,74 @@ def test_forward():
         make_example_tree_06(),
         make_example_tree_07(),
         make_example_tree_08(),
+        make_example_tree().uncollapse_unary(),
     ]
 
     # for tree in sents:
     #     tree.pretty_print()
 
-    acts = [get_incremental_parse_actions(sent) for sent in sents]
+    preorder_lists = [tree.preorder_list() for tree in sents]
+    acts = [get_incremental_parse_actions(sent)[0] for sent in sents]
+    foo = [get_incremental_parse_actions(sent)[1] for sent in sents]
+    ic.enable()
+    ic(acts)
     sent01, sent02, *_ = sents
     act01, act02, *_ = acts
-    mytree = make_example_tree_08()
-    mark_preterminal_and_parent(mytree)
-    _ = mytree.span
-    # rod = mark_preorder(mytree)
-    rod = mytree.preorder_list()
-    rchain = tuple(get_preorder_index_of_right_chain(mytree))
 
-    get_incremental_parse_actions(mytree, verbose=True)
-    ### exampel of using tree traversal to generate input data for every increment step in parser
-    ic.enable()
-    ic(rod)
-    ic([node.preorder_index for node in rod])
-    # ic([(node.preorder_index, node.nonterminal, node.is_preterminal, node.span, node.leaves) for node in rod])
-    ic()
+    # mytree = make_example_tree().uncollapse_unary()
+    # mytree.pretty_print()
+    # # mark_preterminal_and_parent(mytree)
+    # # _ = mytree.span
+    # # breakpoint()
+    # myacts, rod = get_incremental_parse_actions(mytree, verbose=True, collapse=True, bp=True)
+    # # rod = mytree.preorder_list()
+    # # rchain = tuple(get_preorder_index_of_right_chain(mytree))
+    # ic.enable()
+    # ic(rod)
+    # ic([node.preorder_index for node in rod])
+    # ic()
+    # # ic(preorder_nodeinfo)
+    # # ic(rchain)
+    # mytree.pretty_print()
 
-    preorder_nodeinfo = [ParseNodeInfo(node.preorder_index, node.nonterminal, node.is_preterminal, node.span, node.preorder_index in rchain, node.depth) for node in rod]
-    ic(preorder_nodeinfo)
-    ic([preorder_nodeinfo[i] for i in rchain])
-    ic(rchain)
-    ic(acts[-1])
-    mytree.pretty_print()
-    breakpoint()
-    # sent01.pretty_print()
-    # pprint(act01)
-
+    # this is just scaffolding, we need a label_dictionary to develop other stuff
+    all_labels = set([node.nonterminal for preorder_list in preorder_lists for node in preorder_list])
     ldict = Dictionary()
-    SYMBOL_ROOT, SYMBOL_NULL = "ROOT", "NULL"
     ldict.add_symbol(SYMBOL_ROOT)
-    for seq_acts in acts:
-        for act in seq_acts:
-            ldict.add_symbol(act.parent.label)
-            ldict.add_symbol(act.preterminal.label)
-    print()
-    pprint(acts)
-    print()
+    ldict.add_symbol(SYMBOL_NULL)
+    for label in all_labels:
+        ldict.add_symbol(label)
+    ic(ldict.symbols)
 
-    print("ldict.symbols", ldict.symbols, sep="\n", end="\n\n")
+    encoded_nts_preorder_lists = pad_sequence([torch.tensor([ldict.index(node.nonterminal) for node in preorder_list], dtype=torch.long) for preorder_list in preorder_lists], batch_first=True, padding_value=ldict.pad())
+    preorder_spans = [torch.tensor([node.span for node in preorder_list]) for preorder_list in preorder_lists]
+    padded_preorder_spans = pad_sequence(preorder_spans, batch_first=True, padding_value=PADDING_VALUE_FOR_NON_INDEX)
+    include_mask = []
+    ic(padded_preorder_spans)
+    ic(encoded_nts_preorder_lists)
+
+    ic(acts)
+
+    ### just a dump for debug
+    # for idx, actseq in enumerate(acts):
+    #     ic(actseq)
+    #     print(preorder_lists[idx])
+    #     for act in actseq:
+    #         print([preorder_lists[idx][i] for i in act.right_chain_indices])
+    #         print([preorder_lists[idx][i] for i in act.preorder_indices])
+    #         print()
+    #     sents[idx].pretty_print()
+
+    breakpoint()
+    # breakpoint()
 
     bsz = len(sents)
     seq_len = max(len(sent.leaves) for sent in sents)
 
-    padding_value_for_non_index = -100
     tgt_depths = pad_sequence(
         [torch.tensor([act.depth for act in seq_acts]) for seq_acts in acts],
         batch_first=True,
-        padding_value=padding_value_for_non_index,
+        padding_value=PADDING_VALUE_FOR_NON_INDEX,
     )
     tgt_parents = pad_sequence(
         [torch.tensor([ldict.index(act.parent.label) for act in seq_acts]) for seq_acts in acts],
@@ -693,23 +706,21 @@ def test_forward():
         batch_first=True,
         padding_value=ldict.pad(),
     )
-    tgt_padding_mask = tgt_depths.eq(padding_value_for_non_index)
+    tgt_padding_mask = tgt_depths.eq(PADDING_VALUE_FOR_NON_INDEX)
 
-    print()
-    print("tgt_depths", tgt_depths, sep="\n", end="\n\n")
-    print("tgt_parents", tgt_parents, sep="\n", end="\n\n")
-    print("tgt_preterms", tgt_preterms, sep="\n", end="\n\n")
-
-    print("tgt_preterm_labels", ldict.string(tgt_preterms[0]), ldict.string(tgt_preterms[1]), sep="\n", end="\n\n")
-
-    print("tgt_padding_mask", tgt_padding_mask.long(), sep="\n", end="\n\n")
+    ic(tgt_depths)
+    ic(tgt_depths)
+    ic(tgt_parents)
+    ic(tgt_preterms)
+    ic(ldict.string(tgt_preterms[0]))
+    ic(tgt_padding_mask.long())
 
     tgt_parent_mask = (tgt_parents.eq(ldict.pad()) | tgt_parents.eq(ldict.index(SYMBOL_NULL))).logical_not()
     tgt_preterm_mask = (tgt_preterms.eq(ldict.pad()) | tgt_preterms.eq(ldict.index(SYMBOL_NULL))).logical_not()
-    print("tgt_parent_mask", tgt_parent_mask.long(), sep="\n", end="\n\n")
-    print("tgt_preterm_mask", tgt_preterm_mask.long(), sep="\n", end="\n\n")
+    ic(tgt_parent_mask.long())
+    ic(tgt_preterm_mask.long())
 
-    NULL_SPAN = (padding_value_for_non_index, padding_value_for_non_index)
+    NULL_SPAN = (PADDING_VALUE_FOR_NON_INDEX, PADDING_VALUE_FOR_NON_INDEX)
     tgt_parent_spans = []
     for seq_acts in acts:
         flat_seq_acts = []
@@ -720,9 +731,9 @@ def test_forward():
                 flat_seq_acts.extend(NULL_SPAN)
         tgt_parent_spans.append(torch.tensor(flat_seq_acts, dtype=torch.long))
     tgt_parent_spans = pad_sequence(
-        tgt_parent_spans, batch_first=True, padding_value=padding_value_for_non_index
+        tgt_parent_spans, batch_first=True, padding_value=PADDING_VALUE_FOR_NON_INDEX
     ).reshape(bsz, -1, 2)
-    print("tgt_parent_spans", tgt_parent_spans, sep="\n", end="\n\n")
+    ic(tgt_parent_spans)
 
     tgt_preterm_spans = []
     for seq_acts in acts:
@@ -734,9 +745,24 @@ def test_forward():
                 flat_seq_acts.extend(NULL_SPAN)
         tgt_preterm_spans.append(torch.tensor(flat_seq_acts, dtype=torch.long))
     tgt_preterm_spans = pad_sequence(
-        tgt_preterm_spans, batch_first=True, padding_value=padding_value_for_non_index
+        tgt_preterm_spans, batch_first=True, padding_value=PADDING_VALUE_FOR_NON_INDEX
     ).reshape(bsz, -1, 2)
-    print("tgt_preterm_spans", tgt_preterm_spans, sep="\n", end="\n\n")
+    ic(tgt_preterm_spans)
+
+    right_chain_indices = []
+    for action_list in acts:
+        for action in action_list:
+            right_chain_indices.extend(action.right_chain_indices)
+
+    right_chain_lens = [len(action.right_chain_indices) for action_list in acts for action in action_list]
+    # stepwise positive mask for preorder_list
+    # note that this would need to be padded for longest tree
+    right_chain_mask = torch.zeros(bsz, max(len(preorder_list) for preorder_list in preorder_lists))
+    print(5 * "\n")
+    ri = [torch.tensor(act.right_chain_indices) for act in acts[-1]]
+
+    ic(encoded_nts_preorder_lists)
+    breakpoint()
 
     sample = {
         # "net_input": {  # this would normally be here when training, this input for bert encoder
@@ -762,6 +788,6 @@ def test_forward():
     word_padding_mask[0, -1] = 1
     encoder_out[word_padding_mask] = 0
 
-    pprint(sample)
+    ic(sample)
     dec = TreeGraphDecoder(TreeGraphDecoderConfig, root_label_index=ldict.index(ROOT))
     dec(encoder_out=encoder_out, sample=sample)

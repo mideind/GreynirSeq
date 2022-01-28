@@ -44,10 +44,11 @@ def _mark_preorder_inner(node, include_terminals=False, preorder_index=-1):
 
 
 class Node:
-    def __init__(self):
+    def __init__(self, preorder_index=None, composite_preorder_indices=None):
         self._span = None
         self._depth = None
-        self._preorder_index = None
+        self._preorder_index = preorder_index
+        self._composite_preorder_indices = composite_preorder_indices
 
     @property
     def nonterminal(self):
@@ -116,6 +117,10 @@ class Node:
     @property
     def preorder_index(self):
         return self._preorder_index
+
+    @property
+    def composite_preorder_indices(self):
+        return self._composite_preorder_indices
 
     @classmethod
     def from_psd_file_obj(cls, file_obj, ignore_errors=False, limit=-1):
@@ -385,10 +390,10 @@ class Node:
         if self.terminal:
             return self
         if len(self.children) > 1:
-            new_node = NonterminalNode(self.nonterminal, [child.collapse_unary() for child in self.children])
+            new_node = NonterminalNode(self.nonterminal, [child.collapse_unary() for child in self.children], preorder_index=self.preorder_index)
             return new_node
         elif self.children[0].terminal:
-            return NonterminalNode(self.nonterminal, list(self.children))
+            return NonterminalNode(self.nonterminal, list(self.children), preorder_index=self.preorder_index)
 
         merge_list = [self]
         cursor = self
@@ -405,7 +410,9 @@ class Node:
             labels.append(elem.tag)
         label = ">".join(labels)
 
-        new_node = NonterminalNode(label, [child.collapse_unary() for child in merge_list[-1].children])
+        new_node = NonterminalNode(label, [child.collapse_unary() for child in merge_list[-1].children], preorder_index=self.preorder_index)
+        if self.preorder_index:
+            new_node._composite_preorder_indices = [elem.preorder_index for elem in merge_list]
         return new_node
 
     def separate_unary(self):
@@ -560,29 +567,30 @@ class Node:
     def clone(self):
         raise NotImplementedError()
 
-    def preorder_list(self, include_terminals=False):
-        return self._preorder_list(include_terminals=include_terminals)[0]
+    def preorder_list(self, include_terminals=False, preserve_indices=False):
+        return self._preorder_list(include_terminals=include_terminals, preserve_indices=preserve_indices)[0]
 
-    def _preorder_list(self, include_terminals=False, preorder_index=0):
+    def _preorder_list(self, include_terminals=False, preorder_index=0, preserve_indices=False):
         if self.terminal and not include_terminals:
             return [], preorder_index - 1
 
         ret = [self]
-        self._preorder_index = preorder_index
+        if not preserve_indices:
+            self._preorder_index = preorder_index
 
         if self.terminal:
             return [self], preorder_index
 
         for child in self.children:
-            desc, preorder_index = child._preorder_list(include_terminals=include_terminals, preorder_index=preorder_index + 1)
+            desc, preorder_index = child._preorder_list(include_terminals=include_terminals, preorder_index=preorder_index + 1, preserve_indices=preserve_indices)
             ret.extend(desc)
 
         return ret, preorder_index
 
 
 class NonterminalNode(Node):
-    def __init__(self, nonterminal_label, children=None):
-        super(NonterminalNode, self).__init__()
+    def __init__(self, nonterminal_label, children=None, preorder_index=None, composite_preorder_indices=None):
+        super(NonterminalNode, self).__init__(preorder_index=preorder_index, composite_preorder_indices=composite_preorder_indices)
         self._nonterminal = nonterminal_label
         self._children = children if children is not None else []
         if not isinstance(self.children, list):
@@ -622,7 +630,7 @@ class NonterminalNode(Node):
         return self._split_multiword_tokens(self)
 
     def clone(self):
-        return NonterminalNode(self.nonterminal, [child.clone() for child in self.children])
+        return NonterminalNode(self.nonterminal, [child.clone() for child in self.children], preorder_index=self.preorder_index, composite_preorder_indices=self._composite_preorder_indices)
 
 
 class TerminalNode(Node):

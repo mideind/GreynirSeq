@@ -155,7 +155,7 @@ def test_parser():
 
     tokens = [t.text for t in sentence.leaves]
 
-    collapsed_actions = get_incremental_parse_actions(sentence.clone())
+    collapsed_actions = get_incremental_parse_actions(sentence.clone())[0]
     correct_collapsed_actions = [
         ParseAction(parent=None, preterminal="ADVP", depth=0, parent_span=None, preterminal_span=(0, 1)),
         ParseAction(parent="ADJP", preterminal="ADJP", depth=1, parent_span=(0, 2), preterminal_span=(1, 2)),
@@ -199,7 +199,7 @@ def test_parser():
         ParseAction(parent="S0", preterminal=None, depth=1, parent_span=(0, 10), preterminal_span=None)
 
     ]
-    uncollapsed_actions = get_incremental_parse_actions(sentence.clone(), collapse=False)
+    uncollapsed_actions = get_incremental_parse_actions(sentence.clone(), collapse=False)[0]
     assert all(a == g for (a, g) in zip(correct_uncollapsed_actions, uncollapsed_actions))
 
     parser = IncrementalParser(tokens=tokens)
