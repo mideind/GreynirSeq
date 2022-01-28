@@ -10,10 +10,10 @@ from typing import Any, Dict, Generator, Iterable, List
 import torch
 import tqdm
 from fairseq.hub_utils import GeneratorHubInterface
-from fairseq.models.bart.model import BARTModel
 from fairseq.models.transformer import TransformerModel
 
 from greynirseq.nicenlp.models import MBART_PRETRAINED_MODELS, TF_PRETRAINED_MODELS
+from greynirseq.nicenlp.models.bart import GreynirBARTModel
 
 
 class GreynirSeqIO:
@@ -112,7 +112,7 @@ class TranslateBART(GreynirSeqIO):
         super().__init__(device, batch_size, show_progress, max_input_words_split)
 
     def build_model(self) -> GeneratorHubInterface:
-        model = BARTModel.from_pretrained(**self.model_args)
+        model = GreynirBARTModel.from_pretrained(**self.model_args)
         model.to(self.device)
         model.eval()
         return model
