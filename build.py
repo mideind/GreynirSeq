@@ -24,7 +24,6 @@ if not do_build:
     def build(setup_kwargs):
         pass
 
-
 else:
     from distutils.command.build_ext import build_ext
 
