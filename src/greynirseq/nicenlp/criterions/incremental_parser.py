@@ -6,9 +6,14 @@ import torch.nn.functional as F
 from fairseq.models import FairseqModel
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.dataclass import FairseqDataclass
-
+from fairseq.data.data_utils import lengths_to_padding_mask
+from torch.nn.utils.rnn import pad_sequence
 
 from icecream import ic
+
+
+IGNORE_INDEX = -100
+NEGLIGIBLE_LOGIT_VALUE = -100
 
 
 @dataclass
@@ -47,7 +52,7 @@ class IncrementalParserCriterion(FairseqCriterion):
 
     @classmethod
     def compute_whole(
-        cls, tgt_padding_mask, tgt_parents, tgt_preterms, tgt_depths, parent_logits, preterm_logits, attention
+        cls, tgt_padding_mask, tgt_parents, tgt_preterms, tgt_depths, parent_logits, preterm_logits, attention, chain_mask
     ):
         ic(parent_logits.shape, tgt_parents.shape, tgt_padding_mask.shape)
         ic(preterm_logits.shape, tgt_preterms.shape, tgt_padding_mask.shape)
@@ -56,7 +61,6 @@ class IncrementalParserCriterion(FairseqCriterion):
         ic(tgt_depths.shape, tgt_depths)
         ic([att.shape for att in attention])
 
-        IGNORE_INDEX = -100
         tgt_parents_w_ignore = tgt_parents.clone()
         tgt_parents_w_ignore[tgt_padding_mask] = IGNORE_INDEX
 
@@ -68,16 +72,26 @@ class IncrementalParserCriterion(FairseqCriterion):
             parent_logits.transpose(2, 1), tgt_parents_w_ignore, reduction="sum", ignore_index=IGNORE_INDEX
         )
         # Batch x Time x Channel -> Batch x Channel x Time
-        parent_loss = F.cross_entropy(
+        preterm_loss = F.cross_entropy(
             preterm_logits.transpose(2, 1), tgt_preterms_w_ignore, reduction="sum", ignore_index=IGNORE_INDEX
         )
 
-        # we can also flatten the attention and solve it that way
-        for attn in attention:
-            # seqlen =
-            # F.cross_entropy(attn, )
-            pass
-        breakpoint()
+        right_chain_lengths = chain_mask.sum(-1)
+        attention_padding = [lengths_to_padding_mask(s) for s in right_chain_lengths]
+
+        attachment_losses = []
+        for step, attn in enumerate(attention):
+            if step == 0:
+                # there is only one target, no need to do anything
+                continue
+
+            attn_ = attn.clone()
+            # while not zero, padding now has negligible effect on loss
+            attn_[attention_padding[step]] = NEGLIGIBLE_LOGIT_VALUE
+            attachment_losses.append(F.cross_entropy(attn_, tgt_depths[step]))
+
+        loss = parent_loss + preterm_loss + sum(attachment_losses)
+        return loss
 
     @classmethod
     def compute_step(
@@ -92,15 +106,4 @@ class IncrementalParserCriterion(FairseqCriterion):
         step_logits1,
         step_logits2,
     ):
-
-        # ic.enable()
-        # ic(step_logits1.shape, step_parents.shape)
-        # ic(step_logits2.shape, step_preterms.shape)
-        # breakpoint()
-        # loss = F.cross_entropy(
-        #     step_logits1,
-        #     step_parents,
-        #     # step_
-        # )
-
         pass

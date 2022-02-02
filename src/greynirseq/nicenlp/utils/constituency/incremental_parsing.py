@@ -28,12 +28,14 @@ class ParseAction:
             preterminal_span: Optional[Tuple[int, int]] = None,
             right_chain_indices: Optional[List[int]] = None,
             preorder_indices: Optional[List[int]] = None,
+            nwords: int = None,
     ):
         self.depth = depth
         self.parent = ParseLabel(parent or NULL, parent_span)
         self.preterminal = ParseLabel(preterminal or NULL, preterminal_span)
         self.right_chain_indices = right_chain_indices
         self.preorder_indices = preorder_indices
+        self.nwords = nwords
 
     def __eq__(self, other: Any):
         if not isinstance(other, ParseAction):
@@ -42,7 +44,7 @@ class ParseAction:
 
     def __repr__(self):
         # return f"ParseAction(parent='{self.parent.label}', preterminal='{self.preterminal.label}', depth={self.depth}, parent_span={self.parent.span}, preterminal_span={self.preterminal.span})"
-        return f"ParseAction(parent='{self.parent.label}', preterminal='{self.preterminal.label}', depth={self.depth}, parent_span={self.parent.span}, preterminal_span={self.preterminal.span}, right_chain_indices={self.right_chain_indices}, preorder_indices={self.preorder_indices})"
+        return f"ParseAction(parent='{self.parent.label}', preterminal='{self.preterminal.label}', depth={self.depth}, parent_span={self.parent.span}, preterminal_span={self.preterminal.span}, nwords={self.nwords}, right_chain_indices={self.right_chain_indices}, preorder_indices={self.preorder_indices})"
 
 
 def get_right_chain(root):
@@ -138,7 +140,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             ic("root is composite, decomposing")
             top_nt, *rest = root.nonterminal.split(">", 1)
             rest = rest[0]
-            actions.append(ParseAction(top_nt, NULL, 1, parent_span=root.span))
+            actions.append(ParseAction(top_nt, NULL, 1, parent_span=root.span, nwords=len(root.leaves)))
             root._nonterminal = rest
             if root.composite_preorder_indices:
                 root._composite_preorder_indices.pop(0)
@@ -151,7 +153,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             ic("cursor is composite, decomposing")
             top_nt, *rest = cursor.nonterminal.split(">", 1)
             rest = rest[0]
-            actions.append(ParseAction(top_nt, NULL, cursor.depth, parent_span=cursor.span))
+            actions.append(ParseAction(top_nt, NULL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves)))
             cursor._nonterminal = rest
             actions[-1].right_chain_indices = get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=preorder_index_to_original)
             actions[-1].preorder_indices = get_preorder_indices(root, include_terminals=False, preserve_indices=preorder_index_to_original)
@@ -159,7 +161,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
 
         if len(root.children) == 1:
             ic("root has 1 child, finished")
-            actions.append(ic(ParseAction(NULL, root.nonterminal, 0, preterminal_span=root.span)))
+            actions.append(ic(ParseAction(NULL, root.nonterminal, 0, preterminal_span=root.span, nwords=len(root.leaves))))
             actions[-1].right_chain_indices = []  # We popped the root, there is no right-chain remaining
             actions[-1].preorder_indices = []
             return ic(actions[::-1]), preorder_list
@@ -183,7 +185,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             ic("cursor_to_child_idx > 1")
             # cursor has 3 or more children, we dont need to contract nodes for now
             # action: append child to cursor
-            actions.append(ParseAction(NULL, child.nonterminal, cursor.depth, preterminal_span=child.span))
+            actions.append(ParseAction(NULL, child.nonterminal, cursor.depth, preterminal_span=child.span, nwords=len(root.leaves)))
             child = cursor._children.pop(cursor_to_child_idx)
             actions[-1].right_chain_indices = get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=preorder_index_to_original)
             actions[-1].preorder_indices = get_preorder_indices(root, include_terminals=False, preserve_indices=preorder_index_to_original)
@@ -198,7 +200,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
                 ic((cursor, child, child.depth))
                 top_nt, rest = cursor.nonterminal.split(">", 1)
                 # action: extend leg above cursor (inverse of tree contraction) with top_nt
-                actions.append(ParseAction(top_nt, NULL, cursor.depth, parent_span=cursor.span))
+                actions.append(ParseAction(top_nt, NULL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves)))
                 cursor._nonterminal = rest
                 actions[-1].right_chain_indices = get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=preorder_index_to_original)
                 actions[-1].preorder_indices = get_preorder_indices(root, include_terminals=False, preserve_indices=preorder_index_to_original)
@@ -208,14 +210,14 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
                 ic((cursor, child, child.depth))
                 top_nt, rest = child.nonterminal.split(">", 1)
                 # action: extend leg above child (inverse of tree contraction) with top_nt
-                actions.append(ParseAction(top_nt, NULL, child.depth, parent_span=child.span))
+                actions.append(ParseAction(top_nt, NULL, child.depth, parent_span=child.span, nwords=len(root.leaves)))
                 child._nonterminal = rest
                 actions[-1].right_chain_indices = get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=preorder_index_to_original)
                 actions[-1].preorder_indices = get_preorder_indices(root, include_terminals=False, preserve_indices=preorder_index_to_original)
                 ic(actions[-1])
 
             # action: swap cursor out for a node which has children=[cursor, child]
-            actions.append(ParseAction(cursor.nonterminal, child.nonterminal, cursor.depth, parent_span=cursor.span, preterminal_span=child.span))  # XXX: Do we need two spans here?
+            actions.append(ParseAction(cursor.nonterminal, child.nonterminal, cursor.depth, parent_span=cursor.span, preterminal_span=child.span, nwords=len(root.leaves)))  # XXX: Do we need two spans here?
             child = cursor._children.pop(cursor_to_child_idx)
             if cursor is root:
                 ic("cursor is root, contracting root")

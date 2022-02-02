@@ -38,6 +38,7 @@ from icecream import ic
 
 SYMBOL_ROOT, SYMBOL_NULL = "ROOT", "NULL"
 PADDING_VALUE_FOR_NON_INDEX = -100
+NULL_SPAN = (PADDING_VALUE_FOR_NON_INDEX, PADDING_VALUE_FOR_NON_INDEX)
 
 
 @dataclass
@@ -137,8 +138,6 @@ class TreeGraphDecoder(nn.Module):
         self.layer_norm = LayerNorm(self.embed_dim)
 
         self.task_head1 = ScaffholdHead(self.embed_dim, self.num_labels, self.cfg.dropout)
-        # self.heads = nn.ModuleDict()
-        # self.heads[""]
         self.task_head2 = ScaffholdHead(self.embed_dim, self.num_labels, self.cfg.dropout)
         self.mlp_attention = SingleVectorMLPAttention(
             2 * self.embed_dim, self.embed_dim // 4, self.cfg.dropout, use_sigmoid=cfg.mlp_attn_is_sigmoid
@@ -147,29 +146,19 @@ class TreeGraphDecoder(nn.Module):
     def forward_increment(self, encoder_out: Tensor):
         pass
 
-    def embed_span_position(self, spans: Tensor, max_end: int = None):
-        # one_if_include = 1 if include_current_pos else 0
+    def embed_spans(self, spans: Tensor, end_thresholds: Tensor = None):
         # spans: B x T x S
         # XXX: in LearnedPositionalEmbedding: "If positions is pre-computed then padding_idx should not be set."
         #      we inherit our positionalembedding from the encoder, so this will need to be adjusted
-
-        # span_starts = spans[:, : (curr_step + one_if_include), 0].clone()
-        # span_starts[span_starts < 0] = 0
-
         span_starts = spans[:, :, 0]
-
         span_ends = spans[:, :, 1].clone()  # clone because we might mutate
-        # span_ends[span_ends < 0] = 0
-        # span_ends = spans[:, : (curr_step + one_if_include), 1].clone()
-        # span_ends[curr_step <= span_ends] = curr_step  # with 1 word, ROOT will be (start=0, end=1)
-
-        if max_end is not None:
-            span_ends = span_ends[max_end < span_ends] = max_end
+        if end_thresholds is not None:
+            for seq_idx in range(len(end_thresholds)):
+                span_ends[seq_idx][end_thresholds[seq_idx] < span_ends[seq_idx]] = end_thresholds[seq_idx]
 
         span_embs = (
             self.embed_positions(None, positions=span_starts) + self.embed_positions(None, positions=span_ends)
         ) / 2
-
         return span_embs
 
     def forward_nodes(self, x: Tensor, self_attn_padding_mask: Tensor):
@@ -195,150 +184,84 @@ class TreeGraphDecoder(nn.Module):
         # incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
     ):
         ic.enable()
-        nwords = sample["nwords"]
-        word_padding_mask = lengths_to_padding_mask(nwords)
+        _nwords = sample["nwords"]
         tgt_depths = sample["target_depths"]
         tgt_padding_mask = sample["target_padding_mask"]
 
         tgt_parents = sample["target_parents"]
-        parent_mask = sample["target_parent_mask"]
-        tgt_parent_spans = sample["target_parent_spans"]
         tgt_preterms = sample["target_preterminals"]
-        preterm_mask = sample["target_preterminal_mask"]
-        tgt_preterm_spans = sample["target_preterminal_spans"]
+
+        preorder_nts = sample["preorder_nts"]  # bsz x num_nodes
+        preorder_mask = sample["preorder_mask"]  # nwords x bsz x num_nodes
+        chain_mask = sample["chain_mask"]  # nwords x bsz x num_nodes
+        preorder_spans = sample["preorder_spans"]  # bsz x num_nodes x 2
+        nwords_per_act = sample["nwords_per_act"]  # nwords x bsz
 
         bsz, max_seq_len, _encoder_embed_dim = encoder_out.shape
 
-        # assurance that max_seq_len is actually max sequence length
-        assert (parent_mask + preterm_mask).long().sum(dim=-1).max() == max_seq_len, "Unexpected unnecessary padding"
-
-        # number of nodes in _current_ incremental tree that is about to be embedded
-        num_preterms = preterm_mask.cumsum(dim=-1).roll(1)
-        num_preterms[:, 0] = 0
-        num_parents = parent_mask.cumsum(dim=-1).roll(1)
-        num_parents[:, 0] = 0
-        # ic(parent_mask.long(), preterm_mask.long())
-        # ic(num_preterms.long(), num_parents.long(), incremental_seq_lens)
-
-        # XXX: We mask Null label for embedding nodes in self_attention_mask
-        # XXX: But it is still a target prediction for the classifier!
-
         parent_logits = []
         preterm_logits = []
-        depth_logits = []
         attentions = []
 
-        narrow_to_step = None
-        narrow_to_step = 4
-        for curr_step in range(max_seq_len):
-            if narrow_to_step is not None and narrow_to_step != curr_step:
-                continue
-            step_preterm_mask = preterm_mask[:, :curr_step]
-            step_parent_mask = parent_mask[:, :curr_step]
-            step_word_padding_mask = word_padding_mask[:, : (curr_step + 1)]
-            step_parent_spans = tgt_parent_spans[:, :curr_step]
-            step_preterm_spans = tgt_preterm_spans[:, :curr_step]
+        emb_preorder_nts = self.embed_labels(preorder_nts)
 
-            # ic(curr_step, num_preterms[:, curr_step], num_parents[:, curr_step])
-            root_spans = torch.zeros((bsz, 1, 2), dtype=torch.long)
-            root_spans[:, 0, 1] = (
-                curr_step + num_parents[:, curr_step] + num_preterms[:, curr_step]
-            )  # number of nodes in tree
-            root_span_emb = self.embed_span_position(root_spans)
+        # narrow_to_step = 2
+        # narrow_to_step = None
+        for curr_step in range(max_seq_len):
+            # if narrow_to_step is not None and narrow_to_step != curr_step:
+            #     continue
+            num_words_in_tree = (nwords_per_act[curr_step] - 1).clamp(0)
+            root_spans = torch.stack([torch.zeros(bsz).long(), num_words_in_tree], dim=1)
+            # unsqueeze:  B x 2  ->  B x T x 2  (with T=1)
+            root_span_emb = self.embed_spans(root_spans.unsqueeze(1), end_thresholds=num_words_in_tree)
+
             root_emb = self.embed_labels(torch.tensor(self.root_label_index)).tile((bsz, 1, 1))  # B x 1 x C
-            # ic(root_span_emb.shape, root_emb.shape)
             root_emb = root_emb + root_span_emb
 
-            word_positions = torch.arange(curr_step + 1).tile((bsz, 1))
             word_embs = encoder_out[:, : (curr_step + 1), :]
-            if self.cfg.factored_embeddings:
-                assert False
-            else:
-                word_embs = word_embs + self.embed_positions(None, positions=word_positions)
+            word_mask = lengths_to_padding_mask(nwords_per_act[curr_step]).logical_not()
+            emb_preorder_step = emb_preorder_nts + self.embed_spans(preorder_spans, end_thresholds=num_words_in_tree)
+            emb_preorder_step *= preorder_mask[curr_step].unsqueeze(-1)
+            # ic(word_embs.shape, root_emb.shape, emb_preorder_step.shape)
+            # ic(word_mask.shape, preorder_mask[curr_step].shape)
+            root_mask = (nwords_per_act[curr_step] > 0).unsqueeze(-1)  # sequences that are finished have 0 words this step
+            input_mask = torch.cat([word_mask, root_mask, preorder_mask[curr_step]], dim=1)
+            input_embs = torch.cat([word_embs, root_emb, emb_preorder_step], dim=1) * input_mask.unsqueeze(-1)
 
-            if step_parent_mask.sum() > 0:
-                parent_embs = self.embed_labels(tgt_parents[:, :curr_step])
-                parent_span_emb = self.embed_span_position(
-                    step_parent_spans * step_parent_mask.unsqueeze(dim=-1)
-                )  # set span of NULL/padding to (0, 0)
-                parent_embs = parent_embs + parent_span_emb
-            else:
-                parent_embs = word_embs.new_zeros(bsz, 0, _encoder_embed_dim)
+            # bsz x (num_nodes+1) x features
+            x = self.forward_nodes(input_embs, self_attn_padding_mask=input_mask)
 
-            if step_preterm_mask.sum() > 0:
-                preterm_embs = self.embed_labels(tgt_preterms[:, :curr_step])
-                preterm_span_emb = self.embed_span_position(
-                    step_preterm_spans * step_preterm_mask.unsqueeze(dim=-1)
-                )  # set span of NULL/padding to (0, 0)
-                preterm_embs = preterm_embs + preterm_span_emb
-            else:
-                preterm_embs = word_embs.new_zeros(bsz, 0, _encoder_embed_dim)
+            # chain_nodes x features
+            output_chain_mask = torch.cat([torch.zeros_like(word_mask), root_mask, chain_mask[curr_step]], dim=1)
+            right_chain_outputs = x[output_chain_mask].split(output_chain_mask.sum(dim=-1).tolist())
+            # bsz x maxchainlen x features
+            right_chain_outputs = pad_sequence(right_chain_outputs, batch_first=True, padding_value=0)
 
-            empty_mask = step_preterm_mask.new_zeros(bsz, 0)
-            self_attn_padding_mask = torch.cat(
-                [
-                    preterm_mask.new_ones(bsz, 1),
-                    step_preterm_mask if step_preterm_mask.sum() > 0 else empty_mask,
-                    step_parent_mask if step_parent_mask.sum() > 0 else empty_mask,
-                    step_word_padding_mask.logical_not(),
-                ],
-                dim=1,
-            ).logical_not()
-            # ic(root_emb.shape, preterm_embs.shape, parent_embs.shape, word_embs.shape)
-            x = torch.cat([root_emb, preterm_embs, parent_embs, word_embs], dim=1)
-            # ic(embs.shape, self_attn_padding_mask.shape)
-            ic(curr_step, self_attn_padding_mask.long())
-            assert x.shape[1] == self_attn_padding_mask.shape[1]
-            x = self.forward_nodes(x, self_attn_padding_mask=self_attn_padding_mask)
+            word_output_idxs = (nwords_per_act[curr_step].clone() - 1).clamp(min=0)
+            is_alive = nwords_per_act[curr_step] > 0
+            # bsz x features  ->  bsz x 1 x features
+            attending_words = (x[torch.arange(bsz), word_output_idxs, :] * is_alive.unsqueeze(-1)).unsqueeze(1)
 
-            # for right chain:
-            #   select rightmost preterm for every seq (there is always either 0 or 1 preterm on the right chain)
-            #   always select root
-            #   to select parents:
-            #       find max value of right fence for all parent spans
-            #       all spans that end in the same place are on the right chains
-
-            # this should equal to nwords in curr_step, except for sequences shorter than max_seq_len
-            parent_right_chain_ends = step_parent_spans[:, :, 1:].max(dim=1).values  # select end points of all spans
-            parent_right_chain_mask = (parent_right_chain_ends == step_parent_spans[:, :, 1]) * step_parent_mask
-            parent_right_chain_mask = (parent_right_chain_ends == step_parent_spans[:, :, 1]) * step_parent_mask
-
-            preterm_right_chain_ends = step_preterm_spans[:, :, 1].max(dim=1).indices
-            preterm_right_chain_embs = preterm_embs[torch.arange(bsz), preterm_right_chain_ends].unsqueeze(1)
-            # after unsqueeze: B x 1 x C
-
-
-            # XXX: the above is wrong, we need to select these (with masks or something) from x (ie output from layer stack)
-            # right_chain_parents_emb = parent_embs * parent_right_chain_mask.unsqueeze(-1).type_as(parent_embs)
-            # x = torch.cat([root_emb, preterm_embs, parent_embs, word_embs], dim=1)
-
-            ic(parent_right_chain_mask.long())
-            ic(parent_embs.shape, parent_right_chain_mask.shape)
-            breakpoint()
-
-            # this is just a dummy set up to complete a forward pass
-            right_chain_nodes = x[:, :-1, :]  # this is just a dummy variable
-            newest_word = x[:, -1:, :]
-            # XXX: we have yet to extract the right chain!
-            attn_output_features, attn  = self.mlp_attention(right_chain_nodes, newest_word)
-
-            # merge attention output and newest word, this could probably just as well be an add
-            # clsf_features = torch.cat([newest_word, attn_output_features], dim=-1)
-            assert newest_word.shape == attn_output_features.shape
-            clsf_features = newest_word + attn_output_features
+            attn_output_features, attn  = self.mlp_attention(right_chain_outputs, attending_words)
+            assert attending_words.shape == attn_output_features.shape
+            # merge attention output and newest word, this should eithger be an add or cat
+            clsf_features = attending_words + attn_output_features
 
             step_parent_logits = self.task_head1(clsf_features)
             step_preterm_logits = self.task_head2(clsf_features)
 
             parent_logits.append(step_parent_logits)
             preterm_logits.append(step_preterm_logits)
-            attentions.append(attn)
+            attentions.append(attn.squeeze(2))
 
-        # T * (B x 1 x C)  ->  B x T x C
+
+        # nwords * (bsz x 1 x features)  ->  bsz x nwords x features
         parent_logits = torch.cat(parent_logits, dim=1)
         preterm_logits = torch.cat(preterm_logits, dim=1)
 
-        breakpoint()
+        # prepend root where the sequence is still alive, for each, for each step
+        chain_mask_w_root = torch.cat([nwords_per_act.gt(0).unsqueeze(-1), chain_mask], dim=2)
+
         IncrementalParserCriterion.compute_whole(
             tgt_padding_mask=tgt_padding_mask,
             tgt_parents=tgt_parents,
@@ -347,6 +270,7 @@ class TreeGraphDecoder(nn.Module):
             parent_logits=parent_logits,
             preterm_logits=preterm_logits,
             attention=attentions,
+            chain_mask=chain_mask_w_root,
         )
 
         ic(tgt_parents.shape, step_parent_logits.shape, parent_logits.shape)
@@ -398,9 +322,10 @@ class SingleVectorMLPAttention(nn.Module):
         self.out_proj = nn.Linear(self.inner_dim, 1)
 
     def forward(self, right_chain_nodes, newest_word):
-        """The vectors in v attend to the set of vectors in x (in batched manner)
-           v has shape (Batch,    1, Features)
-           x has shape (Batch, Time, Features)
+        """The vector v[i] attends to each vector in right_chain_nodes[i, :] (in batched manner)
+
+           newest_word:       v has shape (Batch,    1, Features)
+           right_chain_nodes: x has shape (Batch, Time, Features)
         Returns a version of x where the features of a single v (respectively for each batch dimension)
         have been concatenated to all vectors in the time dimension """
         _, right_chain_len, _ = right_chain_nodes.shape
@@ -633,14 +558,12 @@ def test_forward():
     # for tree in sents:
     #     tree.pretty_print()
 
-    preorder_lists = [tree.preorder_list() for tree in sents]
-    acts = [get_incremental_parse_actions(sent)[0] for sent in sents]
-    foo = [get_incremental_parse_actions(sent)[1] for sent in sents]
+    acts, preorder_lists = zip(**[get_incremental_parse_actions(sent) for sent in sents])
+
     ic.enable()
     ic(acts)
-    sent01, sent02, *_ = sents
-    act01, act02, *_ = acts
 
+    # just some inplace debug and dump of uncollapsed trees
     # mytree = make_example_tree().uncollapse_unary()
     # mytree.pretty_print()
     # # mark_preterminal_and_parent(mytree)
@@ -656,6 +579,7 @@ def test_forward():
     # # ic(preorder_nodeinfo)
     # # ic(rchain)
     # mytree.pretty_print()
+    # breakpoint()
 
     # this is just scaffolding, we need a label_dictionary to develop other stuff
     all_labels = set([node.nonterminal for preorder_list in preorder_lists for node in preorder_list])
@@ -666,27 +590,39 @@ def test_forward():
         ldict.add_symbol(label)
     ic(ldict.symbols)
 
-    encoded_nts_preorder_lists = pad_sequence([torch.tensor([ldict.index(node.nonterminal) for node in preorder_list], dtype=torch.long) for preorder_list in preorder_lists], batch_first=True, padding_value=ldict.pad())
+    padded_preorder_nts = pad_sequence([torch.tensor([ldict.index(node.nonterminal) for node in preorder_list], dtype=torch.long) for preorder_list in preorder_lists], batch_first=True, padding_value=ldict.pad())
     preorder_spans = [torch.tensor([node.span for node in preorder_list]) for preorder_list in preorder_lists]
-    padded_preorder_spans = pad_sequence(preorder_spans, batch_first=True, padding_value=PADDING_VALUE_FOR_NON_INDEX)
-    include_mask = []
-    ic(padded_preorder_spans)
-    ic(encoded_nts_preorder_lists)
+    padded_preorder_spans = pad_sequence(preorder_spans, batch_first=True, padding_value=0)
+    padded_input_masks, padded_chain_masks = [], []
+    max_acts = max(len(seq_acts) for seq_acts in acts)
+    nwords_per_act = torch.zeros(max_acts, len(acts), dtype=torch.long)
+    for step in range(max_acts):
+        padded_inputs_step = []
+        padded_chain_step = []
+        for idx, seq_acts in enumerate(acts):
+            act_inputs = torch.zeros(len(preorder_lists[idx]), dtype=torch.bool)
+            act_chain = torch.zeros(len(preorder_lists[idx]), dtype=torch.bool)
+            if step < len(seq_acts):
+                act_inputs[seq_acts[step].preorder_indices] = 1
+                act_chain[seq_acts[step].right_chain_indices] = 1
+                nwords_per_act[step, idx] = seq_acts[step].nwords
+            padded_inputs_step.append(act_inputs)
+            padded_chain_step.append(act_chain)
+        padded_input_masks.append(pad_sequence(padded_inputs_step, batch_first=True, padding_value=0))
+        padded_chain_masks.append(pad_sequence(padded_chain_step, batch_first=True, padding_value=0))
+    padded_input_masks = pad_sequence(padded_input_masks, batch_first=True, padding_value=0)
+    padded_chain_masks = pad_sequence(padded_chain_masks, batch_first=True, padding_value=0)
+
+    # for step in range(max(len(actseq) for actseq in acts)):
+    #     ic("view step inputs", step)
+    #     ic(padded_preorder_nts[padded_input_masks[step]])
+    #     ic(padded_preorder_nts[padded_input_masks[step]].split(padded_input_masks[step].sum(dim=0).tolist()))
+
+    ic([t.long() for t in padded_input_masks])
+    ic([t.long() for t in padded_chain_masks])
+    ic(padded_preorder_nts)
 
     ic(acts)
-
-    ### just a dump for debug
-    # for idx, actseq in enumerate(acts):
-    #     ic(actseq)
-    #     print(preorder_lists[idx])
-    #     for act in actseq:
-    #         print([preorder_lists[idx][i] for i in act.right_chain_indices])
-    #         print([preorder_lists[idx][i] for i in act.preorder_indices])
-    #         print()
-    #     sents[idx].pretty_print()
-
-    breakpoint()
-    # breakpoint()
 
     bsz = len(sents)
     seq_len = max(len(sent.leaves) for sent in sents)
@@ -695,7 +631,7 @@ def test_forward():
         [torch.tensor([act.depth for act in seq_acts]) for seq_acts in acts],
         batch_first=True,
         padding_value=PADDING_VALUE_FOR_NON_INDEX,
-    )
+    ).transpose(0, 1)  # bsz x nsteps  ->  nsteps x bsz
     tgt_parents = pad_sequence(
         [torch.tensor([ldict.index(act.parent.label) for act in seq_acts]) for seq_acts in acts],
         batch_first=True,
@@ -706,7 +642,7 @@ def test_forward():
         batch_first=True,
         padding_value=ldict.pad(),
     )
-    tgt_padding_mask = tgt_depths.eq(PADDING_VALUE_FOR_NON_INDEX)
+    tgt_padding_mask = tgt_depths.eq(PADDING_VALUE_FOR_NON_INDEX).T
 
     ic(tgt_depths)
     ic(tgt_depths)
@@ -714,55 +650,7 @@ def test_forward():
     ic(tgt_preterms)
     ic(ldict.string(tgt_preterms[0]))
     ic(tgt_padding_mask.long())
-
-    tgt_parent_mask = (tgt_parents.eq(ldict.pad()) | tgt_parents.eq(ldict.index(SYMBOL_NULL))).logical_not()
-    tgt_preterm_mask = (tgt_preterms.eq(ldict.pad()) | tgt_preterms.eq(ldict.index(SYMBOL_NULL))).logical_not()
-    ic(tgt_parent_mask.long())
-    ic(tgt_preterm_mask.long())
-
-    NULL_SPAN = (PADDING_VALUE_FOR_NON_INDEX, PADDING_VALUE_FOR_NON_INDEX)
-    tgt_parent_spans = []
-    for seq_acts in acts:
-        flat_seq_acts = []
-        for act in seq_acts:
-            if act.parent.span is not None:
-                flat_seq_acts.extend(act.parent.span)
-            else:
-                flat_seq_acts.extend(NULL_SPAN)
-        tgt_parent_spans.append(torch.tensor(flat_seq_acts, dtype=torch.long))
-    tgt_parent_spans = pad_sequence(
-        tgt_parent_spans, batch_first=True, padding_value=PADDING_VALUE_FOR_NON_INDEX
-    ).reshape(bsz, -1, 2)
-    ic(tgt_parent_spans)
-
-    tgt_preterm_spans = []
-    for seq_acts in acts:
-        flat_seq_acts = []
-        for act in seq_acts:
-            if act.preterminal.span is not None:
-                flat_seq_acts.extend(act.preterminal.span)
-            else:
-                flat_seq_acts.extend(NULL_SPAN)
-        tgt_preterm_spans.append(torch.tensor(flat_seq_acts, dtype=torch.long))
-    tgt_preterm_spans = pad_sequence(
-        tgt_preterm_spans, batch_first=True, padding_value=PADDING_VALUE_FOR_NON_INDEX
-    ).reshape(bsz, -1, 2)
-    ic(tgt_preterm_spans)
-
-    right_chain_indices = []
-    for action_list in acts:
-        for action in action_list:
-            right_chain_indices.extend(action.right_chain_indices)
-
-    right_chain_lens = [len(action.right_chain_indices) for action_list in acts for action in action_list]
-    # stepwise positive mask for preorder_list
-    # note that this would need to be padded for longest tree
-    right_chain_mask = torch.zeros(bsz, max(len(preorder_list) for preorder_list in preorder_lists))
-    print(5 * "\n")
-    ri = [torch.tensor(act.right_chain_indices) for act in acts[-1]]
-
-    ic(encoded_nts_preorder_lists)
-    breakpoint()
+    ic(padded_preorder_nts)
 
     sample = {
         # "net_input": {  # this would normally be here when training, this input for bert encoder
@@ -772,11 +660,12 @@ def test_forward():
         "target_depths": tgt_depths,
         "target_padding_mask": tgt_padding_mask,
         "target_parents": tgt_parents,
-        "target_parent_mask": tgt_parent_mask,
-        "target_parent_spans": tgt_parent_spans,
         "target_preterminals": tgt_preterms,
-        "target_preterminal_mask": tgt_preterm_mask,
-        "target_preterminal_spans": tgt_preterm_spans,
+        "preorder_nts": padded_preorder_nts,
+        "preorder_mask": padded_input_masks,
+        "chain_mask": padded_chain_masks,
+        "preorder_spans": padded_preorder_spans,
+        "nwords_per_act": nwords_per_act,
     }
 
     # B x T
@@ -789,5 +678,5 @@ def test_forward():
     encoder_out[word_padding_mask] = 0
 
     ic(sample)
-    dec = TreeGraphDecoder(TreeGraphDecoderConfig, root_label_index=ldict.index(ROOT))
+    dec = TreeGraphDecoder(TreeGraphDecoderConfig, root_label_index=ldict.index(ROOT), padding_idx=ldict.pad())
     dec(encoder_out=encoder_out, sample=sample)
