@@ -2,13 +2,10 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-# flake8: noqa
 
 import argparse
-import json
 import logging
 import os
-from collections import OrderedDict, namedtuple
 from pathlib import Path
 from typing import List
 
@@ -23,13 +20,11 @@ from fairseq.data import (
     PrependTokenDataset,
     RightPadDataset,
     SortDataset,
-    TruncateDataset,
     data_utils,
     encoders,
 )
 from fairseq.tasks import FairseqTask, register_task
 
-import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.data.datasets import (
     DynamicLabelledSpanDataset,
     NestedDictionaryDatasetFix,
@@ -61,20 +56,6 @@ class ParserTask(FairseqTask):
                 (mutually exclusive labels)",
             required=True,
         )
-        parser.add_argument(
-            "--nonterm-weight",
-            default=1.0,
-            type=float,
-            help="weight to scale nonterminal loss",
-            required=True,
-        )
-        parser.add_argument(
-            "--term-weight",
-            default=1.0,
-            type=float,
-            help="weight to scale terminal loss",
-            required=False,
-        )
         parser.add_argument("--no-shuffle", action="store_true", default=False)
 
     def __init__(
@@ -87,6 +68,9 @@ class ParserTask(FairseqTask):
     ):
         super().__init__(args)
         self.dictionary = data_dictionary
+
+        if not hasattr(self, "args") and hasattr(self, "cfg"):
+            self.args = self.cfg
 
         self.nterm_dictionary = nterm_dict
         self.nterm_schema = nterm_schema
@@ -112,8 +96,8 @@ class ParserTask(FairseqTask):
         # assert labels[0] == "NULL", "Expected label at index 0 to be 'NULL'"
         nterm_dict, nterm_schema = cls.load_label_dictionary(args, args.nonterm_schema)
         logger.info("[nterm] dictionary: {} types".format(len(nterm_dict)))
-        nterm_dict.null = lambda: nterm_dict.index(nterm_schema.null)
-        nterm_dict.leaf = lambda: nterm_dict.index(nterm_schema.null_leaf)
+        nterm_dict.null = nterm_dict.index(nterm_schema.null)
+        nterm_dict.leaf_index = nterm_dict.index(nterm_schema.null_leaf)
 
         return ParserTask(
             args,
@@ -129,6 +113,7 @@ class ParserTask(FairseqTask):
         Args:
             filename (str): the filename
         """
+        assert Path(filename).exists(), f"Expected label_schema file at {filename}"
         label_schema = parse_label_schema(filename)
 
         return label_schema_as_dictionary(label_schema), label_schema
@@ -170,7 +155,7 @@ class ParserTask(FairseqTask):
     def load_dataset(self, split: str, combine: bool = False, **kwargs):
         """Load a given dataset split (e.g., train, valid, test)."""
 
-        inputs_path = Path(self.args.data) / "{split}".format(split=split)
+        inputs_path = Path(self.args.data) / f"{split}.text"
         src_tokens = data_utils.load_indexed_dataset(
             str(inputs_path),
             self.source_dictionary,
@@ -198,7 +183,6 @@ class ParserTask(FairseqTask):
         target_spans, nterm_cats = DynamicLabelledSpanDataset.make_both(
             labelled_spans,
             self.nterm_dictionary,
-            rebinarize_fn=greynir_utils.rebinarize,
             seed=self.args.seed,
         )
 

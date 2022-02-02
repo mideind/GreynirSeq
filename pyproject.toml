@@ -7,16 +7,14 @@ multi_line_output = 3
 line_length = 120
 
 [tool.pytest.ini_options]
-testpaths = [
-    "tests"
-]
+testpaths = ["tests"]
 
 [tool.poetry]
 name = "greynirseq"
 version = "0.2.0"
 description = "Natural language processing for Icelandic"
 authors = ["Miðeind ehf <tauganet@mideind.is>"]
-classifiers=[
+classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
@@ -39,24 +37,21 @@ classifiers=[
     "Topic :: Utilities",
     "Topic :: Text Processing :: Linguistic",
 ]
-keywords=["nlp", "pos", "ner", "icelandic"]
+keywords = ["nlp", "pos", "ner", "icelandic"]
 license = "AGPLv3+"
 readme = "README.md"
 homepage = "https://github.com/mideind/GreynirSeq"
 repository = "https://github.com/mideind/GreynirSeq"
-packages = [
-    {include = "greynirseq", from = "src"}
-]
-include = [
-    "LICENSE",
-]
+packages = [{ include = "greynirseq", from = "src" }]
+include = ["LICENSE"]
+build = "build.py"
 
 [tool.poetry.scripts]
 greynirseq = "greynirseq.cli.greynirseq_main:main"
 
 [tool.poetry.dependencies]
 python = "^3.7.2"
-fairseq = "^0.10.0" 
+fairseq = "^0.10.0"
 nltk = "^3.5"
 reynir = "^2.10.1"
 transformers = "^4.3.2"
@@ -77,5 +72,5 @@ flake8 = "^3.8.4"
 mypy = "^0.812"
 
 [build-system]
-requires = ["poetry>=0.12"]
+requires = ["poetry>=0.12", "cython", "setuptools", "numpy"]
 build-backend = "poetry.masonry.api"

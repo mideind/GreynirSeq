@@ -2,37 +2,27 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-# flake8: noqa
-
-import itertools
 import math
-import time
 from collections import namedtuple
+from logging import getLogger
 from typing import Any, Dict, List, Union
 
 import torch
-import torch.nn.functional as F
-from fairseq import utils
 from fairseq.criterions import FairseqCriterion, register_criterion
-from fairseq.data import Dictionary
 from fairseq.models import FairseqModel
 from torch import LongTensor, Tensor
 
-import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
-import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 from greynirseq.nicenlp.utils.label_schema.label_schema import make_dict_idx_to_vec_idx
-from greynirseq.utils.types import Numeric  # pylint: disable=no-name-in-module
 
+logger = getLogger(__name__)
+try:
+    import greynirseq.nicenlp.utils.constituency.chart_parser as chart_parser  # pylint: disable=no-name-in-module
+    import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
+except ImportError:
+    logger.warn("Unable to import parsing dependencies, missing cython compilation. Parsing will not work")
 
-def gen_2d_diags(chart_width: Union[int, LongTensor]):  # pylint: disable=unsubscriptable-object
-    """Generator for all diagonal positions in a 2d matrix, starting with right of center diagonal from pos (0,1),
-    then diagonal starting at (0,2), etc."""
-    for span_length in range(1, chart_width):
-        for start in range(chart_width - span_length):
-            ii = start
-            jj = start + span_length
-            yield (ii, jj)
+Numeric = Union[int, float, Tensor]
 
 
 ParseResult = namedtuple("ParseResult", ["score", "spans", "labels", "masked_lchart"])
@@ -51,19 +41,19 @@ def compute_parse_stats(
     npred, ngold = 0, 0
     ncorrect_lbls, ncorrect_spans = 0, 0
 
-    for idx in range(ntargets.numel()):
-        seq_ntargets = ntargets[idx]
-        seq_targets = mapped_target_labels[idx, :seq_ntargets]
-        seq_tgt_ii = target_spans[idx, 0, :seq_ntargets]
-        seq_tgt_jj = target_spans[idx, 1, :seq_ntargets]
+    for seq_idx in range(ntargets.numel()):
+        seq_ntargets = ntargets[seq_idx]
+        seq_targets = mapped_target_labels[seq_idx, :seq_ntargets]
+        seq_tgt_ii = target_spans[seq_idx, 0, :seq_ntargets]
+        seq_tgt_jj = target_spans[seq_idx, 1, :seq_ntargets]
         nrows, ncols = seq_tgt_ii.max() + 1, seq_tgt_jj.max() + 1
 
         tgt_chart = seq_targets.new_full((nrows, ncols), fill_value=pad_val, dtype=torch.long)
         tgt_chart[seq_tgt_ii, seq_tgt_jj] = seq_targets
-        lchart = lmask[idx, :nrows, :ncols, :].max(dim=-1)[1]
+        lchart = lmask[seq_idx, :nrows, :ncols, :].max(dim=-1)[1]
 
         tgt_mask = tgt_chart.ne(pad_val)
-        pred_mask = lmask[idx, :nrows, :ncols, :].any(dim=-1).bool()
+        pred_mask = lmask[seq_idx, :nrows, :ncols, :].any(dim=-1).bool()
         for ignore_idx in ignore_idxs or []:
             tgt_mask *= tgt_chart.ne(ignore_idx)
             pred_mask *= lchart.ne(ignore_idx)
@@ -147,7 +137,7 @@ class ParserCriterion(FairseqCriterion):
 
         # extract targets from padded inputs
         gold_lmask = make_gold_label_mask(sample, nterm_dict_idx_to_vec_idx, ncats_nterm).type_as(scores)
-        null_leaf_dict_idx = model.task.nterm_dictionary.leaf()
+        null_leaf_dict_idx = model.task.nterm_dictionary.leaf_index
 
         _, best_lspans, _best_mask, best_lmask = chart_parser.parse_many(scores.cpu().detach(), nwords.cpu())
 
@@ -168,12 +158,11 @@ class ParserCriterion(FairseqCriterion):
         # is so we can clamp each sentence separately
         best_lmask = best_lmask.to(scores.device).type_as(scores)
         bad_lmask = bad_lmask.to(scores.device).type_as(scores)
-        best_lbl_chart = best_lmask.long().max(-1)[1]
+        best_lbl_chart = best_lmask.long().max(-1).indices
 
-        ignore_leaves_mask = best_lmask.new_ones(*best_lbl_chart.shape)
-        ignore_leaves_mask[:, torch.arange(nwords.max()), torch.arange(1, 1 + nwords.max())] = 0
-        illegal_leaves_mask = (best_lbl_chart * ignore_leaves_mask) == null_leaf_dict_idx
-        illegal_leaves_loss = span_logits[:, :, :, null_leaf_dict_idx].masked_select(illegal_leaves_mask).sum()
+        illegal_leaves_mask = best_lmask.new_ones(*best_lbl_chart.shape, dtype=torch.bool)
+        illegal_leaves_mask[:, torch.arange(nwords.max()), torch.arange(1, 1 + nwords.max())] = 0
+        illegal_leaves_loss = span_logits[:, :, :, null_leaf_dict_idx].masked_select(illegal_leaves_mask).clamp(0).sum()
 
         tree_scores_best = (best_lmask * scores).sum_to_size(bsz, 1, 1, 1).squeeze()
         tree_scores_bad = (bad_lmask * scores).sum_to_size(bsz, 1, 1, 1).squeeze()
@@ -250,12 +239,6 @@ class ParserCriterion(FairseqCriterion):
         ncorrect_spans = float(sum(log.get("ncorrect_spans", 0) for log in logging_outputs))
         bracketing_errors = best_nlabels_roof + gold_nlabels_roof - 2 * ncorrect_spans
 
-        ncorrect_cat = sum(log.get("ncorrect_cat", 0) for log in logging_outputs)
-        ncorrect_exact = sum(log.get("ncorrect_exact", 0) for log in logging_outputs)
-        ncorrect_attrs = sum(log.get("ncorrect_attrs", 0) for log in logging_outputs)
-        cat_loss = float(sum(log.get("cat_loss", 0.0) for log in logging_outputs))
-        attr_loss = float(sum(log.get("attr_loss", 0.0) for log in logging_outputs))
-
         label_recall = float(ncorrect_labels) / float(gold_nlabels_roof)
         label_precision = safe_div(ncorrect_labels, best_nlabels_roof)
         bracketing_precision = safe_div(ncorrect_spans, best_nlabels_roof)
@@ -264,20 +247,13 @@ class ParserCriterion(FairseqCriterion):
         agg_output = {
             "loss": float(loss_sum / math.log(2)) / float(sample_size),
             "hinge_loss": float(hinge_loss / float(sample_size)),
-            "t_ppl": float(cat_loss) / float(sample_size) / math.log(2),
-            "t_attr_ce": float(attr_loss) / float(sample_size) / math.log(2),
-            "nt_label_precision": label_recall,
-            "nt_label_recall": label_precision,
-            "nt_label_f1": f1_score(label_precision, label_recall),
-            "bracketing_precision": bracketing_precision,
-            "bracketing_recall": bracketing_recall,
-            "bracketing_f1": f1_score(bracketing_precision, bracketing_recall),
-            "avg_bracketing_errors": bracketing_errors / (nsentences),
-            "delta_gold_bad": (gold_tree - bad_tree) / nsentences,
-            "delta_best_gold": (best_tree - gold_tree) / (nsentences),
-            "t_prec_cat": float(ncorrect_cat) / float(sample_size),
-            "t_prec_exact": float(ncorrect_exact) / float(sample_size),
-            "t_prec_attrs": float(ncorrect_attrs) / float(sample_size),
+            "nt_prec": label_recall,
+            "nt_rec": label_precision,
+            "nt_f1": f1_score(label_precision, label_recall),
+            "brkt_prec": bracketing_precision,
+            "brkt_rec": bracketing_recall,
+            "brkt_f1": f1_score(bracketing_precision, bracketing_recall),
+            "avg_brkt_err": bracketing_errors / (nsentences),
             "gold_tree": gold_tree / nsentences,
             "bad_tree": bad_tree / nsentences,
             "best_tree": best_tree / nsentences,
