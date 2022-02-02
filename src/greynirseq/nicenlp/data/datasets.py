@@ -4,7 +4,7 @@
 
 from collections import OrderedDict
 from functools import lru_cache
-from typing import Callable, Dict, List, Tuple  # noqa: F401
+from typing import Dict
 
 import torch
 from fairseq.data import BaseWrapperDataset, Dictionary, LRUCacheDataset, NestedDictionaryDataset, data_utils
