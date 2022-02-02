@@ -616,8 +616,20 @@ class NonterminalNode(Node):
         return self.nonterminal
 
     @property
-    def simple_tag(self):
-        return _simplify_nonterminal(self.nonterminal)
+    def label_head(self):
+        return self.nonterminal.split("-", 1)[0]
+
+    @property
+    def label_without_attributes(self):
+        chain = [label.split("-", 1)[0] for label in self.nonterminal.split(">")]
+        return ">".join(chain)
+
+    @property
+    def label_attributes(self):
+        # we forbid unary_chains to have composite labels
+        if ">" in self.nonterminal:
+            return []
+        return self.nonterminal.split("-")[1:]
 
     @property
     def children(self):

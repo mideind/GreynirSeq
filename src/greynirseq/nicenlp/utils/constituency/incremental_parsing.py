@@ -1,10 +1,10 @@
-from typing import Optional, Tuple, Any, List
-from collections import namedtuple
+from typing import Optional, Tuple, Any, List, NamedTuple
 from dataclasses import dataclass
 
 from icecream import ic
 
 from greynirseq.nicenlp.utils.constituency.greynir_utils import NonterminalNode, TerminalNode, Node
+
 
 NULL = "NULL"
 ROOT = "ROOT"
@@ -17,6 +17,7 @@ class ParseLabel:
 
     def is_null(self):
         return self.label == NULL
+
 
 class ParseAction:
     def __init__(
@@ -43,7 +44,6 @@ class ParseAction:
         return (self.parent.label == other.parent.label) and (self.preterminal.label == other.preterminal.label)
 
     def __repr__(self):
-        # return f"ParseAction(parent='{self.parent.label}', preterminal='{self.preterminal.label}', depth={self.depth}, parent_span={self.parent.span}, preterminal_span={self.preterminal.span})"
         return f"ParseAction(parent='{self.parent.label}', preterminal='{self.preterminal.label}', depth={self.depth}, parent_span={self.parent.span}, preterminal_span={self.preterminal.span}, nwords={self.nwords}, right_chain_indices={self.right_chain_indices}, preorder_indices={self.preorder_indices})"
 
 

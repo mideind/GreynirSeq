@@ -1,9 +1,11 @@
 from dataclasses import dataclass, field
+import math
 from typing import Dict, Any
 
 import torch
 import torch.nn.functional as F
 
+from fairseq import metrics, utils
 from fairseq.models import FairseqModel
 from fairseq.tasks import FairseqTask
 from fairseq.criterions import FairseqCriterion, register_criterion
@@ -30,16 +32,18 @@ class IncrementalParserCriterion(FairseqCriterion):
         self.task = task
         self.cfg = cfg
 
-    def forward(self, model: FairseqModel, sample: Dict[str, Any], **kwargs):
+    def forward(self, model: FairseqModel, sample: Dict[str, Any], reduce=True, **kwargs):
         # span_logits = model(**sample["net_input"], features_only=True)
         dec, encoder_out = kwargs["dec"], kwargs["encoder_out"]
         constit_output = dec(encoder_out=encoder_out, sample=sample)
-        loss, logging_outputs = self.compute_loss(sample, constit_output, attention_loss_weight=self.cfg.attention_loss_weight)
+        loss, logging_outputs = self.compute_loss(
+            sample, constit_output, attention_loss_weight=self.cfg.attention_loss_weight
+        )
         sample_size = sample["nwords"]
         return loss, sample_size, logging_outputs
 
     @classmethod
-    def compute_loss(cls, sample, constit_output, attention_loss_weight=1.0):
+    def compute_loss(cls, sample, constit_output, attention_loss_weight=1.0, reduce=True):
         chain_mask_without_root = sample["chain_mask"]  # nwords x bsz x num_nodes
         nwords_per_step = sample["nwords_per_step"]  # nwords x bsz
 
@@ -67,11 +71,17 @@ class IncrementalParserCriterion(FairseqCriterion):
 
         # Batch x Time x Channel -> Batch x Channel x Time
         parent_loss = F.cross_entropy(
-            parent_logits.transpose(2, 1), tgt_parents_w_ignore, reduction="sum", ignore_index=IGNORE_INDEX
+            parent_logits.transpose(2, 1),
+            tgt_parents_w_ignore,
+            reduction="sum" if reduce else "none",
+            ignore_index=IGNORE_INDEX,
         )
         # Batch x Time x Channel -> Batch x Channel x Time
         preterm_loss = F.cross_entropy(
-            preterm_logits.transpose(2, 1), tgt_preterms_w_ignore, reduction="sum", ignore_index=IGNORE_INDEX
+            preterm_logits.transpose(2, 1),
+            tgt_preterms_w_ignore,
+            reduction="sum" if reduce else "none",
+            ignore_index=IGNORE_INDEX,
         )
 
         right_chain_lengths = chain_mask.sum(-1)
@@ -87,9 +97,10 @@ class IncrementalParserCriterion(FairseqCriterion):
                 continue
 
             attn_ = attn.clone()
-            # while not zero, padding now has negligible effect on loss
+            # while not zero, padding now has negligible effect on loss, we need to do it this way since cross_entropy assumes
+            # all sequences have the same number of "classes" (which is equal to input length)
             attn_[attention_padding[step]] = NEGLIGIBLE_LOGIT_VALUE
-            attachment_losses.append(F.cross_entropy(attn_, tgt_depths[step]))
+            attachment_losses.append(F.cross_entropy(attn_, tgt_depths[step], reduction="sum" if reduce else "none"))
 
             # dont count attachments on finished sequences
             step_correct_attachments = attn_.argmax(-1).eq(tgt_depths[step]) * attention_padding[
@@ -103,22 +114,82 @@ class IncrementalParserCriterion(FairseqCriterion):
         ncorrect_parents = (parent_logits.argmax(-1).eq(tgt_parents) * target_mask).sum().float()
         ncorrect_preterms = (preterm_logits.argmax(-1).eq(tgt_preterms) * target_mask).sum().float()
 
+        attachment_loss = sum(attachment_losses)
         loss = parent_loss + preterm_loss
         if attention_loss_weight > 0:
-            loss += attention_loss_weight * sum(attachment_losses)
+            loss += attention_loss_weight * attachment_loss
 
         logging_output = {
             "loss": loss,
+            "parent_loss": parent_loss,
+            "preterm_loss": preterm_loss,
             "ntargets": num_label_targets,
             "ncorrect_parents": ncorrect_parents,
             "ncorrect_preterms": ncorrect_preterms,
-            "parent_acc": ncorrect_parents / num_label_targets,
-            "preterm_acc": ncorrect_preterms / num_label_targets,
             "nattach": num_attachments,
             "ncorrect_attach": ncorrect_attachments,
-            "attach_acc": ncorrect_attachments / num_attachments,
             "nwords": sample["nwords"],
+            "sample_size": sample["nwords"],
             "nsentences": sample["nsentences"],
         }
+        if attention_loss_weight > 0:
+            logging_output["attach_loss"] = attachment_loss
 
         return loss, logging_output
+
+    @staticmethod
+    def reduce_metrics(logging_outputs) -> None:
+        loss_sum = sum(log.get("loss", 0.0) for log in logging_outputs)
+        parent_loss = sum(log.get("parent_loss", 0.0) for log in logging_outputs)
+        preterm_loss = sum(log.get("preterm_loss", 0.0) for log in logging_outputs)
+        attach_loss = sum(log.get("preterm_loss", 0.0) for log in logging_outputs)
+        nwords = sum(log.get("nwords", 0.0) for log in logging_outputs)
+
+        ncorrect_parents = sum(log.get("ncorrect_parents", 0.0) for log in logging_outputs)
+        ncorrect_preterms = sum(log.get("ncorrect_preterms", 0.0) for log in logging_outputs)
+        ncorrect_attach = sum(log.get("ncorrect_preterms", 0.0) for log in logging_outputs)
+        ntargets = sum(log.get("ncorrect_preterms", 0.0) for log in logging_outputs)
+        nattach = sum(log.get("ncorrect_preterms", 0.0) for log in logging_outputs)
+
+        # we convert from base e to base 2
+        metrics.log_scalar("loss", loss_sum / nwords / math.log(2), nwords, round=3)
+        metrics.log_scalar("parent_loss", parent_loss / ntargets / math.log(2), nwords, round=3)
+        metrics.log_scalar("preterm_loss", preterm_loss / ntargets / math.log(2), nwords, round=3)
+        if nattach > 0:
+            metrics.log_scalar("attach_loss", attach_loss / nattach / math.log(2), nwords, round=3)
+        # loss stored in meters is already in base 2
+        metrics.log_derived("ppl", lambda meters: utils.get_perplexity(meters["loss"].avg))
+
+        metrics.log_scalar("_ncorrect_parents", ncorrect_parents)
+        metrics.log_scalar("_ncorrect_preterms", ncorrect_preterms)
+        metrics.log_scalar("_ncorrect_attach", ncorrect_attach)
+        metrics.log_scalar("_ntargets", ntargets)
+        metrics.log_scalar("_nattach", nattach)
+
+        metrics.log_derived(
+            "parent_acc",
+            lambda meters: meters["_ncorrect_parent"].sum * 100 / meters["_ntargets"].sum
+            if meters["_ntargets"].sum > 0
+            else float("nan"),
+        )
+        metrics.log_derived(
+            "preterm_acc",
+            lambda meters: meters["_ncorrect_preterm"].sum * 100 / meters["_ntargets"].sum
+            if meters["_ntargets"].sum > 0
+            else float("nan"),
+        )
+        metrics.log_derived(
+            "attach_acc",
+            lambda meters: meters["_ncorrect_attach"].sum * 100 / meters["_nattach"].sum
+            if meters["_nattach"].sum > 0
+            else float("nan"),
+        )
+
+    @staticmethod
+    def logging_outputs_can_be_summed() -> bool:
+        """
+        Whether the logging outputs returned by `forward` can be summed
+        across workers prior to calling `reduce_metrics`. Setting this
+        to True will improves distributed training speed.
+        """
+        return True
