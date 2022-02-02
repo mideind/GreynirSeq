@@ -1,9 +1,11 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any
 
+import torch
 import torch.nn.functional as F
 
 from fairseq.models import FairseqModel
+from fairseq.tasks import FairseqTask
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.dataclass import FairseqDataclass
 from fairseq.data.data_utils import lengths_to_padding_mask
@@ -23,47 +25,43 @@ class IncrementalParserCriterionConfig(FairseqDataclass):
 
 @register_criterion("incremental_parser", dataclass=IncrementalParserCriterionConfig)
 class IncrementalParserCriterion(FairseqCriterion):
-    def __init__(self, task):
+    def __init__(self, cfg: IncrementalParserCriterionConfig, task: FairseqTask):
         super().__init__(task)
         self.task = task
+        self.cfg = cfg
 
-    # @staticmethod
-    # def add_args(parser):
-    #     """Add criterion-specific arguments to the parser."""
-    #     # fmt: off
-    #     parser.add_argument('--log-dists', action="store_true", required=False,
-    #                         help='Print out tree distances as part of metrics of parsers')
-    #     # fmt: on
-
-    def forward(self, model: FairseqModel, sample: Dict[str, Any], reduce: bool = True):
-        """Compute the loss for the given sample.
-
-        Returns a tuple with three elements:
-        1) the loss
-        2) the sample size, which is used as the denominator for the gradient
-        3) logging outputs to display while training
-        """
-        assert hasattr(model, "task_head") or hasattr(
-            model, "task_heads"
-        ), "model must provide task specific classification head"
-        span_logits = model(**sample["net_input"], features_only=True)
-        loss, nwords_total, logging_output = self.compute_loss(sample, span_logits, reduce=reduce)
-        return loss, nwords_total, logging_output
+    def forward(self, model: FairseqModel, sample: Dict[str, Any], **kwargs):
+        # span_logits = model(**sample["net_input"], features_only=True)
+        dec, encoder_out = kwargs["dec"], kwargs["encoder_out"]
+        constit_output = dec(encoder_out=encoder_out, sample=sample)
+        loss, logging_outputs = self.compute_loss(sample, constit_output, attention_loss_weight=self.cfg.attention_loss_weight)
+        sample_size = sample["nwords"]
+        return loss, sample_size, logging_outputs
 
     @classmethod
-    def compute_whole(
-        cls, tgt_padding_mask, tgt_parents, tgt_preterms, tgt_depths, parent_logits, preterm_logits, attention, chain_mask
-    ):
-        ic(parent_logits.shape, tgt_parents.shape, tgt_padding_mask.shape)
-        ic(preterm_logits.shape, tgt_preterms.shape, tgt_padding_mask.shape)
-        ic(tgt_padding_mask.long())
+    def compute_loss(cls, sample, constit_output, attention_loss_weight=1.0):
+        chain_mask_without_root = sample["chain_mask"]  # nwords x bsz x num_nodes
+        nwords_per_step = sample["nwords_per_step"]  # nwords x bsz
 
-        ic(tgt_depths.shape, tgt_depths)
-        ic([att.shape for att in attention])
+        # prepend root where the sequence is still alive, for each, for each step
+        chain_mask = torch.cat([nwords_per_step.gt(0).unsqueeze(-1), chain_mask_without_root], dim=2)
+
+        tgt_padding_mask = sample["target_padding_mask"]
+        tgt_parents = sample["target_parents"]
+        tgt_preterms = sample["target_preterminals"]
+        tgt_depths = sample["target_depths"]
+        parent_logits = constit_output.parent_logits
+        preterm_logits = constit_output.preterm_logits
+        attention = constit_output.attention
+
+        # ic(parent_logits.shape, tgt_parents.shape, tgt_padding_mask.shape)
+        # ic(preterm_logits.shape, tgt_preterms.shape, tgt_padding_mask.shape)
+        # ic(tgt_padding_mask.long())
+        # ic(tgt_depths.shape, tgt_depths)
+        # ic([att.shape for att in attention])
 
         tgt_parents_w_ignore = tgt_parents.clone()
         tgt_parents_w_ignore[tgt_padding_mask] = IGNORE_INDEX
-
         tgt_preterms_w_ignore = tgt_preterms.clone()
         tgt_preterms_w_ignore[tgt_padding_mask] = IGNORE_INDEX
 
@@ -78,11 +76,14 @@ class IncrementalParserCriterion(FairseqCriterion):
 
         right_chain_lengths = chain_mask.sum(-1)
         attention_padding = [lengths_to_padding_mask(s) for s in right_chain_lengths]
+        # ic(parent_logits.shape, tgt_parents.shape, tgt_parents, tgt_padding_mask.shape, tgt_padding_mask.long())
 
         attachment_losses = []
+        num_attachments = 0
+        ncorrect_attachments = 0
         for step, attn in enumerate(attention):
             if step == 0:
-                # there is only one target, no need to do anything
+                # there is only one attendable vector per seq, no need to do anything
                 continue
 
             attn_ = attn.clone()
@@ -90,20 +91,34 @@ class IncrementalParserCriterion(FairseqCriterion):
             attn_[attention_padding[step]] = NEGLIGIBLE_LOGIT_VALUE
             attachment_losses.append(F.cross_entropy(attn_, tgt_depths[step]))
 
-        loss = parent_loss + preterm_loss + sum(attachment_losses)
-        return loss
+            # dont count attachments on finished sequences
+            step_correct_attachments = attn_.argmax(-1).eq(tgt_depths[step]) * attention_padding[
+                step
+            ].logical_not().sum(-1).gt(0)
+            ncorrect_attachments += step_correct_attachments.sum()
+            num_attachments += attention_padding[step].logical_not().sum(-1).gt(0).sum()
 
-    @classmethod
-    def compute_step(
-        cls,
-        step_preterm_mask,
-        step_parent_mask,
-        step_word_padding_mask,
-        step_parents,
-        step_preterms,
-        tgt_depths,
-        step_nwords,
-        step_logits1,
-        step_logits2,
-    ):
-        pass
+        target_mask = tgt_padding_mask.logical_not()
+        num_label_targets = target_mask.sum(-1)
+        ncorrect_parents = (parent_logits.argmax(-1).eq(tgt_parents) * target_mask).sum().float()
+        ncorrect_preterms = (preterm_logits.argmax(-1).eq(tgt_preterms) * target_mask).sum().float()
+
+        loss = parent_loss + preterm_loss
+        if attention_loss_weight > 0:
+            loss += attention_loss_weight * sum(attachment_losses)
+
+        logging_output = {
+            "loss": loss,
+            "ntargets": num_label_targets,
+            "ncorrect_parents": ncorrect_parents,
+            "ncorrect_preterms": ncorrect_preterms,
+            "parent_acc": ncorrect_parents / num_label_targets,
+            "preterm_acc": ncorrect_preterms / num_label_targets,
+            "nattach": num_attachments,
+            "ncorrect_attach": ncorrect_attachments,
+            "attach_acc": ncorrect_attachments / num_attachments,
+            "nwords": sample["nwords"],
+            "nsentences": sample["nsentences"],
+        }
+
+        return loss, logging_output
