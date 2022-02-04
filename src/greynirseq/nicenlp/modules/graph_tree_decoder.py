@@ -3,7 +3,7 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Dict, Any, NamedTuple
+from typing import List, Optional, Dict, Any, NamedTuple, Union
 
 from omegaconf import II
 
@@ -31,7 +31,11 @@ from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
 )
 from greynirseq.nicenlp.utils.constituency.scratch_incremental import IncrementalParser
 from greynirseq.nicenlp.models.simple_parser import ChartParserHead
-from greynirseq.nicenlp.criterions.incremental_parser import IncrementalParserCriterion, IncrementalParserCriterionConfig
+from greynirseq.nicenlp.criterions.incremental_parser import (
+    IncrementalParserCriterion,
+    IncrementalParserCriterionConfig,
+)
+from greynirseq.nicenlp.data.datasets import collate_2d
 
 from icecream import ic
 
@@ -39,8 +43,21 @@ from icecream import ic
 SYMBOL_ROOT, SYMBOL_NULL = "ROOT", "NULL"
 PADDING_VALUE_FOR_NON_INDEX = -100
 NULL_SPAN = (PADDING_VALUE_FOR_NON_INDEX, PADDING_VALUE_FOR_NON_INDEX)
+TensorListOrTensor = Union[List[Tensor], Tensor]
 
-ConstituencyParserOutput = NamedTuple("ConstituencyParserOutput", [("parent_logits", Tensor), ("preterm_logits", Tensor), ("attention", List[Tensor])])
+
+@dataclass
+class ConstituencyParserOutput:
+    """Simple container for incremental outputs of constituency part of GraphTreeDecoder"""
+
+    # simple container for incremental outputs
+    parent_logits: TensorListOrTensor
+    preterm_logits: TensorListOrTensor
+    parent_flag_logits: TensorListOrTensor
+    preterm_flag_logits: TensorListOrTensor
+    attention: TensorListOrTensor
+
+
 GraphDecoderOutput = NamedTuple("GraphDecoderOutput", [("constituency", ConstituencyParserOutput)])
 
 
@@ -140,14 +157,18 @@ class TreeGraphDecoder(nn.Module):
             self.layernorm_embedding = LayerNorm(self.embed_dim)
         self.layer_norm = LayerNorm(self.embed_dim)
 
-        self.task_head1 = ScaffholdHead(self.embed_dim, self.num_labels, self.cfg.dropout)
-        self.task_head2 = ScaffholdHead(self.embed_dim, self.num_labels, self.cfg.dropout)
+        self.classification_heads = nn.ModuleDict()
+        self.classification_heads["constit_parent"] = ScaffholdHead(self.embed_dim, self.num_labels, self.cfg.dropout)
+        self.classification_heads["constit_preterm"] = ScaffholdHead(self.embed_dim, self.num_labels, self.cfg.dropout)
+        self.classification_heads["constit_parent_flags"] = ScaffholdHead(
+            self.embed_dim, self.num_labels, self.cfg.dropout
+        )
+        self.classification_heads["constit_preterm_flags"] = ScaffholdHead(
+            self.embed_dim, self.num_labels, self.cfg.dropout
+        )
         self.mlp_attention = SingleVectorMLPAttention(
             2 * self.embed_dim, self.embed_dim // 4, self.cfg.dropout, use_sigmoid=cfg.mlp_attn_is_sigmoid
         )
-
-    def forward_increment(self, encoder_out: Tensor):
-        pass
 
     def embed_spans(self, spans: Tensor, end_thresholds: Tensor = None):
         # spans: B x T x S
@@ -188,48 +209,48 @@ class TreeGraphDecoder(nn.Module):
     ):
         ic.enable()
         _nwords = sample["nwords"]
-        tgt_depths = sample["target_depths"]
-        tgt_padding_mask = sample["target_padding_mask"]
-
-        tgt_parents = sample["target_parents"]
-        tgt_preterms = sample["target_preterminals"]
-
-        preorder_nts = sample["preorder_nts"]  # bsz x num_nodes
-        preorder_mask = sample["preorder_mask"]  # nwords x bsz x num_nodes
-        chain_mask = sample["chain_mask"]  # nwords x bsz x num_nodes
+        preorder_nts = sample["preorder_nts"]  # bsz x nodes
+        preorder_mask = sample["preorder_mask"]  # nsteps x bsz x nodes
+        chain_mask = sample["chain_mask"]  # nsteps x bsz x num_nodes
         preorder_spans = sample["preorder_spans"]  # bsz x num_nodes x 2
         nwords_per_step = sample["nwords_per_step"]  # nwords x bsz
+        preorder_flags = sample["preorder_flags"]  # bsz x nodes x flags
 
-        bsz, max_seq_len, _encoder_embed_dim = encoder_out.shape
-
-        parent_logits = []
-        preterm_logits = []
-        attentions = []
+        # bsz, max_seq_len, _encoder_embed_dim = encoder_out.shape
+        nsteps, bsz, _num_nodes = preorder_mask.shape
 
         emb_preorder_nts = self.embed_labels(preorder_nts)
+        # bsz x nodes x flags  ->  bsz x nodes x flags x features  ->  bsz x nodes x features
+        emb_preorder_nts += self.embed_labels(preorder_flags).sum(dim=-2)
 
-        # narrow_to_step = 2
-        # narrow_to_step = None
-        for curr_step in range(max_seq_len):
-            # if narrow_to_step is not None and narrow_to_step != curr_step:
-            #     continue
+        # simple container for incremental outputs
+        state = ConstituencyParserOutput([], [], [], [], [])
+        for curr_step in range(nsteps):
             num_words_in_tree = (nwords_per_step[curr_step] - 1).clamp(0)
             root_spans = torch.stack([torch.zeros(bsz).long(), num_words_in_tree], dim=1)
-            # unsqueeze:  B x 2  ->  B x T x 2  (with T=1)
+            # root_spans: B x 2  ->  B x 1 x 2  ->  B x 1 x C
             root_span_emb = self.embed_spans(root_spans.unsqueeze(1), end_thresholds=num_words_in_tree)
 
-            root_emb = self.embed_labels(torch.tensor(self.root_label_index)).tile((bsz, 1, 1))  # B x 1 x C
+            # root_emb: 0  ->  C  ->  B x 1 x C
+            root_emb = self.embed_labels(torch.tensor(self.root_label_index)).tile((bsz, 1, 1))
             root_emb = root_emb + root_span_emb
 
-            word_embs = encoder_out[:, : (curr_step + 1), :]
             word_mask = lengths_to_padding_mask(nwords_per_step[curr_step]).logical_not()
-            emb_preorder_step = emb_preorder_nts + self.embed_spans(preorder_spans, end_thresholds=num_words_in_tree)
-            emb_preorder_step *= preorder_mask[curr_step].unsqueeze(-1)
-            # ic(word_embs.shape, root_emb.shape, emb_preorder_step.shape)
-            # ic(word_mask.shape, preorder_mask[curr_step].shape)
-            root_mask = (nwords_per_step[curr_step] > 0).unsqueeze(-1)  # sequences that are finished have 0 words this step
+            word_embs = encoder_out[:, : nwords_per_step[curr_step].max(), :][word_mask]
+            word_embs = pad_sequence(word_embs.split(word_mask.sum(-1).tolist()), batch_first=True, padding_value=0)
+            preorder_step_embs = emb_preorder_nts + self.embed_spans(preorder_spans, end_thresholds=num_words_in_tree)
+            preorder_step_embs *= preorder_mask[curr_step].unsqueeze(-1)
+            # sequences that are finished have 0 words this step
+            root_mask = (nwords_per_step[curr_step] > 0).unsqueeze(-1)
+            # print()
+            # ic(word_mask.shape, root_mask.shape, preorder_mask[curr_step].shape)
+            # ic(word_embs.shape, root_emb.shape, preorder_step_embs.shape)
+            assert (
+                word_mask.shape[1] + root_mask.shape[1] + preorder_mask[curr_step].shape[1]
+                == word_embs.shape[1] + root_emb.shape[1] + preorder_step_embs.shape[1]
+            )
             input_mask = torch.cat([word_mask, root_mask, preorder_mask[curr_step]], dim=1)
-            input_embs = torch.cat([word_embs, root_emb, emb_preorder_step], dim=1) * input_mask.unsqueeze(-1)
+            input_embs = torch.cat([word_embs, root_emb, preorder_step_embs], dim=1) * input_mask.unsqueeze(-1)
 
             # bsz x (num_nodes+1) x features
             x = self.forward_nodes(input_embs, self_attn_padding_mask=input_mask)
@@ -245,28 +266,23 @@ class TreeGraphDecoder(nn.Module):
             # bsz x features  ->  bsz x 1 x features
             attending_words = (x[torch.arange(bsz), word_output_idxs, :] * is_alive.unsqueeze(-1)).unsqueeze(1)
 
-            attn_output_features, attn  = self.mlp_attention(right_chain_outputs, attending_words)
+            attn_output_features, attn = self.mlp_attention(right_chain_outputs, attending_words)
             assert attending_words.shape == attn_output_features.shape
             # merge attention output and newest word, this should eithger be an add or cat
             clsf_features = attending_words + attn_output_features
 
-            step_parent_logits = self.task_head1(clsf_features)
-            step_preterm_logits = self.task_head2(clsf_features)
+            state.parent_logits.append(self.classification_heads["constit_parent"](clsf_features))
+            state.preterm_logits.append(self.classification_heads["constit_preterm"](clsf_features))
+            state.parent_flag_logits.append(self.classification_heads["constit_parent_flags"](clsf_features))
+            state.preterm_flag_logits.append(self.classification_heads["constit_preterm_flags"](clsf_features))
+            state.attention.append(attn.squeeze(2))
 
-            parent_logits.append(step_parent_logits)
-            preterm_logits.append(step_preterm_logits)
-            attentions.append(attn.squeeze(2))
+        state.parent_logits = torch.cat(state.parent_logits, dim=1)
+        state.preterm_logits = torch.cat(state.preterm_logits, dim=1)
+        state.parent_flag_logits = torch.cat(state.parent_flag_logits, dim=1)
+        state.preterm_flag_logits = torch.cat(state.preterm_flag_logits, dim=1)
 
-        output = ConstituencyParserOutput(
-            parent_logits=torch.cat(parent_logits, dim=1),
-            preterm_logits=torch.cat(preterm_logits, dim=1),
-            attention=attentions,
-        )
-
-        return output
-
-        # ic(tgt_parents.shape, step_parent_logits.shape, parent_logits.shape)
-        # breakpoint()
+        return state
 
 
 class ScaffholdHead(nn.Module):
@@ -492,20 +508,20 @@ def make_example_tree_08():
 def make_example_tree():
     #            S0-TOP>S0>IP
     #      ___________|_______
-    #   NP-SUBJ               VP
-    #      |       ___________|_____
-    #   NP-FAKE  VP-AUX  ADVP    VP
-    #      |       |      |      |
-    #      NP      x      x      x
-    #      |       |      |      |
-    #      x     hafði   ekki  runnið
+    #     NP3-SUBJ           VP
+    #      |            _____|___________
+    #     NP2      VP-AUX-SEQ   ADVP    VP
+    #      |            |        |      |
+    #     NP1           x        x      x
+    #      |            |        |      |
+    #      x          hafði     ekki  runnið
     #      |
     #   bíllinn
     #
     billinn = NonterminalNode("NP1", [TerminalNode("bíllinn", "x")])
     billinn = NonterminalNode("NP2", [billinn])
-    billinn = NonterminalNode("NP3", [billinn])
-    hafdi = NonterminalNode("VP-AUX", [TerminalNode("hafði", "x")])
+    billinn = NonterminalNode("NP3-SUBJ", [billinn])
+    hafdi = NonterminalNode("VP-AUX-SEQ", [TerminalNode("hafði", "x")])
     ekki = NonterminalNode("ADVP", [TerminalNode("ekki", "x")])
     runnid = NonterminalNode("VP", [TerminalNode("runnið", "x")])
     hafdi_ekki_runnid = NonterminalNode("VP", [hafdi, ekki, runnid])
@@ -546,49 +562,78 @@ def test_forward():
         make_example_tree_08(),
         make_example_tree(),
     ]
+    sents = [tree.uncollapse_unary() for tree in sents]
 
-    # for tree in sents:
-    #     tree.pretty_print()
+    acts, preorder_lists = zip(*[get_incremental_parse_actions(sent, collapse=False) for sent in sents])
 
-    acts, preorder_lists = zip(*[get_incremental_parse_actions(sent) for sent in sents])
+    for tree, act in zip(sents, acts):
+        print()
+        tree.pretty_print()
+        ic(act)
 
-    ic.enable()
-    # ic(acts)
-
-    # # just some inplace debug and dump of uncollapsed trees
-    # mytree = make_example_tree().uncollapse_unary()
-    # mytree.pretty_print()
-    # # mark_preterminal_and_parent(mytree)
-    # # _ = mytree.span
-    # # breakpoint()
-    # myacts, rod = get_incremental_parse_actions(mytree, verbose=True, collapse=True, bp=True)
-    # # rod = mytree.preorder_list()
-    # # rchain = tuple(get_preorder_index_of_right_chain(mytree))
-    # ic.enable()
-    # ic(rod)
-    # ic([node.preorder_index for node in rod])
-    # ic()
-    # # ic(preorder_nodeinfo)
-    # # ic(rchain)
-    # mytree.pretty_print()
-    # breakpoint()
+    # ic(node.label_without_flags, node.label_head)
 
     # this is just scaffolding, we need a label_dictionary to develop other stuff
-    all_labels = {node.nonterminal for preorder_list in preorder_lists for node in preorder_list}
+    all_labels = {node.label_head for preorder_list in preorder_lists for node in preorder_list}
+    all_flags = {f for preorder_list in preorder_lists for node in preorder_list for f in node.label_flags}
     ldict = Dictionary()
     ldict.add_symbol(SYMBOL_ROOT)
     ldict.add_symbol(SYMBOL_NULL)
-    for label in all_labels:
+    for label in all_labels.union(all_flags):
         ldict.add_symbol(label)
     ic(ldict.symbols)
 
     # this is just scaffolding, we need a label_dictionary to develop other stuff
     src_dict = Dictionary()
-    src_tokens = pad_sequence([src_dict.encode_line(line=tree.text, add_if_not_exist=True) for tree in sents], batch_first=True, padding_value=src_dict.pad())
+    src_tokens = pad_sequence(
+        [src_dict.encode_line(line=tree.text, add_if_not_exist=True) for tree in sents],
+        batch_first=True,
+        padding_value=src_dict.pad(),
+    )
     ic(src_dict.symbols, src_tokens)
 
-    padded_preorder_nts = pad_sequence([torch.tensor([ldict.index(node.nonterminal) for node in preorder_list], dtype=torch.long) for preorder_list in preorder_lists], batch_first=True, padding_value=ldict.pad())
+    padded_preorder_nts = pad_sequence(
+        [
+            torch.tensor([ldict.index(node.label_head) for node in preorder_list], dtype=torch.long)
+            for preorder_list in preorder_lists
+        ],
+        batch_first=True,
+        padding_value=ldict.pad(),
+    )
     preorder_spans = [torch.tensor([node.span for node in preorder_list]) for preorder_list in preorder_lists]
+
+    def encode_flags_batched(flags, ldict):
+        encoded_flags = [
+            pad_sequence(
+                [
+                    torch.tensor([ldict.index(f) for f in node_flags], dtype=torch.long)
+                    if node_flags
+                    else torch.tensor([ldict.pad()], dtype=torch.long)
+                    for node_flags in seq_flags
+                ],
+                batch_first=True,
+                padding_value=ldict.pad(),
+            )
+            for seq_flags in flags
+        ]
+        return collate_2d(encoded_flags, pad_idx=ldict.pad())
+
+    padded_preorder_flags = encode_flags_batched(
+        [[node.label_flags for node in preorder_list] for preorder_list in preorder_lists], ldict
+    )
+
+    padded_tgt_parent_flags = encode_flags_batched(
+        [[action.parent.label_flags for action in seq_acts] for seq_acts in acts], ldict
+    )
+
+    padded_tgt_preterm_flags = encode_flags_batched(
+        [[action.preterminal.label_flags for action in seq_acts] for seq_acts in acts], ldict
+    )
+
+    # ic(padded_tgt_parent_flags, padded_tgt_preterm_flags)
+
+    # bsz x seq x flags
+    ic(padded_preorder_flags)
     padded_preorder_spans = pad_sequence(preorder_spans, batch_first=True, padding_value=0)
     padded_input_masks, padded_chain_masks = [], []
     max_acts = max(len(seq_acts) for seq_acts in acts)
@@ -619,24 +664,25 @@ def test_forward():
     bsz = len(sents)
     seq_len = max(len(sent.leaves) for sent in sents)
 
+    # tgt_depths: bsz x nsteps  ->  nsteps x bsz
     tgt_depths = pad_sequence(
         [torch.tensor([act.depth for act in seq_acts]) for seq_acts in acts],
         batch_first=True,
         padding_value=PADDING_VALUE_FOR_NON_INDEX,
-    ).transpose(0, 1)  # bsz x nsteps  ->  nsteps x bsz
+    ).transpose(0, 1)
     tgt_parents = pad_sequence(
-        [torch.tensor([ldict.index(act.parent.label) for act in seq_acts]) for seq_acts in acts],
+        [torch.tensor([ldict.index(act.parent.label_without_flags) for act in seq_acts]) for seq_acts in acts],
         batch_first=True,
         padding_value=ldict.pad(),
     )
     tgt_preterms = pad_sequence(
-        [torch.tensor([ldict.index(act.preterminal.label) for act in seq_acts]) for seq_acts in acts],
+        [torch.tensor([ldict.index(act.preterminal.label_without_flags) for act in seq_acts]) for seq_acts in acts],
         batch_first=True,
         padding_value=ldict.pad(),
     )
     tgt_padding_mask = tgt_depths.eq(PADDING_VALUE_FOR_NON_INDEX).T
 
-    ic(tgt_depths)
+    ic.enable()
     ic(tgt_depths)
     ic(tgt_parents)
     ic(tgt_preterms)
@@ -653,10 +699,13 @@ def test_forward():
         "target_padding_mask": tgt_padding_mask,
         "target_parents": tgt_parents,
         "target_preterminals": tgt_preterms,
+        "target_parent_flags": padded_tgt_parent_flags,
+        "target_preterm_flags": padded_tgt_preterm_flags,
         "preorder_nts": padded_preorder_nts,
         "preorder_mask": padded_input_masks,
         "chain_mask": padded_chain_masks,
         "preorder_spans": padded_preorder_spans,
+        "preorder_flags": padded_preorder_flags,
         "nwords_per_step": nwords_per_step,
         "nsentences": bsz,
     }
@@ -675,4 +724,3 @@ def test_forward():
     # dec(encoder_out=encoder_out, sample=sample)
     incr_parser_criterion = IncrementalParserCriterion(cfg=IncrementalParserCriterionConfig, task=None)
     _ = incr_parser_criterion(model=None, sample=sample, encoder_out=encoder_out, dec=dec)
-

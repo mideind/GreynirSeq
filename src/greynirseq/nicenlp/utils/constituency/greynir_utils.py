@@ -617,19 +617,31 @@ class NonterminalNode(Node):
 
     @property
     def label_head(self):
-        return self.nonterminal.split("-", 1)[0]
+        return self.get_label_head(self.nonterminal)
 
     @property
-    def label_without_attributes(self):
-        chain = [label.split("-", 1)[0] for label in self.nonterminal.split(">")]
-        return ">".join(chain)
+    def label_without_flags(self):
+        return self.get_label_without_flags(self.nonterminal)
 
     @property
-    def label_attributes(self):
+    def label_flags(self):
+        return self.get_label_flags(self.nonterminal)
+
+    @staticmethod
+    def get_label_head(nonterminal):
+        return nonterminal.split("-", 1)[0]
+
+    @staticmethod
+    def get_label_flags(nonterminal):
         # we forbid unary_chains to have composite labels
-        if ">" in self.nonterminal:
+        if ">" in nonterminal:
             return []
-        return self.nonterminal.split("-")[1:]
+        return nonterminal.split("-")[1:]
+
+    @staticmethod
+    def get_label_without_flags(nonterminal):
+        chain = [label.split("-", 1)[0] for label in nonterminal.split(">")]
+        return ">".join(chain)
 
     @property
     def children(self):

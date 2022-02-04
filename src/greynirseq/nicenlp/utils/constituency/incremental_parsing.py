@@ -18,6 +18,18 @@ class ParseLabel:
     def is_null(self):
         return self.label == NULL
 
+    @property
+    def label_flags(self):
+        return NonterminalNode.get_label_flags(self.label)
+
+    @property
+    def label_without_flags(self):
+        return NonterminalNode.get_label_without_flags(self.label)
+
+    @property
+    def label_head(self):
+        return NonterminalNode.get_label_head(self.label)
+
 
 class ParseAction:
     def __init__(
