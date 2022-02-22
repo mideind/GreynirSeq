@@ -2,31 +2,33 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+from argparse import Namespace
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Dict, Any, NamedTuple, Union
+from typing import List, Optional, Dict, Any, NamedTuple, Union, Optional, Tuple
 
 from omegaconf import II
 
 import torch
 from torch import Tensor
 from torch import nn
+import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 
 from fairseq import utils
 from fairseq.data.data_utils import lengths_to_padding_mask
 from fairseq.modules.transformer_sentence_encoder import TransformerSentenceEncoderLayer
-from fairseq.modules import PositionalEmbedding, FairseqDropout, LayerNorm
+from fairseq.modules import LearnedPositionalEmbedding, PositionalEmbedding, FairseqDropout, LayerNorm
 from fairseq.dataclass import FairseqDataclass
+from fairseq.models.roberta.model import roberta_base_architecture
 
 from greynirseq.nicenlp.utils.constituency.greynir_utils import NonterminalNode, TerminalNode, Node
 from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
-    NULL,
-    ROOT,
+    NULL_LABEL,
+    ROOT_LABEL,
     ParseAction,
     get_incremental_parse_actions,
     get_right_chain,
     parse_by_actions,
-    mark_preterminal_and_parent,
     get_preorder_index_of_right_chain,
 )
 from greynirseq.nicenlp.utils.constituency.scratch_incremental import IncrementalParser
@@ -40,10 +42,11 @@ from greynirseq.nicenlp.data.datasets import collate_2d
 from icecream import ic
 
 
-SYMBOL_ROOT, SYMBOL_NULL = "ROOT", "NULL"
 PADDING_VALUE_FOR_NON_INDEX = -100
 NULL_SPAN = (PADDING_VALUE_FOR_NON_INDEX, PADDING_VALUE_FOR_NON_INDEX)
 TensorListOrTensor = Union[List[Tensor], Tensor]
+_roberta_base_args = Namespace()
+roberta_base_architecture(_roberta_base_args)
 
 
 @dataclass
@@ -58,19 +61,36 @@ class ConstituencyParserOutput:
     attention: TensorListOrTensor
 
 
-GraphDecoderOutput = NamedTuple("GraphDecoderOutput", [("constituency", ConstituencyParserOutput)])
+# GraphDecoderOutput = NamedTuple("GraphDecoderOutput", [("constituency", ConstituencyParserOutput)])
 
 
 @dataclass
-class TreeGraphDecoderConfig:
-    embed_dim: int = field(default=64, metadata={"help": "Embedding dimension"})
-    layers: int = field(default=2, metadata={"help": "Number of layers"})
-    max_positions: int = 512  # II("max_source_positions")
-    learned_positions: bool = True  # II("encoder.learned_pos")
-    factored_embeddings: bool = False
-    layernorm_embedding: bool = True
+class _TransformerSentenceEncoderLayerConfig:
+    embedding_dim: int = _roberta_base_args.encoder_embed_dim  # 768
+    ffn_embedding_dim: int = _roberta_base_args.encoder_ffn_embed_dim  # 3072
+    num_attention_heads: int = _roberta_base_args.encoder_attention_heads  # 8
     dropout: float = 0.1
-    mlp_attn_is_sigmoid: bool = True
+    attention_dropout: float = 0.1
+    activation_dropout: float = 0.1
+    activation_fn: str = "relu"
+    export: bool = False
+    q_noise: float = 0.0
+    qn_block_size: int = 8
+
+
+@dataclass
+class TreeGraphDecoderConfig(FairseqDataclass):
+    transformer: _TransformerSentenceEncoderLayerConfig = _TransformerSentenceEncoderLayerConfig()
+    # embed_dim: int = field(default=_roberta_base_args.encoder_embed_dim, metadata={"help": "Embedding dimension"})
+    # embed_dim: int = II("..transformer.embedding_dim")
+    _embedding_dim: int = II("model.graph_decoder.transformer.embedding_dim")
+    layers: int = field(default=2, metadata={"help": "Number of layers in the decoder"})
+    max_positions: int = field(default=_roberta_base_args.max_source_positions)
+    learned_pos: bool = field(default=_roberta_base_args.encoder_learned_pos)
+    layernorm_embedding: bool = field(default=_roberta_base_args.layernorm_embedding)
+    dropout: float = field(default=_roberta_base_args.dropout)
+    factored_embeddings: bool = field(default=False)
+    mlp_attn_is_sigmoid: bool = field(default=True, metadata={"help": ""})
 
 
 # @dataclass
@@ -90,56 +110,35 @@ class TreeGraphDecoderConfig:
 #     use_position_embeddings: bool = True,
 #     offset_positions_by_padding: bool = True,
 #     encoder_normalize_before: bool = False,
-#     apply_bert_init: bool = False,
-#     activation_fn: str = "relu",
-#     learned_pos_embedding: bool = True,
-#     embed_scale: float = None,
-#     freeze_embeddings: bool = False,
-#     n_trans_layers_to_freeze: int = 0,
-#     export: bool = False,
-#     traceable: bool = False,
-#     q_noise: float = 0.0,
-#     qn_block_size: int = 8,
-
-
-@dataclass
-class _TransformerSentenceEncoderLayerConfig:
-    embedding_dim: int = 64  # 768
-    ffn_embedding_dim: int = 128  # 3072
-    num_attention_heads: int = 2  # 8
-    dropout: float = 0.1
-    attention_dropout: float = 0.1
-    activation_dropout: float = 0.1
-    activation_fn: str = "relu"
-    export: bool = False
-    q_noise: float = 0.0
-    qn_block_size: int = 8
+#     app= 8,
 
 
 class TreeGraphDecoder(nn.Module):
     def __init__(
         self,
         cfg: TreeGraphDecoderConfig,
-        embed_positions: Any = None,
-        padding_idx: int = 0,
-        num_labels: int = 20,
-        root_label_index: int = 0,
+        embed_positions: Optional[Tensor] = None,
+        padding_idx: int = 1,
+        num_labels: int = -1,
+        root_label_index: int = -1,
     ):
         # XXX: dropout is missing
         super().__init__()
         self.cfg = cfg
-        self.embed_dim = cfg.embed_dim
+        assert num_labels > 0
+        assert root_label_index > 0
+        self.embed_dim = cfg._embedding_dim
         self.num_labels = num_labels
         self.embed_positions = embed_positions
         self.padding_idx = padding_idx
         self.root_label_index = root_label_index
+        assert cfg.learned_pos, "Currently unsupported"
         if embed_positions is None:
             self.embed_positions = PositionalEmbedding(
-                # cfg.max_positions, self.embed_dim, self.padding_idx, learned=cfg.learned_positions
-                cfg.max_positions,
-                self.embed_dim,
-                None,
-                learned=cfg.learned_positions,
+                num_embeddings=cfg.max_positions,
+                embedding_dim=self.embed_dim,
+                padding_idx=padding_idx,
+                learned=cfg.learned_pos,
             )
 
         # XXX: these are nonterminal labels, as well as attribute labels
@@ -147,7 +146,8 @@ class TreeGraphDecoder(nn.Module):
 
         self.layers = nn.ModuleList(
             [
-                TransformerSentenceEncoderLayer(**asdict(_TransformerSentenceEncoderLayerConfig()))
+                TransformerSentenceEncoderLayer(**cfg.transformer)
+                # TransformerEncoderLayer(cfg.transformer)  # requires changing self_attn_padding_mask to attn_mask in forward_nodes
                 for _ in range(cfg.layers)
             ]
         )
@@ -157,35 +157,69 @@ class TreeGraphDecoder(nn.Module):
             self.layernorm_embedding = LayerNorm(self.embed_dim)
         self.layer_norm = LayerNorm(self.embed_dim)
 
+        # XXX: should the output heads be here or on the wrapping model?
+        # XXX: the out-projection should be shared with the input label embedding matrix of the decoder!
         self.classification_heads = nn.ModuleDict()
-        self.classification_heads["constit_parent"] = ScaffholdHead(self.embed_dim, self.num_labels, self.cfg.dropout)
-        self.classification_heads["constit_preterm"] = ScaffholdHead(self.embed_dim, self.num_labels, self.cfg.dropout)
-        self.classification_heads["constit_parent_flags"] = ScaffholdHead(
-            self.embed_dim, self.num_labels, self.cfg.dropout
+        self.classification_heads["constit_parent"] = ScaffoldHead(
+            self.embed_dim, self.num_labels, self.cfg.dropout, out_projection=self.embed_labels.weight
         )
-        self.classification_heads["constit_preterm_flags"] = ScaffholdHead(
-            self.embed_dim, self.num_labels, self.cfg.dropout
+        self.classification_heads["constit_preterm"] = ScaffoldHead(
+            self.embed_dim, self.num_labels, self.cfg.dropout, out_projection=self.embed_labels.weight
+        )
+        self.classification_heads["constit_parent_flags"] = ScaffoldHead(
+            self.embed_dim, self.num_labels, self.cfg.dropout, out_projection=self.embed_labels.weight
+        )
+        self.classification_heads["constit_preterm_flags"] = ScaffoldHead(
+            self.embed_dim, self.num_labels, self.cfg.dropout, out_projection=self.embed_labels.weight
         )
         self.mlp_attention = SingleVectorMLPAttention(
             2 * self.embed_dim, self.embed_dim // 4, self.cfg.dropout, use_sigmoid=cfg.mlp_attn_is_sigmoid
         )
 
-    def embed_spans(self, spans: Tensor, end_thresholds: Tensor = None):
+    def embed_spans(self, spans: Tensor, end_thresholds: Optional[Tensor] = None) -> Tensor:
         # spans: B x T x S
-        # XXX: in LearnedPositionalEmbedding: "If positions is pre-computed then padding_idx should not be set."
-        #      we inherit our positionalembedding from the encoder, so this will need to be adjusted
-        span_starts = spans[:, :, 0]
-        span_ends = spans[:, :, 1].clone()  # clone because we might mutate
+        span_starts = spans[:, :, 0].clone()
+        span_ends = spans[:, :, 1].clone()  # clone because we mutate
         if end_thresholds is not None:
             for seq_idx in range(len(end_thresholds)):
                 span_ends[seq_idx][end_thresholds[seq_idx] < span_ends[seq_idx]] = end_thresholds[seq_idx]
 
+        # we need to provide the positions vector ourselves, but we inherited the position embedding from roberta
+        # so we need to make some assumptions since LearnedPositionalEmbedding does not allow use of padding_idx
+        # at the same time as providing positions
+        assert isinstance(self.embed_positions, LearnedPositionalEmbedding), "Currently only learned_pos is supported"
+        assert self.embed_positions.padding_idx is not None
+
+        # this is how fairseq.utils.make_positions() behaves, which LearnedPositionalEmbedding uses
+        span_starts = span_starts + self.padding_idx + 1
+        span_ends = span_ends + self.padding_idx + 1
         span_embs = (
-            self.embed_positions(None, positions=span_starts) + self.embed_positions(None, positions=span_ends)
+            F.embedding(
+                span_starts,
+                self.embed_positions.weight,
+                self.embed_positions.padding_idx,
+                self.embed_positions.max_norm,
+                self.embed_positions.norm_type,
+                self.embed_positions.scale_grad_by_freq,
+                self.embed_positions.sparse,
+            )
+            + F.embedding(
+                span_ends,
+                self.embed_positions.weight,
+                self.embed_positions.padding_idx,
+                self.embed_positions.max_norm,
+                self.embed_positions.norm_type,
+                self.embed_positions.scale_grad_by_freq,
+                self.embed_positions.sparse,
+            )
         ) / 2
+
+        # span_embs = (
+        #     self.embed_positions(None, positions=span_starts) + self.embed_positions(None, positions=span_ends)
+        # ) / 2
         return span_embs
 
-    def forward_nodes(self, x: Tensor, self_attn_padding_mask: Tensor):
+    def forward_nodes(self, x: Tensor, self_attn_padding_mask: Tensor) -> Tensor:
         if self.layernorm_embedding:
             x = self.layernorm_embedding(x)
 
@@ -193,7 +227,7 @@ class TreeGraphDecoder(nn.Module):
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
-        for idx, layer in enumerate(self.layers):
+        for _idx, layer in enumerate(self.layers):
             x, _layer_attn = layer(x, self_attn_padding_mask=self_attn_padding_mask, self_attn_mask=None)
 
         # T x B x C -> B x T x C
@@ -202,22 +236,30 @@ class TreeGraphDecoder(nn.Module):
 
     def forward(
         self,
-        # prev_output_tokens,
         encoder_out: Tensor,
-        sample: Dict[str, Any],
-        # incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-    ):
-        ic.enable()
-        _nwords = sample["nwords"]
-        preorder_nts = sample["preorder_nts"]  # bsz x nodes
-        preorder_mask = sample["preorder_mask"]  # nsteps x bsz x nodes
-        chain_mask = sample["chain_mask"]  # nsteps x bsz x num_nodes
-        preorder_spans = sample["preorder_spans"]  # bsz x num_nodes x 2
-        nwords_per_step = sample["nwords_per_step"]  # nwords x bsz
-        preorder_flags = sample["preorder_flags"]  # bsz x nodes x flags
-
-        # bsz, max_seq_len, _encoder_embed_dim = encoder_out.shape
+        preorder_nts: Tensor,
+        preorder_mask: Tensor,
+        chain_mask: Tensor,
+        preorder_spans: Tensor,
+        nwords_per_step: Tensor,
+        preorder_flags: Tensor,
+        **kwargs,
+    ) -> ConstituencyParserOutput:
+        """
+            preorder_nts: bsz x nodes
+            preorder_mask: bsz x nsteps x nodes
+            chain_mask: bsz x nsteps x nodes
+            preorder_spans: bsz x nodes x 2
+            nwords_per_step: bsz x nsteps
+            preorder_flags: bsz x nodes x flags
+        """
+        # bsz x nsteps x nodes ->  nsteps x bsz x nodes
+        preorder_mask = preorder_mask.transpose(0, 1)
+        chain_mask = chain_mask.transpose(0, 1)
         nsteps, bsz, _num_nodes = preorder_mask.shape
+
+        # bsz x nsteps  ->  nsteps x bsz
+        nwords_per_step = nwords_per_step.T
 
         emb_preorder_nts = self.embed_labels(preorder_nts)
         # bsz x nodes x flags  ->  bsz x nodes x flags x features  ->  bsz x nodes x features
@@ -285,8 +327,8 @@ class TreeGraphDecoder(nn.Module):
         return state
 
 
-class ScaffholdHead(nn.Module):
-    def __init__(self, input_dim, output_dim, dropout):
+class ScaffoldHead(nn.Module):
+    def __init__(self, input_dim, output_dim, dropout, out_projection: Optional[Tensor] = None):
         super().__init__()
         self.input_dim = input_dim
         self.inner_dim = input_dim
@@ -298,16 +340,18 @@ class ScaffholdHead(nn.Module):
 
         self.dense = nn.Linear(self.input_dim, self.inner_dim)
         self.dense2 = nn.Linear(self.inner_dim, self.inner_dim)
-        self.out_proj = nn.Linear(self.inner_dim, self.output_dim)
+        self.out_projection = nn.Linear(self.inner_dim, self.output_dim, bias=False)
+        if out_projection is not None:
+            self.out_projection.weight = out_projection
 
-    def forward(self, x, **kwargs):
+    def forward(self, x, **kwargs) -> Tensor:
         x = self.dropout(x)
         x = self.dense(x)
         x = self.layer_norm(x)
         x = self.activation_fn(x)
         x = self.dense2(x)
         x = self.activation_fn(x)
-        logits = self.out_proj(x)
+        logits = self.out_projection(x)
         return logits
 
 
@@ -327,9 +371,9 @@ class SingleVectorMLPAttention(nn.Module):
 
         self.dense = nn.Linear(self.input_dim, self.inner_dim)
         self.dense2 = nn.Linear(self.inner_dim, self.inner_dim)
-        self.out_proj = nn.Linear(self.inner_dim, 1)
+        self.out_projection = nn.Linear(self.inner_dim, 1, bias=False)
 
-    def forward(self, right_chain_nodes, newest_word):
+    def forward(self, right_chain_nodes, newest_word) -> Tuple[Tensor, Tensor]:
         """The vector v[i] attends to each vector in right_chain_nodes[i, :] (in batched manner)
 
            newest_word:       v has shape (Batch,    1, Features)
@@ -350,7 +394,7 @@ class SingleVectorMLPAttention(nn.Module):
         x = self.dense2(x)
         x = self.activation_fn(x)
         # attn: B x T x 1
-        attn = self.out_proj(x)
+        attn = self.out_projection(x)
         # ic(attn.shape)
 
         # add the contribution of each node in the right-chain to the output, weighted by its attention
@@ -577,8 +621,8 @@ def test_forward():
     all_labels = {node.label_head for preorder_list in preorder_lists for node in preorder_list}
     all_flags = {f for preorder_list in preorder_lists for node in preorder_list for f in node.label_flags}
     ldict = Dictionary()
-    ldict.add_symbol(SYMBOL_ROOT)
-    ldict.add_symbol(SYMBOL_NULL)
+    ldict.add_symbol(ROOT_LABEL)
+    ldict.add_symbol(NULL_LABEL)
     for label in all_labels.union(all_flags):
         ldict.add_symbol(label)
     ic(ldict.symbols)
@@ -637,7 +681,7 @@ def test_forward():
     padded_preorder_spans = pad_sequence(preorder_spans, batch_first=True, padding_value=0)
     padded_input_masks, padded_chain_masks = [], []
     max_acts = max(len(seq_acts) for seq_acts in acts)
-    nwords_per_step = torch.zeros(max_acts, len(acts), dtype=torch.long)
+    nwords_per_step = torch.zeros(len(acts), max_acts, dtype=torch.long)
     for step in range(max_acts):
         padded_inputs_step = []
         padded_chain_step = []
@@ -647,13 +691,13 @@ def test_forward():
             if step < len(seq_acts):
                 act_inputs[seq_acts[step].preorder_indices] = 1
                 act_chain[seq_acts[step].right_chain_indices] = 1
-                nwords_per_step[step, idx] = seq_acts[step].nwords
+                nwords_per_step[idx, step] = seq_acts[step].nwords
             padded_inputs_step.append(act_inputs)
             padded_chain_step.append(act_chain)
         padded_input_masks.append(pad_sequence(padded_inputs_step, batch_first=True, padding_value=0))
         padded_chain_masks.append(pad_sequence(padded_chain_step, batch_first=True, padding_value=0))
-    padded_input_masks = pad_sequence(padded_input_masks, batch_first=True, padding_value=0)
-    padded_chain_masks = pad_sequence(padded_chain_masks, batch_first=True, padding_value=0)
+    padded_input_masks = pad_sequence(padded_input_masks, batch_first=True, padding_value=0).transpose(0, 1)  # T x B x L -> B x T x L
+    padded_chain_masks = pad_sequence(padded_chain_masks, batch_first=True, padding_value=0).transpose(0, 1)  # T x B x L -> B x T x L
 
     ic([t.long() for t in padded_input_masks])
     ic([t.long() for t in padded_chain_masks])
@@ -691,8 +735,14 @@ def test_forward():
     ic(padded_preorder_nts)
 
     sample = {
-        "net_input": {  # this would normally be here when training, this input for bert encoder
-            "src_tokens": src_tokens
+        "net_input": {
+            "src_tokens": src_tokens,
+            "preorder_nts": padded_preorder_nts,
+            "preorder_mask": padded_input_masks,
+            "chain_mask": padded_chain_masks,
+            "preorder_spans": padded_preorder_spans,
+            "preorder_flags": padded_preorder_flags,
+            "nwords_per_step": nwords_per_step,
         },
         "nwords": torch.tensor([len(sent.leaves) for sent in sents], dtype=torch.long),
         "target_depths": tgt_depths,
@@ -710,17 +760,26 @@ def test_forward():
         "nsentences": bsz,
     }
 
+    from omegaconf import OmegaConf
+    cfg = OmegaConf.create()
+    cfg.model = OmegaConf.create()
+    cfg.model.graph_decoder = OmegaConf.create()
+    cfg.model.graph_decoder = OmegaConf.merge(cfg, TreeGraphDecoderConfig())
+    cfg.criterion = OmegaConf.create()
+    cfg.criterion = OmegaConf.merge(cfg, IncrementalParserCriterionConfig())
+    OmegaConf.set_struct(cfg, True)
+    dec_cfg = cfg.model.graph_decoder
+
     # B x T
     word_padding_mask = torch.zeros(bsz, seq_len).bool()
     # B x T x C
-    encoder_out = torch.rand((bsz, seq_len, TreeGraphDecoderConfig.embed_dim))
+    encoder_out = torch.rand((bsz, seq_len, dec_cfg.embedding_dim))
 
     # first example is deliberately one shorter than the other example, so replace the corresponding slot with padding
     word_padding_mask[0, -1] = 1
     encoder_out[word_padding_mask] = 0
 
     ic(sample)
-    dec = TreeGraphDecoder(TreeGraphDecoderConfig, root_label_index=ldict.index(ROOT), padding_idx=ldict.pad())
-    # dec(encoder_out=encoder_out, sample=sample)
-    incr_parser_criterion = IncrementalParserCriterion(cfg=IncrementalParserCriterionConfig, task=None)
+    dec = TreeGraphDecoder(dec_cfg, root_label_index=ldict.index(ROOT_LABEL), padding_idx=ldict.pad(), num_labels=20)
+    incr_parser_criterion = IncrementalParserCriterion(cfg=cfg.criterion, task=None)
     _ = incr_parser_criterion(model=None, sample=sample, encoder_out=encoder_out, dec=dec)

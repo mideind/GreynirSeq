@@ -2,13 +2,12 @@ from icecream import ic
 
 from greynirseq.nicenlp.utils.constituency.greynir_utils import NonterminalNode, TerminalNode
 from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
-    NULL,
+    NULL_LABEL,
+    ROOT_LABEL,
     ParseAction,
     get_incremental_parse_actions,
     get_right_chain,
 )
-
-ROOT = "ROOT"
 
 
 class ParseError(Exception):
@@ -33,7 +32,7 @@ class IncrementalParser:
             raise ValueError("Must provide tokens or number of tokens")
         self.tokens = tokens
         self.num_tokens = len(tokens)
-        self.root = NonterminalNode(ROOT)
+        self.root = NonterminalNode(ROOT_LABEL)
         self.root.frozen = False
         self.actions = []
         self.token_index = 0

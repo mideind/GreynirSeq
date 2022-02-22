@@ -6,8 +6,8 @@ from icecream import ic
 from greynirseq.nicenlp.utils.constituency.greynir_utils import NonterminalNode, TerminalNode, Node
 
 
-NULL = "NULL"
-ROOT = "ROOT"
+NULL_LABEL = "NULL"
+ROOT_LABEL = "ROOT"
 
 
 @dataclass
@@ -16,7 +16,7 @@ class ParseLabel:
     span: Tuple[int, int] = None
 
     def is_null(self):
-        return self.label == NULL
+        return self.label == NULL_LABEL
 
     @property
     def label_flags(self):
@@ -44,8 +44,8 @@ class ParseAction:
             nwords: int = None,
     ):
         self.depth = depth
-        self.parent = ParseLabel(parent or NULL, parent_span)
-        self.preterminal = ParseLabel(preterminal or NULL, preterminal_span)
+        self.parent = ParseLabel(parent or NULL_LABEL, parent_span)
+        self.preterminal = ParseLabel(preterminal or NULL_LABEL, preterminal_span)
         self.right_chain_indices = right_chain_indices
         self.preorder_indices = preorder_indices
         self.nwords = nwords
@@ -152,7 +152,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             ic("root is composite, decomposing")
             top_nt, *rest = root.nonterminal.split(">", 1)
             rest = rest[0]
-            actions.append(ParseAction(top_nt, NULL, 1, parent_span=root.span, nwords=len(root.leaves)))
+            actions.append(ParseAction(top_nt, NULL_LABEL, 1, parent_span=root.span, nwords=len(root.leaves)))
             root._nonterminal = rest
             if root.composite_preorder_indices:
                 root._composite_preorder_indices.pop(0)
@@ -165,7 +165,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             ic("cursor is composite, decomposing")
             top_nt, *rest = cursor.nonterminal.split(">", 1)
             rest = rest[0]
-            actions.append(ParseAction(top_nt, NULL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves)))
+            actions.append(ParseAction(top_nt, NULL_LABEL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves)))
             cursor._nonterminal = rest
             actions[-1].right_chain_indices = get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=preorder_index_to_original)
             actions[-1].preorder_indices = get_preorder_indices(root, include_terminals=False, preserve_indices=preorder_index_to_original)
@@ -173,7 +173,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
 
         if len(root.children) == 1:
             ic("root has 1 child, finished")
-            actions.append(ic(ParseAction(NULL, root.nonterminal, 0, preterminal_span=root.span, nwords=len(root.leaves))))
+            actions.append(ic(ParseAction(NULL_LABEL, root.nonterminal, 0, preterminal_span=root.span, nwords=len(root.leaves))))
             actions[-1].right_chain_indices = []  # We popped the root, there is no right-chain remaining
             actions[-1].preorder_indices = []
             return ic(actions[::-1]), preorder_list
@@ -197,7 +197,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             ic("cursor_to_child_idx > 1")
             # cursor has 3 or more children, we dont need to contract nodes for now
             # action: append child to cursor
-            actions.append(ParseAction(NULL, child.nonterminal, cursor.depth, preterminal_span=child.span, nwords=len(root.leaves)))
+            actions.append(ParseAction(NULL_LABEL, child.nonterminal, cursor.depth, preterminal_span=child.span, nwords=len(root.leaves)))
             child = cursor._children.pop(cursor_to_child_idx)
             actions[-1].right_chain_indices = get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=preorder_index_to_original)
             actions[-1].preorder_indices = get_preorder_indices(root, include_terminals=False, preserve_indices=preorder_index_to_original)
@@ -212,7 +212,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
                 ic((cursor, child, child.depth))
                 top_nt, rest = cursor.nonterminal.split(">", 1)
                 # action: extend leg above cursor (inverse of tree contraction) with top_nt
-                actions.append(ParseAction(top_nt, NULL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves)))
+                actions.append(ParseAction(top_nt, NULL_LABEL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves)))
                 cursor._nonterminal = rest
                 actions[-1].right_chain_indices = get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=preorder_index_to_original)
                 actions[-1].preorder_indices = get_preorder_indices(root, include_terminals=False, preserve_indices=preorder_index_to_original)
@@ -222,7 +222,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
                 ic((cursor, child, child.depth))
                 top_nt, rest = child.nonterminal.split(">", 1)
                 # action: extend leg above child (inverse of tree contraction) with top_nt
-                actions.append(ParseAction(top_nt, NULL, child.depth, parent_span=child.span, nwords=len(root.leaves)))
+                actions.append(ParseAction(top_nt, NULL_LABEL, child.depth, parent_span=child.span, nwords=len(root.leaves)))
                 child._nonterminal = rest
                 actions[-1].right_chain_indices = get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=preorder_index_to_original)
                 actions[-1].preorder_indices = get_preorder_indices(root, include_terminals=False, preserve_indices=preorder_index_to_original)
@@ -268,9 +268,9 @@ def parse_by_actions(actions, tokens, verbose=False):
     tokens_ = list(tokens)
     if not actions or not tokens:
         return None
-    elif not actions[0].parent == NULL or actions[0].depth != 0:
+    elif not actions[0].parent == NULL_LABEL or actions[0].depth != 0:
         raise ValueError("Illegal first parse action")
-    root = NonterminalNode("ROOT")
+    root = NonterminalNode(ROOT_LABEL)
 
     while actions_:
         action = actions_.pop(0)
@@ -363,12 +363,12 @@ def test_incremental_parser():
 
     collapsed_actions = get_incremental_parse_actions(sentence.clone())
     correct_collapsed_actions = [
-        ParseAction(parent='NULL', preterminal='ADVP', depth=0, parent_span=None, preterminal_span=(0, 1)),
+        ParseAction(parent=NULL_LABEL, preterminal='ADVP', depth=0, parent_span=None, preterminal_span=(0, 1)),
         ParseAction(parent='ADJP', preterminal='ADJP', depth=1, parent_span=(0, 2), preterminal_span=(1, 2)),
         ParseAction(parent='NP-SUBJ>NP', preterminal='DP>NP', depth=1, parent_span=(0, 3), preterminal_span=(2, 3)),
         ParseAction(parent='S0>IP', preterminal='VP-AUX', depth=1, parent_span=(0, 10), preterminal_span=(3, 4)),
         ParseAction(parent='VP>VP', preterminal='ADVP', depth=2, parent_span=(3, 7), preterminal_span=(4, 5)),
-        ParseAction(parent='NULL', preterminal='VP', depth=2, parent_span=None, preterminal_span=(5, 6)),
+        ParseAction(parent=NULL_LABEL, preterminal='VP', depth=2, parent_span=None, preterminal_span=(5, 6)),
         ParseAction(parent='VP', preterminal='ADVP', depth=3, parent_span=(5, 7), preterminal_span=(6, 7)),
         ParseAction(parent='VP', preterminal='P', depth=2, parent_span=(3, 10), preterminal_span=(7, 8)),
         ParseAction(parent='PP-ARG>PP-DIR>PP', preterminal='ADVP', depth=3, parent_span=(7, 10), preterminal_span=(8, 9)),
@@ -384,23 +384,23 @@ def test_incremental_parser():
 
     uncollapsed_actions = get_incremental_parse_actions(sentence.clone(), collapse=False)
     correct_uncollapsed_actions = [
-        ParseAction(parent='NULL', preterminal='ADVP', depth=0, parent_span=None, preterminal_span=(0, 1)),
+        ParseAction(parent=NULL_LABEL, preterminal='ADVP', depth=0, parent_span=None, preterminal_span=(0, 1)),
         ParseAction(parent='ADJP', preterminal='ADJP', depth=1, parent_span=(0, 2), preterminal_span=(1, 2)),
         ParseAction(parent='NP', preterminal='NP', depth=1, parent_span=(0, 3), preterminal_span=(2, 3)),
-        ParseAction(parent='DP', preterminal='NULL', depth=2, parent_span=(2, 3), preterminal_span=None),
-        ParseAction(parent='NP-SUBJ', preterminal='NULL', depth=1, parent_span=(0, 3), preterminal_span=None),
+        ParseAction(parent='DP', preterminal=NULL_LABEL, depth=2, parent_span=(2, 3), preterminal_span=None),
+        ParseAction(parent='NP-SUBJ', preterminal=NULL_LABEL, depth=1, parent_span=(0, 3), preterminal_span=None),
         ParseAction(parent='IP', preterminal='VP-AUX', depth=1, parent_span=(0, 10), preterminal_span=(3, 4)),
         ParseAction(parent='VP', preterminal='ADVP', depth=2, parent_span=(3, 7), preterminal_span=(4, 5)),
-        ParseAction(parent='NULL', preterminal='VP', depth=2, parent_span=None, preterminal_span=(5, 6)),
+        ParseAction(parent=NULL_LABEL, preterminal='VP', depth=2, parent_span=None, preterminal_span=(5, 6)),
         ParseAction(parent='VP', preterminal='ADVP', depth=3, parent_span=(5, 7), preterminal_span=(6, 7)),
-        ParseAction(parent='VP', preterminal='NULL', depth=2, parent_span=(3, 7), preterminal_span=None),
+        ParseAction(parent='VP', preterminal=NULL_LABEL, depth=2, parent_span=(3, 7), preterminal_span=None),
         ParseAction(parent='VP', preterminal='P', depth=2, parent_span=(3, 10), preterminal_span=(7, 8)),
         ParseAction(parent='PP', preterminal='ADVP', depth=3, parent_span=(7, 10), preterminal_span=(8, 9)),
         ParseAction(parent='NP', preterminal='NP', depth=4, parent_span=(8, 10), preterminal_span=(9, 10)),
-        ParseAction(parent='DP', preterminal='NULL', depth=5, parent_span=(9, 10), preterminal_span=None),
-        ParseAction(parent='PP-DIR', preterminal='NULL', depth=3, parent_span=(7, 10), preterminal_span=None),
-        ParseAction(parent='PP-ARG', preterminal='NULL', depth=3, parent_span=(7, 10), preterminal_span=None),
-        ParseAction(parent='S0', preterminal='NULL', depth=1, parent_span=(0, 10), preterminal_span=None)
+        ParseAction(parent='DP', preterminal=NULL_LABEL, depth=5, parent_span=(9, 10), preterminal_span=None),
+        ParseAction(parent='PP-DIR', preterminal=NULL_LABEL, depth=3, parent_span=(7, 10), preterminal_span=None),
+        ParseAction(parent='PP-ARG', preterminal=NULL_LABEL, depth=3, parent_span=(7, 10), preterminal_span=None),
+        ParseAction(parent='S0', preterminal=NULL_LABEL, depth=1, parent_span=(0, 10), preterminal_span=None)
     ]
     assert all(a == g for (a, g) in zip(correct_uncollapsed_actions, uncollapsed_actions))
 

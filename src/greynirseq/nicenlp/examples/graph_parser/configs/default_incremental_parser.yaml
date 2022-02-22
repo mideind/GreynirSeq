@@ -1,0 +1,74 @@
+# # @package _group_
+
+_name: incremental_parser_config
+
+bpe:
+  _name: gpt2
+  gpt2_encoder_json: ???
+  gpt2_vocab_bpe: ???
+
+criterion:
+  _name: incremental_parser
+
+lr_scheduler: polynomial_decay
+
+model:
+  _name: graph_tree_parser
+  graph_decoder:
+    layers: 2
+    transformer:
+      num_attention_heads: 2
+
+optimizer: adam
+
+task:
+  _name: parser_hydra
+  data: ???
+  nonterm_schema: ???
+  term_schema: ???
+  label_file: ???
+
+common:
+  _name: incremental_parser_config_common
+  no_progress_bar: false
+  log_interval: 100
+  tensorboard_logdir: ???
+  seed: 1
+  cpu: true
+  user_dir: ???
+
+dataset:
+  max_tokens: 512
+  skip_invalid_size_inputs_valid_test: false
+  batch_size: 3
+  required_batch_size_multiple: 1
+  fixed_validation_seed: 1
+
+optimization:
+  max_epoch: 100
+  max_update: 50000
+  update_freq:
+  - 1
+  lr:
+  - 1e-4
+
+checkpoint:
+  save_dir: checkpoints
+    #restore_file: checkpoint_last.pt
+    #restore_file: ???
+    #finetune_from_model: null
+  reset_dataloader: false
+  reset_lr_scheduler: false
+  reset_meters: false
+  reset_optimizer: false
+  save_interval: 1
+  save_interval_updates: 0
+  keep_interval_updates: -1
+  keep_interval_updates_pattern: -1
+  keep_last_epochs: -1
+  keep_best_checkpoints: -1
+  no_save: false
+  no_epoch_checkpoints: false
+  no_last_checkpoints: false
+  best_checkpoint_metric: loss
+  maximize_best_checkpoint_metric: false

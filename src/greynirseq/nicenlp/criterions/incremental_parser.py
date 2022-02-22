@@ -34,38 +34,29 @@ class IncrementalParserCriterion(FairseqCriterion):
         self.padding_idx = padding_idx
 
     def forward(self, model: FairseqModel, sample: Dict[str, Any], reduce=True, **kwargs):
-        # span_logits = model(**sample["net_input"], features_only=True)
-        dec, encoder_out = kwargs["dec"], kwargs["encoder_out"]
-        constit_output = dec(encoder_out=encoder_out, sample=sample)
+        constit_output = model(**sample["net_input"])
         loss, logging_outputs = self.compute_loss(
             sample, constit_output, attention_loss_weight=self.cfg.attention_loss_weight
         )
-        sample_size = sample["nwords"]
+        sample_size = sample["nwords"].sum()
         return loss, sample_size, logging_outputs
 
     @classmethod
     def compute_loss(cls, sample, constit_output, attention_loss_weight=1.0, reduce=True, padding_idx=1):
-        chain_mask_without_root = sample["chain_mask"]  # nwords x bsz x num_nodes
-        nwords_per_step = sample["nwords_per_step"]  # nwords x bsz
-        tgt_padding_mask = sample["target_padding_mask"]
+        # bsz x nsteps x nodes -> nsteps x bsz x nodes
+        chain_mask_without_root = sample["net_input"]["chain_mask"].transpose(0, 1)
+        nwords_per_step = sample["net_input"]["nwords_per_step"].T  # bsz x nsteps -> nsteps x bsz
+        padding_mask = sample["target_padding_mask"]
 
         # prepend root where the sequence is still alive, for each, for each step
         chain_mask = torch.cat([nwords_per_step.gt(0).unsqueeze(-1), chain_mask_without_root], dim=2)
 
         tgt_parents_w_ignore = sample["target_parents"].clone()
-        tgt_parents_w_ignore[tgt_padding_mask] = IGNORE_INDEX
+        tgt_parents_w_ignore[padding_mask] = IGNORE_INDEX
         tgt_preterms_w_ignore = sample["target_preterminals"].clone()
-        tgt_preterms_w_ignore[tgt_padding_mask] = IGNORE_INDEX
+        tgt_preterms_w_ignore[padding_mask] = IGNORE_INDEX
 
-        ic(constit_output.parent_logits.shape, sample["target_parents"].shape, sample["target_padding_mask"])
-        ic(constit_output.preterm_logits.shape, sample["target_preterminals"].shape)
-        ic(sample["target_padding_mask"].long())
-        ic(sample["target_depths"].shape, sample["target_depths"])
-        ic([att.shape for att in constit_output.attention])
-        ic(sample["target_parent_flags"].shape, constit_output.parent_flag_logits.shape)
-        ic(sample["target_preterm_flags"].shape, constit_output.preterm_flag_logits.shape)
-
-        # Batch x Time x Channel -> Batch x Channel x Time
+        # bsz x nsteps x features -> bsz x features x nsteps
         parent_loss = F.cross_entropy(
             constit_output.parent_logits.transpose(2, 1),
             tgt_parents_w_ignore,
@@ -92,7 +83,6 @@ class IncrementalParserCriterion(FairseqCriterion):
 
         right_chain_lengths = chain_mask.sum(-1)
         attention_padding = [lengths_to_padding_mask(s) for s in right_chain_lengths]
-        # ic(parent_logits.shape, tgt_parents.shape, tgt_parents, tgt_padding_mask.shape, tgt_padding_mask.long())
 
         attachment_losses = []
         num_attachments = 0
@@ -106,16 +96,16 @@ class IncrementalParserCriterion(FairseqCriterion):
             # while not zero, padding now has negligible effect on loss, we need to do it this way since cross_entropy assumes
             # all sequences have the same number of "classes" (which is equal to input length)
             attn_[attention_padding[step]] = NEGLIGIBLE_LOGIT_VALUE
-            attachment_losses.append(F.cross_entropy(attn_, sample["target_depths"][step], reduction="sum" if reduce else "none"))
+            attachment_losses.append(F.cross_entropy(attn_, sample["target_depths"][:, step], reduction="sum" if reduce else "none"))
 
             # dont count attachments on finished sequences
-            step_correct_attachments = attn_.argmax(-1).eq(sample["target_depths"][step]) * attention_padding[
+            step_correct_attachments = attn_.argmax(-1).eq(sample["target_depths"][:, step]) * attention_padding[
                 step
             ].logical_not().sum(-1).gt(0)
             ncorrect_attachments += step_correct_attachments.sum()
             num_attachments += attention_padding[step].logical_not().sum(-1).gt(0).sum()
 
-        target_mask = tgt_padding_mask.logical_not()
+        target_mask = padding_mask.logical_not()
         num_label_targets = target_mask.sum(-1)
         ncorrect_parents = (constit_output.parent_logits.argmax(-1).eq(tgt_parents_w_ignore) * target_mask).sum().float()
         ncorrect_preterms = (constit_output.preterm_logits.argmax(-1).eq(tgt_preterms_w_ignore) * target_mask).sum().float()
@@ -136,8 +126,8 @@ class IncrementalParserCriterion(FairseqCriterion):
             "ncorrect_preterms": ncorrect_preterms,
             "nattach": num_attachments,
             "ncorrect_attach": ncorrect_attachments,
-            "nwords": sample["nwords"],
-            "sample_size": sample["nwords"],
+            "nwords": sample["nwords"].sum(),
+            "sample_size": sample["nwords"].sum(),
             "nsentences": sample["nsentences"],
         }
         if attention_loss_weight > 0:
@@ -178,13 +168,13 @@ class IncrementalParserCriterion(FairseqCriterion):
 
         metrics.log_derived(
             "parent_acc",
-            lambda meters: meters["_ncorrect_parent"].sum * 100 / meters["_ntargets"].sum
+            lambda meters: meters["_ncorrect_parents"].sum * 100 / meters["_ntargets"].sum
             if meters["_ntargets"].sum > 0
             else float("nan"),
         )
         metrics.log_derived(
             "preterm_acc",
-            lambda meters: meters["_ncorrect_preterm"].sum * 100 / meters["_ntargets"].sum
+            lambda meters: meters["_ncorrect_preterms"].sum * 100 / meters["_ntargets"].sum
             if meters["_ntargets"].sum > 0
             else float("nan"),
         )

@@ -267,10 +267,6 @@ class WordEndMaskDataset(BaseWrapperDataset):
     def __getitem__(self, index):
         item = self.dataset[index]
         mask = torch.tensor([self.is_word_initial.get(int(v), 1) for v in item])
-        # HACK
-        # mask[
-        #    self.start_offset
-        # ] = 1  # temporary hack due to incorrect preprocessing (missing prepend_space)
         mask[: self.start_offset] = self.bos_value
         mask[-1] = self.eos_value
         return mask
