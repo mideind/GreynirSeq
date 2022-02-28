@@ -21,6 +21,10 @@ NULL_CAT_TERM = "null"
 CAT_INSIDE_MW_TOKEN = "mw"
 
 
+class IllegalGreynirNode(Exception):
+    pass
+
+
 def _simplify_nonterminal(nonterminal):
     if ">" not in nonterminal:
         return nonterminal.split("-")[0]
@@ -167,8 +171,12 @@ class Node:
             try:
                 reynir_tree = simpletree.AnnoTree(tree_str).as_simple_tree()
                 yield cls.from_simple_tree(reynir_tree), tree_str
+            except IllegalGreynirNode as exc:
+                if not ignore_errors:
+                    raise exc
+                yield None, tree_str
             except Exception as exc:
-                print(f"Could not parse tree: \n{tree_str}")
+                sys.stderr.write(f"Unexpected error when converting tree: \n{tree_str}")
                 if not ignore_errors:
                     raise exc
                 yield None, tree_str
@@ -185,7 +193,14 @@ class Node:
     @classmethod
     def _from_simple_tree_inner(cls, obj):
         if obj.is_terminal:
-            term = obj.terminal_with_all_variants
+            try:
+                term = obj.terminal_with_all_variants
+            except IndexError as e:
+                # this is mostly "so_0" terminals that cause this
+                sys.stderr.write(f"Could not generate flat terminal with all variants: {obj}\n")
+                raise IllegalGreynirNode(f"Could not generate flat terminal with all variants: {obj}\n")
+            if term is None:
+                raise IllegalGreynirNode(f"Improperly from nonterminal or terminal: {obj}")
             if obj.kind == "PUNCTUATION":
                 node = TerminalNode(obj.text, "grm", lemma=obj.lemma)
                 return node
@@ -193,12 +208,15 @@ class Node:
             try:
                 node = TerminalNode(obj.text, term, lemma=obj.lemma)
             except Exception as e:
-                sys.stderr.write(f"Could not parse flat terminal: {term}\n")
-                raise e
+                sys.stderr.write(f"Could not parse flat terminal: {obj}\n")
+                raise IllegalGreynirNode(f"Could not parse flat terminal: {obj}\n")
             return node
+        if obj.tag is None:
+            raise IllegalGreynirNode(f"Improperly formed nonterminal: {obj}\n")
         node = NonterminalNode(obj.tag)
         for child in obj.children:
-            node.children.append(cls._from_simple_tree_inner(child))
+            new_child = cls._from_simple_tree_inner(child)
+            node.children.append(new_child)
         return node
 
     def binarize(self):
@@ -1328,20 +1346,12 @@ def split_flat_terminal(term):
             idx = parts.index("subj")
             parts.pop(idx)
             if not any(part in VARIANT.CASE for part in parts):
-                print(term, parts, variants)
-            if parts[idx] in VARIANT.CASE:
-                subj_case = parts.pop(idx)
-                variants["subj"] = subj_case
-                variants["impersonal"] = "subj"
-            elif any(part in VARIANT.CASE for part in parts):
+                variants["impersonal"] = "none"
+            else:
                 subj_case = [part for part in parts if part in VARIANT.CASE][0]
                 variants["subj"] = subj_case
                 variants["impersonal"] = "subj"
                 parts.remove(subj_case)
-            else:
-                # expected to find case
-                # assert False, str(parts)
-                pass
             parts.remove("op")
         elif "op" in parts:
             # no subject case control and no expletive means no subject

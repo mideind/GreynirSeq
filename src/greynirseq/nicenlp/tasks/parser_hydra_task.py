@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 
 class TextEncodingDataset(BaseWrapperDataset):
     # temporary placement
-    def __init__(self, dataset: Dataset, dictionary: Dictionary, bpe: Any, prepend_token: Optional[int] = None):
+    def __init__(self, dataset: Dataset, dictionary: Dictionary, bpe: Any, prepend_token: Optional[int] = None, add_prefix_space=True):
         super().__init__(dataset)
         self.dictionary = dictionary
         self.bpe = bpe
@@ -70,9 +70,13 @@ class TextEncodingDataset(BaseWrapperDataset):
         self.prepend_tensor = None
         if prepend_token is not None:
             self.prepend_tensor = torch.tensor([prepend_token])
+        self.add_prefix_space = add_prefix_space
 
     def __getitem__(self, index: int):
-        hf_ids_string = self.bpe.encode(self.dataset[index])
+        text = self.dataset[index]
+        if self.add_prefix_space and not text[0] == " ":
+            text = " " + text
+        hf_ids_string = self.bpe.encode(text)
         output_ids = self.dictionary.encode_line(hf_ids_string)
         if self.prepend_tensor is not None:
             output_ids = torch.cat([self.prepend_tensor, output_ids])
@@ -147,10 +151,6 @@ class GreynirParsingDataset(BaseWrapperDataset):
     def __getitem__(self, index: int):
         tree = self.dataset[index]
         action_seq, preorder_list = get_incremental_parse_actions(tree, collapse=False)
-
-        # this is just scaffolding, we need a label_dictionary to develop other stuff
-        all_labels = {node.label_head for node in preorder_list}
-        all_flags = {f for node in preorder_list for f in node.label_flags}
 
         ret = {
             "inputs": GreynirParsingDataset._encode_inputs(
@@ -239,7 +239,7 @@ class GreynirParsingDataset(BaseWrapperDataset):
         return {
             "target_depths": depths,
             "target_parents": target_parents,
-            "target_padding_mask": torch.zeros_like(target_preterms),
+            "target_padding_mask": torch.zeros_like(target_preterms, dtype=torch.bool),
             "target_preterminals": target_preterms,
             "target_parent_flags": target_parent_flags,
             "target_preterm_flags": target_preterm_flags,
@@ -258,14 +258,14 @@ class GreynirParsingDataset(BaseWrapperDataset):
 
 @dataclass
 class ParserHydraConfig(FairseqDataclass):
-    data: str = field(default=MISSING, metadata={"help": "Data directory, it should also contain dict.txt file"})
-    nonterm_schema: str = field(default=MISSING, metadata={"help": "Hierarchical label-schema for nonterminals"})
-    term_schema: str = field(default=MISSING, metadata={"help": "Hierarchical label-schema for terminals"})
+    data: Optional[Any] = field(default=None, metadata={"help": "Data directory, it should also contain dict.txt file"})
+    nonterm_schema: Optional[str] = field(default=None, metadata={"help": "Hierarchical label-schema for nonterminals"})
+    term_schema: Optional[str] = field(default=None, metadata={"help": "Hierarchical label-schema for terminals"})
+    label_file: Optional[str] = field(default=None, metadata={"help": "Label dictionary file, analogous to fairseqs dict.txt"})
     # borrow from top level
     _bpe: Any = II("bpe")
-    _dataset: str = II("dataset")
-    _seed: str = II("common.seed")
-    label_file: str = field(default=MISSING, metadata={"help": "Label dictionary file, analogous to fairseqs dict.txt"})
+    _dataset: Optional[Any] = II("dataset")
+    _seed: int = II("common.seed")
 
 
 @register_task("parser_hydra", dataclass=ParserHydraConfig)
@@ -371,8 +371,7 @@ class ParserHydraTask(FairseqTask):
 
     def load_dataset(self, split: str, combine: bool = False, **kwargs):
         """Load a given dataset split (e.g., train, valid, test)."""
-        dpath = "/home/haukur/github/greynirseq-parser/src/greynirseq/nicenlp/examples/graph_parser/data/example.jsonl"
-        greynirtrees_dataset = GreynirTreeJSONLDataset.from_path(Path(self.cfg.data) / "example.jsonl")
+        greynirtrees_dataset = GreynirTreeJSONLDataset.from_path(Path(self.cfg.data) / f"{split}.jsonl")
 
         bpe = encoders.build_bpe(self.cfg._bpe)
         greynirparsing_dataset = GreynirParsingDataset(
@@ -452,7 +451,6 @@ class ParserHydraTask(FairseqTask):
             "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
         }
 
-        # nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=[src_tokens.sizes])
         nested_dataset = NestedDictionaryDatasetFix(dataset, sizes=greynirparsing_dataset.sizes)
 
         dataset = SortDataset(nested_dataset, sort_order=[shuffle])

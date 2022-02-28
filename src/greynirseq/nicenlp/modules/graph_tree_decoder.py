@@ -80,7 +80,7 @@ class _TransformerSentenceEncoderLayerConfig:
 
 @dataclass
 class TreeGraphDecoderConfig(FairseqDataclass):
-    transformer: _TransformerSentenceEncoderLayerConfig = _TransformerSentenceEncoderLayerConfig()
+    transformer: Optional[_TransformerSentenceEncoderLayerConfig] = _TransformerSentenceEncoderLayerConfig()
     # embed_dim: int = field(default=_roberta_base_args.encoder_embed_dim, metadata={"help": "Embedding dimension"})
     # embed_dim: int = II("..transformer.embedding_dim")
     _embedding_dim: int = II("model.graph_decoder.transformer.embedding_dim")
@@ -91,6 +91,8 @@ class TreeGraphDecoderConfig(FairseqDataclass):
     dropout: float = field(default=_roberta_base_args.dropout)
     factored_embeddings: bool = field(default=False)
     mlp_attn_is_sigmoid: bool = field(default=True, metadata={"help": ""})
+    freeze_position_embeddings: bool = field(default=True)
+    num_recursions: int = field(default=0)
 
 
 # @dataclass
@@ -213,26 +215,96 @@ class TreeGraphDecoder(nn.Module):
                 self.embed_positions.sparse,
             )
         ) / 2
-
-        # span_embs = (
-        #     self.embed_positions(None, positions=span_starts) + self.embed_positions(None, positions=span_ends)
-        # ) / 2
         return span_embs
 
     def forward_nodes(self, x: Tensor, self_attn_padding_mask: Tensor) -> Tensor:
         if self.layernorm_embedding:
             x = self.layernorm_embedding(x)
-
         x = self.dropout_module(x)
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
-        for _idx, layer in enumerate(self.layers):
-            x, _layer_attn = layer(x, self_attn_padding_mask=self_attn_padding_mask, self_attn_mask=None)
+        for _recursive_iterations in range(self.cfg.num_recursions):
+            for _idx, layer in enumerate(self.layers):
+                x, _layer_attn = layer(x, self_attn_padding_mask=self_attn_padding_mask, self_attn_mask=None)
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
         return x
+
+    def forward_step(
+        self,
+        encoder_out: Tensor,
+        preorder_nts: Tensor,
+        preorder_mask: Tensor,
+        chain_mask: Tensor,
+        preorder_spans: Tensor,
+        nwords: Tensor,
+        preorder_flags: Tensor,
+        state: ConstituencyParserOutput,
+        **kwargs,
+    ) -> ConstituencyParserOutput:
+        """
+            preorder_nts: bsz x nodes
+            preorder_mask: bsz x nsteps x nodes
+            chain_mask: bsz x nsteps x nodes
+            preorder_spans: bsz x nodes x 2
+            nwords: bsz x nsteps
+            preorder_flags: bsz x nodes x flags
+        """
+        assert nwords.gt(0).all(), "Empty sequences in decoder results in nans during training"
+        # bsz x nsteps x nodes ->  nsteps x bsz x nodes
+        bsz, _num_nodes = preorder_mask.shape
+        emb_preorder_nts = self.embed_labels(preorder_nts)
+        # bsz x nodes x flags  ->  bsz x nodes x flags x features  ->  bsz x nodes x features
+        emb_preorder_nts += self.embed_labels(preorder_flags).sum(dim=-2)
+
+        # simple container for incremental outputs
+        max_span = nwords - 1  # newest word is not actually in the incremental tree yet, so subtract 1
+        root_spans = torch.stack([nwords.new_zeros(bsz), max_span], dim=1)
+        # root_spans: B x 2  ->  B x 1 x 2  ->  B x 1 x C
+        root_span_emb = self.embed_spans(root_spans.unsqueeze(1), end_thresholds=max_span)
+
+        # root_emb: 0  ->  C  ->  B x 1 x C
+        root_emb = self.embed_labels(root_spans.new_tensor(1).fill_(self.root_label_index)).tile((bsz, 1, 1))
+        root_emb = root_emb + root_span_emb
+
+        word_mask = lengths_to_padding_mask(nwords).logical_not()
+        word_embs = encoder_out[:, : nwords.max(), :][word_mask]
+        word_embs = pad_sequence(word_embs.split(word_mask.sum(-1).tolist()), batch_first=True, padding_value=0)
+        preorder_embs = emb_preorder_nts + self.embed_spans(preorder_spans, end_thresholds=max_span)
+        preorder_embs *= preorder_mask.unsqueeze(-1)
+        # sequences that are finished have 0 words this step
+        root_mask = preorder_mask.new_ones(bsz).unsqueeze(-1)
+        input_mask = torch.cat([word_mask, root_mask, preorder_mask], dim=1)
+        input_embs = torch.cat([word_embs, root_emb, preorder_embs], dim=1) * input_mask.unsqueeze(-1)
+
+        # x shape: bsz x (nodes+1) x features  # we add one for root
+        x = self.forward_nodes(input_embs, self_attn_padding_mask=input_mask.logical_not()) #  * input_mask.unsqueeze(-1)
+        assert not x.isnan().any()
+
+        # chain_nodes x features
+        output_chain_mask = torch.cat([torch.zeros_like(word_mask), root_mask, chain_mask], dim=1)
+        right_chain_outputs = x[output_chain_mask].split(output_chain_mask.sum(dim=-1).tolist())
+        # bsz x maxchainlen x features
+        right_chain_outputs = pad_sequence(right_chain_outputs, batch_first=True, padding_value=0)  # XXX: this is probably not needed since we extract them with mask anyway?
+
+        # bsz x features  ->  bsz x 1 x features
+        attending_words = x[torch.arange(bsz), nwords - 1, :].unsqueeze(1)
+
+        attn_output_features, attn = self.mlp_attention(right_chain_outputs, attending_words)
+        assert attending_words.shape == attn_output_features.shape
+        # merge attention output and newest word, this should eithger be an add or cat
+        clsf_features = attending_words + attn_output_features
+
+        # pp [(v.isnan().any().item(),k) for k,v in locals().items() if hasattr(v, "isnan")]
+        # bsz x 1 x features  ->  bsz x features
+        state.parent_logits.append(self.classification_heads["constit_parent"](clsf_features).squeeze(1))
+        state.preterm_logits.append(self.classification_heads["constit_preterm"](clsf_features).squeeze(1))
+        state.parent_flag_logits.append(self.classification_heads["constit_parent_flags"](clsf_features).squeeze(1))
+        state.preterm_flag_logits.append(self.classification_heads["constit_preterm_flags"](clsf_features).squeeze(1))
+        state.attention.append(attn.squeeze(2))
+        return state
 
     def forward(
         self,
@@ -253,77 +325,29 @@ class TreeGraphDecoder(nn.Module):
             nwords_per_step: bsz x nsteps
             preorder_flags: bsz x nodes x flags
         """
-        # bsz x nsteps x nodes ->  nsteps x bsz x nodes
-        preorder_mask = preorder_mask.transpose(0, 1)
-        chain_mask = chain_mask.transpose(0, 1)
-        nsteps, bsz, _num_nodes = preorder_mask.shape
-
-        # bsz x nsteps  ->  nsteps x bsz
-        nwords_per_step = nwords_per_step.T
-
-        emb_preorder_nts = self.embed_labels(preorder_nts)
-        # bsz x nodes x flags  ->  bsz x nodes x flags x features  ->  bsz x nodes x features
-        emb_preorder_nts += self.embed_labels(preorder_flags).sum(dim=-2)
 
         # simple container for incremental outputs
         state = ConstituencyParserOutput([], [], [], [], [])
+        _bsz, nsteps = nwords_per_step.shape
+
+        # for curr_step in
         for curr_step in range(nsteps):
-            num_words_in_tree = (nwords_per_step[curr_step] - 1).clamp(0)
-            root_spans = torch.stack([torch.zeros(bsz).long(), num_words_in_tree], dim=1)
-            # root_spans: B x 2  ->  B x 1 x 2  ->  B x 1 x C
-            root_span_emb = self.embed_spans(root_spans.unsqueeze(1), end_thresholds=num_words_in_tree)
-
-            # root_emb: 0  ->  C  ->  B x 1 x C
-            root_emb = self.embed_labels(torch.tensor(self.root_label_index)).tile((bsz, 1, 1))
-            root_emb = root_emb + root_span_emb
-
-            word_mask = lengths_to_padding_mask(nwords_per_step[curr_step]).logical_not()
-            word_embs = encoder_out[:, : nwords_per_step[curr_step].max(), :][word_mask]
-            word_embs = pad_sequence(word_embs.split(word_mask.sum(-1).tolist()), batch_first=True, padding_value=0)
-            preorder_step_embs = emb_preorder_nts + self.embed_spans(preorder_spans, end_thresholds=num_words_in_tree)
-            preorder_step_embs *= preorder_mask[curr_step].unsqueeze(-1)
-            # sequences that are finished have 0 words this step
-            root_mask = (nwords_per_step[curr_step] > 0).unsqueeze(-1)
-            # print()
-            # ic(word_mask.shape, root_mask.shape, preorder_mask[curr_step].shape)
-            # ic(word_embs.shape, root_emb.shape, preorder_step_embs.shape)
-            assert (
-                word_mask.shape[1] + root_mask.shape[1] + preorder_mask[curr_step].shape[1]
-                == word_embs.shape[1] + root_emb.shape[1] + preorder_step_embs.shape[1]
+            is_alive = nwords_per_step[:, curr_step] > 0
+            self.forward_step(
+                encoder_out=encoder_out[is_alive],
+                preorder_nts=preorder_nts[is_alive],
+                preorder_flags=preorder_flags[is_alive],
+                preorder_spans=preorder_spans[is_alive],
+                preorder_mask=preorder_mask[is_alive, curr_step],
+                chain_mask=chain_mask[is_alive, curr_step],
+                nwords=nwords_per_step[is_alive, curr_step],
+                state=state,
             )
-            input_mask = torch.cat([word_mask, root_mask, preorder_mask[curr_step]], dim=1)
-            input_embs = torch.cat([word_embs, root_emb, preorder_step_embs], dim=1) * input_mask.unsqueeze(-1)
 
-            # bsz x (num_nodes+1) x features
-            x = self.forward_nodes(input_embs, self_attn_padding_mask=input_mask)
-
-            # chain_nodes x features
-            output_chain_mask = torch.cat([torch.zeros_like(word_mask), root_mask, chain_mask[curr_step]], dim=1)
-            right_chain_outputs = x[output_chain_mask].split(output_chain_mask.sum(dim=-1).tolist())
-            # bsz x maxchainlen x features
-            right_chain_outputs = pad_sequence(right_chain_outputs, batch_first=True, padding_value=0)
-
-            word_output_idxs = (nwords_per_step[curr_step].clone() - 1).clamp(min=0)
-            is_alive = nwords_per_step[curr_step] > 0
-            # bsz x features  ->  bsz x 1 x features
-            attending_words = (x[torch.arange(bsz), word_output_idxs, :] * is_alive.unsqueeze(-1)).unsqueeze(1)
-
-            attn_output_features, attn = self.mlp_attention(right_chain_outputs, attending_words)
-            assert attending_words.shape == attn_output_features.shape
-            # merge attention output and newest word, this should eithger be an add or cat
-            clsf_features = attending_words + attn_output_features
-
-            state.parent_logits.append(self.classification_heads["constit_parent"](clsf_features))
-            state.preterm_logits.append(self.classification_heads["constit_preterm"](clsf_features))
-            state.parent_flag_logits.append(self.classification_heads["constit_parent_flags"](clsf_features))
-            state.preterm_flag_logits.append(self.classification_heads["constit_preterm_flags"](clsf_features))
-            state.attention.append(attn.squeeze(2))
-
-        state.parent_logits = torch.cat(state.parent_logits, dim=1)
-        state.preterm_logits = torch.cat(state.preterm_logits, dim=1)
-        state.parent_flag_logits = torch.cat(state.parent_flag_logits, dim=1)
-        state.preterm_flag_logits = torch.cat(state.preterm_flag_logits, dim=1)
-
+        state.parent_logits = torch.cat(state.parent_logits, dim=0)
+        state.preterm_logits = torch.cat(state.preterm_logits, dim=0)
+        state.parent_flag_logits = torch.cat(state.parent_flag_logits, dim=0)
+        state.preterm_flag_logits = torch.cat(state.preterm_flag_logits, dim=0)
         return state
 
 
