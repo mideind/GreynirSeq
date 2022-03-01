@@ -53,7 +53,7 @@ def main(model_interface, input_path, output_stream=None, extra_line=False):
             pred_trees, _ = model_interface.predict(sentence_batch)
             for pred_tree in pred_trees:
                 pred_tree = pred_tree.separate_unary()
-                outputs.append(pred_tree.as_nltk_tree().pformat(margin=2 ** 100).strip())
+                outputs.append(pred_tree.as_nltk_tree().pformat(margin=2**100).strip())
     sep = "\n\n" if extra_line else "\n"
     output_stream.write(sep.join(outputs))
 
