@@ -21,6 +21,9 @@ try:
     import greynirseq.nicenlp.utils.constituency.tree_dist as tree_dist  # pylint: disable=no-name-in-module
 except ImportError:
     logger.warn("Unable to import parsing dependencies, missing cython compilation. Parsing will not work")
+except Exception as e:
+    logger.warn(f"Failed to import chart_parser: {e}. Parsing will not work.")
+
 
 Numeric = Union[int, float, Tensor]
 
