@@ -4,24 +4,32 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+import argparse
 import collections
+import itertools
 import json
 import os
 import re
 import sys
 import time
+from typing import Callable, Dict, List, Set
 
 import editdistance
 import tokenizer
-from symbols import BANNED_SYMBOLS, ICE_QUOTE, PUNCTUATION_SYMBOLS, QUOTE_LIKE, SUBSTITUTE_FOR_NULL, SYMBOL_WHITELIST
+
+from greynirseq.utils.preprocessing.symbols import (
+    BANNED_SYMBOLS,
+    ICE_QUOTE,
+    PUNCTUATION_SYMBOLS,
+    QUOTE_LIKE,
+    SUBSTITUTE_FOR_NULL,
+    SYMBOL_WHITELIST,
+)
 
 # from langid.langid import LanguageIdentifier, model
 # import pycld2 as cld2
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath("__file__"))
-
-T2T_AVAILABLE = False
-ENC = None
 
 # LANGID_IDENTIFIER = LanguageIdentifier.from_modelstring(model, norm_probs=True)
 # LANGID_IDENTIFIER.set_languages(["en", "is"])
@@ -32,28 +40,13 @@ ENC = None
 MAX_SUBTOKENS_PER_SENTENCE = 256
 MAX_CHARS_PER_SENTENCE = 500
 BANNED_SYMBOLS_PAT = "[" + re.escape(BANNED_SYMBOLS) + "]"
-DEFAULT_MIN_WORD_COUNT = 3
+SUBWORD_TOKENIZER_AVAILABLE = False
 
 
 def safe_div(a, b):
     if b == 0:
         return 0
     return a / b
-
-
-class Example:
-    def __init__(self, src, tgt, file_id=None, align_score=None):
-        self.source = src
-        self.target = tgt
-        self.file_id = file_id
-        self.align_score = align_score
-
-    def __str__(self):
-        return "\t".join([self.source, self.target])
-
-    def __repr__(self):
-        ret = [self.source, self.target, self.file_id, self.align_score]
-        return "[" + "\t".join(ret) + "]"
 
 
 def print_ex(ex):
@@ -90,7 +83,7 @@ class Deduplifier:
     """Deduplify sentence pairs using Tilde's approach (Tilde 2018)
     Along with a few others."""
 
-    _set = set()
+    _set: Set[int] = set()
 
     @classmethod
     def preprocess_sentence(cls, sentence):
@@ -122,25 +115,26 @@ class Deduplifier:
 class Transformations:
     """Transformations of examples to be used in a pipeline"""
 
-    _transforms = {}  # registered transformations
+    _transforms: Dict[str, Callable[[Dict[str, str]], Dict[str, str]]] = {}  # registered transformations
 
     @classmethod
-    def apply(cls, name, ex):
+    def apply(cls, name: str, ex: Dict[str, str]):
         if name not in cls._transforms:
             raise KeyError("Could not find transformation {0}".format(name))
         else:
             return cls._transforms[name](ex)
 
     @classmethod
-    def register(cls, fun):
+    def register(cls, fun: Callable[[Dict[str, str]], Dict[str, str]]):
         if fun.__name__ not in cls._transforms:
             cls._transforms[fun.__name__] = fun
+            return fun
         else:
             raise ValueError("Tried to register transform {0} more than once".format(fun.__name__))
 
 
 class RegexCache:
-    _programs = {}  # compiled regular expressions
+    _programs: Dict[str, re.Pattern] = {}  # compiled regular expressions
 
     @classmethod
     def compile_rx(cls, pattern):
@@ -151,18 +145,21 @@ class RegexCache:
 
 
 class Filters:
+    """Filter storage. Filters return True if an example is OK."""
 
-    _filters = {}  # registered filters
+    _filters: Dict[str, Callable[[Dict[str, str]], bool]] = {}  # registered filters
 
     @classmethod
-    def register(cls, fun):
+    def register(cls, fun) -> Callable[[Dict[str, str]], bool]:
         if fun.__name__ not in cls._filters:
             cls._filters[fun.__name__] = fun
+            return fun
         else:
             raise ValueError("Tried to register filter {0} more than once".format(fun.__name__))
 
     @classmethod
-    def apply(cls, filter_name, ex, inverted=False):
+    def apply(cls, filter_name: str, ex: Dict[str, str], inverted=False) -> bool:
+        """Filters return True if example is OK."""
         if filter_name not in cls._filters:
             raise KeyError("Could not find filter {0}".format(filter_name))
         else:
@@ -170,235 +167,243 @@ class Filters:
             return not res if inverted else res
 
 
-def register_filter(fun):
+def register_filter(fun: Callable[[Dict[str, str]], bool]):
     Filters.register(fun)
     return fun
 
 
-def register_transformation(fun):
+def register_transformation(fun: Callable[[Dict[str, str]], Dict[str, str]]):
     Transformations.register(fun)
     return fun
 
 
-@register_transformation
-def fix_ice_quotes(ex):
-    ice, eng = ex["is"], ex["en"]
-    ice = ice.replace("”", ICE_QUOTE.PRIMARY.RIGHT)  # 0x201d  RIGHT DOUBLE QUOTATION MARK
+@Transformations.register
+def fix_ice_quotes(ex: Dict[str, str]):
+    """Fixes the quotes in the Icelandic sentence.
+    Other languages are silently ignored."""
+    new_ex = dict(ex)
+    if "is" in ex:
+        ice = ex["is"]
+        ice = ice.replace("”", ICE_QUOTE.PRIMARY.RIGHT)  # 0x201d  RIGHT DOUBLE QUOTATION MARK
 
-    if not (set(ICE_QUOTE.PRIMARY.BOTH) & set(ice)):
-        ice = ice.replace(ICE_QUOTE.SECONDARY.LEFT, ICE_QUOTE.PRIMARY.LEFT)
-        ice = ice.replace(ICE_QUOTE.SECONDARY.RIGHT, ICE_QUOTE.PRIMARY.RIGHT)
+        if not (set(ICE_QUOTE.PRIMARY.BOTH) & set(ice)):
+            ice = ice.replace(ICE_QUOTE.SECONDARY.LEFT, ICE_QUOTE.PRIMARY.LEFT)
+            ice = ice.replace(ICE_QUOTE.SECONDARY.RIGHT, ICE_QUOTE.PRIMARY.RIGHT)
+        new_ex["is"] = ice
 
-    return {"is": ice, "en": eng}
+    return new_ex
 
 
-@register_transformation
-def fix_improper_line_split(ex):
+@Transformations.register
+def fix_improper_line_split(ex: Dict[str, str]):
+    """Fixes imporper line splits in English and Icelandic sentences.
+    Other languages are silently ignored."""
+    new_ex = dict(ex)
     ice_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!eða|og)\w+\b)")
     eng_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!or|and)\w+\b)")
-    ice = ice_prog.sub(r"\1\2", ex["is"])
-    eng = eng_prog.sub(r"\1\2", ex["en"])
-    return {"is": ice, "en": eng}
+    if "is" in ex:
+        new_ex["is"] = ice_prog.sub(r"\1\2", ex["is"])
+    if "en" in ex:
+        new_ex["en"] = eng_prog.sub(r"\1\2", ex["en"])
+    return new_ex
 
 
-@register_transformation
-def remove_leading_bullet(ex):
-    ice, eng = ex["is"], ex["en"]
+@Transformations.register
+def remove_leading_bullet(ex: Dict[str, str]):
     # bullet, hyphen-minus, n-dash, horizontal bar
     prog = RegexCache.compile_rx(r"(^(• ?|- |– |― |\.\s?)+)")
-    sice = prog.sub("", ice)
-    seng = prog.sub("", eng)
-    return {"is": sice, "en": seng}
+    return {lang: prog.sub("", text) for lang, text in ex.items()}
 
 
-@register_transformation
-def replace_dashes(ex):
-    ice, eng = ex["is"], ex["en"]
-    # hyphen, n-dash, horizontal bar, m-dash, minus sign, figure dash
+@Transformations.register
+def replace_dashes(ex: Dict[str, str]):
+    """Replace hyphen, n-dash, horizontal bar, m-dash, minus sign, figure dash with "standard" dash."""
     prog = RegexCache.compile_rx(r"(‐|–|―|—|−|‒)")
-    sice = prog.sub("-", ice)  # hyphen-minus
-    seng = prog.sub("-", eng)  # hyphen-minus
-    return {"is": sice, "en": seng}
+    return {lang: prog.sub("-", text) for lang, text in ex.items()}
 
 
-@register_transformation
-def soft_hyphen(ex):
-    ice, eng = ex["is"], ex["en"]
+@Transformations.register
+def soft_hyphen(ex: Dict[str, str]):
+    """Replace soft hyphens with an empty string."""
     prog = RegexCache.compile_rx(SUBSTITUTE_FOR_NULL)
-    return {"is": prog.sub("", ice), "en": prog.sub("", eng)}
+    return {lang: prog.sub("", text) for lang, text in ex.items()}
 
 
-@register_transformation
-def merge_spaces(ex):
-    ice, eng = ex["is"], ex["en"]
+@Transformations.register
+def merge_spaces(ex: Dict[str, str]):
+    """Merge multiple sequential spaces into a single space."""
     prog = RegexCache.compile_rx(r"\s+")
-    ice = prog.sub(" ", ice).strip(" ")
-    eng = prog.sub(" ", eng).strip(" ")
-    return {"is": ice, "en": eng}
+    return {lang: prog.sub("", text).strip(" ") for lang, text in ex.items()}
 
 
-@register_filter
-def deduplicate(ex):
+@Filters.register
+def deduplicate(ex: Dict[str, str]):
+    """Return True if example has not been seen before."""
     return Deduplifier.is_unique_example(ex)
 
 
-@register_filter
-def banned_symbol(ex):
-    # TODO(haukurb): this filter is to gather file ids for filtering
-    ice, eng = ex["is"], ex["en"]
+@Filters.register
+def banned_symbol(ex: Dict[str, str]):
+    """Return True if example contains no banned symbols."""
     prog = RegexCache.compile_rx(BANNED_SYMBOLS_PAT)
     backslash = "\\"
-    found = backslash in ice
-    found = found or backslash in eng
-    found = found or prog.search(ice) or prog.search(eng)
+    found = False
+    for text in ex.values():
+        found = found or backslash in text or prog.search(text)
     return not found
 
 
-@register_filter
-def whitelist_symbol(ex):
-    ice, eng = ex["is"], ex["en"]
-    chars_ex = set(ice)
-    chars_ex.update(eng)
-    has_non_whitelisted = bool(chars_ex - SYMBOL_WHITELIST)
-    return not has_non_whitelisted
+@Filters.register
+def whitelist_symbol(ex: Dict[str, str]):
+    """Return True if example contains only whitelisted symbols."""
+    for text in ex.values():
+        if not set(text) <= SYMBOL_WHITELIST:
+            return False
+    return True
 
 
-@register_filter
-def null_sentence(ex):
+@Filters.register
+def null_sentence(ex: Dict[str, str]):
+    """Return True if example is not empty/null."""
     prog = RegexCache.compile_rx(r"^\s+$")
-    is_only_spaces = prog.match(ex["is"]) or prog.match(ex["en"])
-    is_empty = not ex["is"] or not ex["en"]
-    return not is_only_spaces and not is_empty
+    is_null = False
+    for text in ex.values():
+        is_null = is_null or prog.match(text) or not text
+    return not is_null
 
 
-@register_filter
-def quote_inside_word(ex):
-    # TODO(haukurb): gather file ids from this filter
+@Filters.register
+def quote_inside_word(ex: Dict[str, str]):
+    """Return True if example does not have a quote (") inside a word."""
     prog = RegexCache.compile_rx(r'\w+"\w')
-    has_error = prog.search(ex["is"]) or prog.search(ex["en"])
+    has_error = False
+    for text in ex.values():
+        has_error = has_error or prog.search(text)
     return not has_error
 
 
-@register_filter
-def ocr_wrong_symbol(ex):
-    # TODO(haukurb): gather file ids from this filter
-    ice = ex["is"]
-    prog = RegexCache.compile_rx(r",,")
-    return not prog.search(ice)
+@Filters.register
+def ocr_wrong_symbol(ex: Dict[str, str]):
+    """Return True if Icelandic example does not have a wrong OCR symbol."""
+    if "is" in ex:
+        prog = RegexCache.compile_rx(r",,")
+        return not prog.search(ex["is"])
+    return True
 
 
-@register_filter
-def ocr_word_boundary_avg_length(ex):
-    ice, eng = ex["is"], ex["en"]
+@Filters.register
+def ocr_word_boundary_avg_length(ex: Dict[str, str], avg_length=1.8):
+    """Return True if average word length exceeds a threshold."""
     prog = RegexCache.compile_rx(r"\w+")
-    lens_ice = [len(m) for m in prog.findall(ice)]
-    lens_eng = [len(m) for m in prog.findall(eng)]
-    avg_ice = safe_div(sum(lens_ice), len(lens_ice))
-    avg_eng = safe_div(sum(lens_eng), len(lens_eng))
-    return avg_ice > 1.8 and avg_eng > 1.8
+    avg_lengths_ok = True
+    for text in ex.values():
+        lens = [len(m) for m in prog.findall(text)]
+        avg = safe_div(sum(lens), len(lens))
+        avg_lengths_ok = avg_lengths_ok and (avg > avg_length)
+    return avg_lengths_ok
 
 
-@register_filter
-def missing_letter(ex):
-    # TODO(haukurb): gather file ids from this filter
-    ice = ex["is"]
-    substrings = [r" a ", r" e ", r" i ", r" o ", r" u ", r" y ", r"\bvi\b", r"\bess\b", r"\bme\b", r"\bessum\b"]
-    found = re.search("(" + "|".join(substrings) + ")", ice)
-    return not found
+@Filters.register
+def missing_letter(ex: Dict[str, str]):
+    """Return True if Icelandic example does not contain certain missing letters."""
+    if "is" in ex:
+        substrings = [r" a ", r" e ", r" i ", r" o ", r" u ", r" y ", r"\bvi\b", r"\bess\b", r"\bme\b", r"\bessum\b"]
+        found = re.search("(" + "|".join(substrings) + ")", ex["is"])
+        if found is not None:
+            return False
+    return True
 
 
-@register_filter
-def alphanumeric(ex):
-    ice, eng = ex["is"], ex["en"]
+@Filters.register
+def alphanumeric(ex: Dict[str, str]):
+    """Return True if example is only alpha-numeric"""
+    is_alpha_num = True
     prog = RegexCache.compile_rx(r"[^\d\W]")
-    mice = prog.search(ice)
-    meng = prog.search(eng)
-    return mice and meng
+    for text in ex.values():
+        is_alpha_num = is_alpha_num and prog.search(text)
+    return is_alpha_num
 
 
-def _sentence_length_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_count=3):
-    """Enforce length ratios between source and target, if either side is 'small'
-    then we use a larger ratio (such as a sentence of one word becomes 5 words on the other side)
-    if both sides are sufficiently large, we use a stricter ratio"""
-    # note: this is a pass-filter (True if item should remain)
-    ice, eng = len(ex["is"]), len(ex["en"])
-    recip_ratio_below_min = safe_div(1, ratio_below_min)
-    if ice < min_count or eng < min_count:
-        return (recip_ratio_below_min * eng <= ice <= ratio_below_min * eng) and (
-            recip_ratio_below_min * ice <= eng <= ratio_below_min * ice
-        )
-    recip_ratio_above_min = safe_div(1, ratio_above_min)
+def _sentence_length_ratio(ex: Dict[str, str], ratio_below_min=5.0, ratio_above_min=1.5, min_count=3):
+    """Return True if sentence length ratio between the examples is acceptable.
+    We compare the longest sentence and the shortest sentence.
+    If either side is 'small' (<min_count) then we use a larger ratio.
+    if both sides are sufficiently large, we use a stricter ratio."""
+    longest_sent = max(len(ex[lang]) for lang in ex.keys())
+    shortest_sent = min(len(ex[lang]) for lang in ex.keys())
 
-    return (recip_ratio_above_min * eng <= ice <= ratio_above_min * eng) and (
-        recip_ratio_above_min * ice <= eng <= ratio_above_min * ice
+    ratio_to_use = ratio_above_min
+    if shortest_sent < min_count:
+        ratio_to_use = ratio_below_min
+
+    return (longest_sent / shortest_sent) <= ratio_to_use
+
+
+@Filters.register
+def strict_sentence_length_ratio(ex: Dict[str, str]):
+    return _sentence_length_ratio(ex, min_count=0)
+
+
+@Filters.register
+def subtoken_count_ratio(ex: Dict[str, str], min_count=4):
+    if not SUBWORD_TOKENIZER_AVAILABLE:
+        return True
+    # TODO: implement subword tokenization
+    return _sentence_length_ratio(
+        {lang: encode(ex[lang]) for lang in ex.keys()}, ratio_above_min=2.0, min_count=min_count
     )
 
 
-@register_filter
-def strict_sentence_length_ratio(ex):
-    return _sentence_length_ratio(ex, ratio_below_min=1.5, min_count=0)
+@Filters.register
+def case_mismatch(ex: Dict[str, str]):
+    """Return True if example does not have a case mismatch.
+    Either all should be uppercase or all should not be uppcase."""
+    is_upper = []
+    for text in ex.values():
+        is_upper.append(text.isupper())
+    return not any(is_upper) or all(is_upper)
 
 
-def _subtoken_count_ratio(ex, ratio_below_min=5.0, ratio_above_min=1.5, min_count=3):
-    """Same as _sentence_length_ratio, but at the subtoken level"""
-    if not T2T_AVAILABLE:
-        return ex
-    enc = get_or_initialize_encoder()  # pylint: disable=assignment-from-no-return
-    ice = len(enc.encode(ex["is"]))
-    eng = len(enc.encode(ex["en"]))
-    recip_ratio_below_min = safe_div(1, ratio_below_min)
-    if ice < min_count or eng < min_count:
-        return (recip_ratio_below_min * eng <= ice <= ratio_below_min * eng) and (
-            recip_ratio_below_min * ice <= eng <= ratio_below_min * ice
-        )
-    recip_ratio_above_min = safe_div(1, ratio_above_min)
-    return (recip_ratio_above_min * eng <= ice <= ratio_above_min * eng) and (
-        recip_ratio_above_min * ice <= eng <= ratio_above_min * ice
-    )
-
-
-@register_filter
-def subtoken_count_ratio(ex, min_count=4):
-    return _subtoken_count_ratio(ex, ratio_below_min=float("inf"), ratio_above_min=2.0, min_count=min_count)
-
-
-@register_filter
-def case_mismatch(ex):
-    ice, eng = ex["is"], ex["en"]
-    return not (ice.isupper() ^ eng.isupper())  # xor
-
-
-@register_filter
-def digit_mismatch(ex):
+@Filters.register
+def digit_mismatch(ex: Dict[str, str]):
+    """Return True if all examples have the same collection of numbers in them."""
     prog = RegexCache.compile_rx(r"\D+")
-    # Remove non-digit characters, group consecutive numbers, filter empty string
-    # TODO: Make clock references pass ('1 pm' vs 'kl. eitt')
-    ice = [w for w in prog.sub(" ", ex["is"]).strip(" ").split(" ") if w]
-    eng = [w for w in prog.sub(" ", ex["en"]).strip(" ").split(" ") if w]
-    dice = collections.Counter(ice)
-    deng = collections.Counter(eng)
-    mismatch = bool(dice - deng) or bool(deng - dice)
-    return not mismatch
+    first_counter = None
+    for text in ex.values():
+        # TODO: Make clock references pass ('1 pm' vs 'kl. eitt')
+        # Remove non-digit characters, group consecutive numbers, filter empty string
+        digit_counter = collections.Counter([w for w in prog.sub(" ", text).strip(" ").split(" ") if w])
+        if first_counter is None:
+            first_counter = digit_counter
+        else:
+            if digit_counter != first_counter:
+                return False
+    return True
 
 
-@register_filter
-def only_even_quotes(ex):
-    ice, eng = ex["is"], ex["en"]
+@Filters.register
+def only_even_quotes(ex: Dict[str, str]):
+    """Return True if all examples have even number of quotes in them."""
     prog = RegexCache.compile_rx(re.escape('"'))
-    nice = len(prog.findall(ice))
-    neng = len(prog.findall(eng))
-    return nice % 2 == 0 or neng % 2 == 0
+    for text in ex.values():
+        if len(prog.findall(text)) % 2 != 0:
+            return False
+    return True
 
 
-@register_filter
-def abs_min_string_edit(ex, min_dist=3):
-    ice, eng = ex["is"], ex["en"]
-    dist = editdistance.eval(ice, eng)
-    return dist >= min_dist
+@Filters.register
+def abs_min_string_edit(ex: Dict[str, str], min_dist=3):
+    """Return True if all examples have a minimum edit distance to each other."""
+    all_combinations = itertools.combinations(ex.values(), 2)
+    for a, b in all_combinations:
+        if editdistance.eval(a, b) < min_dist:
+            return False
+    return True
 
 
-@register_filter
-def rel_min_string_edit(ex, min_ratio=0.10):
+# TODO: Fix this filter so it can support more than two languages and/or not just "is" and "en".
+@Filters.register
+def rel_min_string_edit(ex: Dict[str, str], min_ratio=0.10):
     ice, eng = ex["is"], ex["en"]
     num_edits = editdistance.eval(ice, eng)
     lengths = [len(ice), len(eng)]
@@ -407,11 +412,11 @@ def rel_min_string_edit(ex, min_ratio=0.10):
     return (max_edits >= min_ratio) and (min_edits >= min_ratio)
 
 
-@register_filter
-def abs_min_subtoken_edit(ex, min_dist=2):
-    if not T2T_AVAILABLE:
-        return ex
-    # pylint: disable=assignment-from-no-return
+# TODO: Maybe fix this filter.
+@Filters.register
+def abs_min_subtoken_edit(ex: Dict[str, str], min_dist=2):
+    if not SUBWORD_TOKENIZER_AVAILABLE:
+        return True
     enc = get_or_initialize_encoder()
     ice = enc.encode(ex["is"])
     eng = enc.encode(ex["en"])
@@ -419,10 +424,11 @@ def abs_min_subtoken_edit(ex, min_dist=2):
     return dist >= min_dist
 
 
-@register_filter
-def rel_min_subtoken_edit(ex):
-    if not T2T_AVAILABLE:
-        return ex
+# TODO: Maybe fix this filter.
+@Filters.register
+def rel_min_subtoken_edit(ex: Dict[str, str]):
+    if not SUBWORD_TOKENIZER_AVAILABLE:
+        return True
     # pylint: disable=assignment-from-no-return
     enc = get_or_initialize_encoder()
     ice = enc.encode(ex["is"])
@@ -434,72 +440,112 @@ def rel_min_subtoken_edit(ex):
     return (max_ratio >= 0.10) and (min_ratio >= 0.10)
 
 
-@register_filter
-def colon_mismatch(ex):
-    ice, eng = ex["is"], ex["en"]
-    mismatch = ":" in ice and (":" not in eng and ";" not in eng)
-    mismatch = mismatch or (":" in eng and ":" not in ice)
-    return not mismatch
+@Filters.register
+def colon_mismatch(ex: Dict[str, str]):
+    """Return True if examples do not have colon mismatch. Accepted colons are ":" and ";"."""
+    prog = RegexCache.compile_rx(r"[:;]")
+    num_found = None
+    for text in ex.values():
+        found = len(prog.findall(text))
+        if num_found is None:
+            num_found = found
+        else:
+            if found != num_found:
+                return False
+    return True
 
 
-@register_filter
-def corrupt_symbol(ex):
-    ice, eng = ex["is"], ex["en"]
+@Filters.register
+def corrupt_symbol(ex: Dict[str, str]):
+    """Return True if examples do not contain a question mark "?" inside a word."""
     symbols = re.escape("?")
     pat = r"\w[" + symbols + r"]+\w"
     prog = RegexCache.compile_rx(pat)
-    found = prog.search(ice) or prog.search(eng)
-    return not found
+    for text in ex.values():
+        if prog.search(text):
+            return False
 
 
-@register_filter
-def improper_line_split(ex):
-    ice, eng = ex["is"], ex["en"]
-    ice_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!eða|og)\w+\b)")
-    ice_matches = ice_prog.findall(ice)
-    eng_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+- \b(?!or|and)\w+\b)")
-    eng_matches = eng_prog.findall(eng)
-    return len(ice_matches) == 0 or len(eng_matches) == 0
+@Filters.register
+def improper_line_split(ex: Dict[str, str]):
+    """Return True if Icelandic or English sentences do not contain improper line splits."""
+    if "is" in ex:
+        ice_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+)- (\b(?!eða|og)\w+\b)")
+        ice_matches = ice_prog.findall(ex["is"])
+        if len(ice_matches) == 0:
+            return True
+    if "en" in ex:
+        eng_prog = RegexCache.compile_rx(r"(\b(?!\d)\w+- \b(?!or|and)\w+\b)")
+        eng_matches = eng_prog.findall(ex["en"])
+        if len(eng_matches) == 0:
+            return True
+    return False
 
 
-@register_filter
-def dot_pattern(ex):
-    ice, eng = ex["is"], ex["en"]
+@Filters.register
+def dot_pattern(ex: Dict[str, str]):
+    """Return True if examples do not contain a specific dot pattern."""
     prog = RegexCache.compile_rx("(" + r"\.\s+" + "){2,}")
-    found = prog.search(ice) or prog.search(eng)
-    return not found
+    for text in ex.values():
+        if prog.search(text):
+            return False
+    return True
 
 
-@register_filter
-def bullet_mismatch(ex):
-    # Suggests misalignment since a bullet is a sentence boundary
-    ice, eng = ex["is"], ex["en"]
-    nice = ice.count("•")
-    neng = eng.count("•")
-    return nice == neng
+@Filters.register
+def bullet_mismatch(ex: Dict[str, str]):
+    """Return True if examples contain equal number of bullets."""
+    count = None
+    for text in ex.values():
+        found = len(re.findall(r"•", text))
+        if count is None:
+            count = found
+        else:
+            if found != count:
+                return False
+    return True
 
 
-@register_filter
-def max_word_length(ex, max_ice_len=50, max_eng_len=50):
-    ice, eng = ex["is"], ex["en"]
+@Filters.register
+def max_word_length(ex: Dict[str, str], maximum_word_length=50):
+    """Return True if examples do not contain words longer than the supplied maximum."""
     word_prog = RegexCache.compile_rx(r"\b\w+\b")
-    ice_words = word_prog.findall(ice)
-    eng_words = word_prog.findall(eng)
-    return max(len(w) for w in ice_words) <= max_ice_len and max(len(w) for w in eng_words) <= max_eng_len
+    for text in ex.values():
+        for word in word_prog.findall(text):
+            if len(word) > maximum_word_length:
+                return False
+    return True
 
 
-@register_filter
-def min_word_count(ex):
+@Filters.register
+def min_word_count(ex: Dict[str, str], minimum_word_count=3):
+    """Return True if examples contain at least the supplied minimum number of words (according tokenizer)."""
     try:
-        isl_toks = [
-            tok for tok in tokenizer.tokenize(ex["is"]) if tok.txt is not None and tok.kind == tokenizer.TOK.WORD
-        ]
-        eng_toks = [
-            tok for tok in tokenizer.tokenize(ex["en"]) if tok.txt is not None and tok.kind == tokenizer.TOK.WORD
-        ]
+        for text in ex.values():
+            toks = [tok for tok in tokenizer.tokenize(text) if tok.txt is not None and tok.kind == tokenizer.TOK.WORD]
+            if len(toks) < minimum_word_count:
+                return False
     except TypeError:
-        return True
-    return len(isl_toks) >= DEFAULT_MIN_WORD_COUNT and len(eng_toks) >= DEFAULT_MIN_WORD_COUNT
+        pass
+    return True
+
+
+@Filters.register
+def wrong_quotes(ex: Dict[str, str]):
+    ALLOWED_QUOTES = set("'\"," + "".join(ICE_QUOTE.ALL))
+    DISALLOWED_QUOTES = set(QUOTE_LIKE).difference(ALLOWED_QUOTES)
+    for text in ex.values():
+        if not set(text) <= DISALLOWED_QUOTES:
+            return False
+    return True
+
+
+# @Filters.register
+# def language(ex):
+#     ice, eng = ex["is"], ex["en"]
+#     correct = probably_correct_language(ice, "is", lower_bound=0.995)
+#     correct = correct and probably_correct_language(eng, "en", lower_bound=0.995)
+#     return correct
 
 
 class Gather:
@@ -572,27 +618,6 @@ class MinFrequency(Gather):
             peng = all(cls._prev_store["eng"].get(w, 0) >= cls.min_freq for w in eng_words)
             return pice and peng
         return True
-
-
-@register_filter
-def wrong_quotes(ex):
-    ice, eng = ex["is"], ex["en"]
-
-    ALLOWED_QUOTES = set("'\"," + "".join(ICE_QUOTE.ALL))
-    DISALLOWED_QUOTES = set(QUOTE_LIKE).difference(ALLOWED_QUOTES)
-
-    chars_ex = set(ice)
-    chars_ex.update(eng)
-
-    return not bool(chars_ex & DISALLOWED_QUOTES)
-
-
-# @register_filter
-# def language(ex):
-#     ice, eng = ex["is"], ex["en"]
-#     correct = probably_correct_language(ice, "is", lower_bound=0.995)
-#     correct = correct and probably_correct_language(eng, "en", lower_bound=0.995)
-#     return correct
 
 
 class Pipeline:
@@ -760,10 +785,8 @@ class MinimalPipeline(Pipeline):
     end_time = None
 
 
-def do_pipeline(
-    in_file=None, out_file=sys.stdout, quiet=False, summary=False, view_function=None, inverted=False, **kwargs
-):
-    examples = lines_to_examples(in_file)
+def do_pipeline(in_file, out_file, quiet, summary, view_function, inverted, langs, **kwargs):
+    examples = lines_to_examples(in_file, langs)
     # pipeline = Pipeline
     pipeline = MinimalPipeline
     for ex in pipeline.run(examples, view_function=view_function, inverted=inverted):
@@ -773,11 +796,14 @@ def do_pipeline(
         pipeline.summarize_counter()
 
 
-def lines_to_examples(lines):
+def lines_to_examples(lines, langs: List[str]):
+    num_langs = len(langs)
     for line in lines:
         line = line.strip("\n")
-        src, tgt = line.split("\t")[:2]
-        ex = {"en": src, "is": tgt}
+        splits = line.split("\t")
+        if len(splits) != num_langs:
+            ValueError("Expected {} tab-splittable columns, got {}".format(num_langs, len(splits)))
+        ex = dict(zip(langs, splits))
         yield ex
 
 
@@ -785,10 +811,13 @@ class TransformationPipeline(Pipeline):
     _fns = [fix_improper_line_split, remove_leading_bullet, soft_hyphen, replace_dashes, merge_spaces, fix_ice_quotes]
 
 
-def do_fns(in_file=None, transforms=None, filters=None, quiet=False, **kwargs):
+def do_fns(in_file, out_file, transforms, filters, quiet, summary, langs: List[str], **kwargs):
     transforms = [] if transforms is None else transforms
     filters = [] if filters is None else filters
-    for ex in lines_to_examples(in_file):
+    counter = dict()
+    for ex in lines_to_examples(in_file, langs):
+        counter["total"] = counter.get("total", 0) + 1
+        is_filtered_out = False
         for transform in transforms:
             ex = Transformations.apply(transform, ex)
         for filter_name in filters:
@@ -796,13 +825,18 @@ def do_fns(in_file=None, transforms=None, filters=None, quiet=False, **kwargs):
             if filter_name.endswith("_inv"):
                 inverted = True
                 filter_name = filter_name.rstrip("_inv")
-            if Filters.apply(filter_name, ex, inverted=inverted):
+            if not Filters.apply(filter_name, ex, inverted=inverted):
+                counter[filter_name] = counter.get(filter_name, 0) + 1
+                is_filtered_out = True
                 if not quiet:
-                    print("\t".join([ex["en"], ex["is"]]))
+                    print("\t".join([ex[lang] for lang in langs]), file=sys.stderr)
+        if not is_filtered_out:
+            print("\t".join([ex[lang] for lang in langs]), file=out_file)
+    if summary:
+        print(counter)
 
 
 def valid_view_function(string):
-    import argparse
 
     fn_names = [fn.__name__ for fn in Pipeline._fns] + [fn.__name__ for fn in MinimalPipeline._fns]
     if string in fn_names:
@@ -812,11 +846,9 @@ def valid_view_function(string):
 
 if __name__ == "__main__":
 
-    import argparse
-
     parser = argparse.ArgumentParser(
-        "Filters and transformation pipelines for monolingual and parallel corpora. "
-        "Input defaults to stdin (with tab delimiter) if no input file is supplied."
+        "Filters and transformation pipelines for monolingual and parallel corpora (tab delimiter)."
+        "Input defaults to stdin if no input file is supplied."
     )
 
     parser.add_argument(
@@ -847,6 +879,16 @@ if __name__ == "__main__":
         default=[],
         nargs="+",
         help="Transforms to run sample through.",
+    )
+    parser.add_argument(
+        "-l",
+        "--languages",
+        dest="langs",
+        type=str,
+        required=True,
+        default=[],
+        nargs="+",
+        help="The languages present in the input-file (is, en, etc.). If multiple, the file should tab delimented.",
     )
     parser.add_argument(
         "-q",
