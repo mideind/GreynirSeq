@@ -2,13 +2,20 @@ import argparse
 from pathlib import Path
 from typing import Container, Dict, Tuple
 
-from greynirseq.nicenlp.tasks.translation_with_glossary import read_glossary
 from greynirseq.utils.lemmatizer import Lemmatizer, get_lemmatizer_for_lang
 
 
+def read_glossary(path: Path) -> Dict[str, str]:
+    """Read the glossary from the given file. Return an empty dict if it does not exist."""
+    if not path.exists():
+        return {}
+    with path.open("r") as f:
+        return {line.split("\t")[0]: line.split("\t")[1].strip() for line in f}
+
 class GlossaryEvaluator:
     """A glossary evaluator. Processes source and target w.r.t. a glossary.
-    Counts occurances of terms in source and target and reports accuracy."""
+    Counts occurances of terms in source and target and reports accuracy.
+    Evaluates terms based on lower-case."""
 
     def __init__(self, glossary: Dict[str, str], src_lemmatizer: Lemmatizer, tgt_lemmatizer: Lemmatizer):
         self.src_lemmatizer = src_lemmatizer
@@ -29,7 +36,7 @@ class GlossaryEvaluator:
         self.src_counts, self.tgt_counts = self._get_initial_glossary_counts()
 
     @staticmethod
-    def get_term_count_in_sents(sent: str, glossary: Container[str], lemmatizer: Lemmatizer) -> Dict[str, int]:
+    def _get_term_count_in_sents(sent: str, glossary: Container[str], lemmatizer: Lemmatizer) -> Dict[str, int]:
         # We also lower-case the lemmas, since we count against lower-cased terms.
         lemmas = [lemma.lower() for lemma in lemmatizer.lemmatize(sent)]
         counts: Dict[str, int] = dict()
@@ -39,8 +46,8 @@ class GlossaryEvaluator:
         return counts
 
     def process_line(self, source: str, target: str):
-        src_term_counts = self.get_term_count_in_sents(source, self._glossary_lower.keys(), self.src_lemmatizer)
-        tgt_term_counts = self.get_term_count_in_sents(target, self._glossary_lower.values(), self.tgt_lemmatizer)
+        src_term_counts = self._get_term_count_in_sents(source, self._glossary_lower.keys(), self.src_lemmatizer)
+        tgt_term_counts = self._get_term_count_in_sents(target, self._glossary_lower.values(), self.tgt_lemmatizer)
         for term, count in src_term_counts.items():
             self.src_counts[term] += count
             tgt_term_count_true_positive = tgt_term_counts.get(self._glossary_lower[term], 0)

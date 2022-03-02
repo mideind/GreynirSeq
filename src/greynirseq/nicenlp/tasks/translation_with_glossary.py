@@ -11,11 +11,10 @@ import argparse
 import logging
 import random
 import re
-from collections import Counter
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Container, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import jaro
 import torch
@@ -31,6 +30,7 @@ from torch.functional import Tensor
 from greynirseq.nicenlp.data.encoding import decode_line, encode_line, get_word_beginnings
 from greynirseq.nicenlp.tasks.translation_with_backtranslation import TranslationWithBacktranslationTask
 from greynirseq.nicenlp.utils.dictionary import ensure_symbols_are_present
+from greynirseq.nicenlp.utils.glossary.evaluation import GlossaryEvaluator, read_glossary
 from greynirseq.utils.lemmatizer import Lemmatizer, get_lemmatizer_for_lang
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ class GlossaryTaskConfig:
 
     enabled: bool
     ok_to_increase_dict_size: bool
+    constraint_positional_enabled: bool
     constraint_positional_start_idx: int
     seq_sample_ratio: float
     mean_whole_word: float
@@ -63,6 +64,7 @@ class GlossaryTaskConfig:
         return GlossaryTaskConfig(
             enabled=args.glossary_enabled,
             ok_to_increase_dict_size=ok_to_increase_dict_size,
+            constraint_positional_enabled=args.glossary_constraint_positional_enabled,
             constraint_positional_start_idx=args.glossary_constraint_positional_start_idx,
             seq_sample_ratio=args.glossary_seq_sample_ratio,
             mean_whole_word=args.glossary_mean_whole_word,
@@ -105,6 +107,14 @@ is in the target?",
             help="During training, soft constraints are sampled from the target. \
 The sampling selects whole-words (potentially multiple subwords). \
 The sampling distribution is the poisson distribution and this parameter is the mean of that distribution.",
+        )
+        parser.add_argument(
+            "--glossary-constraint-positional-enabled",
+            default=False,
+            type=bool,
+            help="When constraints are added as a part of the input, \
+should we enable their positional indices to be changed by the task. \
+See --glossary-constraint-positional-start-idx on how to adjust the positions.",
         )
         parser.add_argument(
             "--glossary-constraint-positional-start-idx",
@@ -206,14 +216,6 @@ def apply_monkey_patch_for_make_positions(positional_marker_symbol_idx: int, pos
     )
 
 
-def read_glossary(path: Path) -> Dict[str, str]:
-    """Read the glossary from the given file. Return an empty dict if it does not exist."""
-    if not path.exists():
-        return {}
-    with path.open("r") as f:
-        return {line.split("\t")[0]: line.split("\t")[1].strip() for line in f}
-
-
 @register_task("translation_with_glossary")
 class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
     """
@@ -260,15 +262,17 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
         data_path = args.data.split(":")[0]
         self.glossary = read_glossary(Path(data_path) / self.config.glossary_file)
 
-        # Apply the monkey patch for make_positions so that we glossary items are placed at the right position.
-        apply_monkey_patch_for_make_positions(
-            positional_marker_symbol_idx=self.source_dictionary.index("<sep>"),
-            positional_idx_restart_offset=self.config.constraint_positional_start_idx,
-        )
+        if self.config.constraint_positional_enabled:
+            # Apply the monkey patch for make_positions so that the glossary items are placed at the right position.
+            apply_monkey_patch_for_make_positions(
+                positional_marker_symbol_idx=self.source_dictionary.index("<sep>"),
+                positional_idx_restart_offset=self.config.constraint_positional_start_idx,
+            )
         self.bpe = encoders.build_bpe(args)
 
         self.src_lemmatizer = get_lemmatizer_for_lang(self.args.source_lang)
         self.tgt_lemmatizer = get_lemmatizer_for_lang(self.args.target_lang)
+        self.evaluator = GlossaryEvaluator(self.glossary, self.src_lemmatizer, self.tgt_lemmatizer)
 
     @staticmethod
     def add_args(parser) -> None:
@@ -382,85 +386,47 @@ class TranslationWithGlossaryTask(TranslationWithBacktranslationTask):
             shuffle=ds.shuffle,
         )
 
-
     def valid_step(self, sample, model, criterion):
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
         # We have no way of knowing whether the sample is from glosspref or not...
         if self.config.eval_glossary:
-            src_glossary_counts, tgt_glossary_counts = self.get_initial_glossary_counts()
             self._inference_with_glossary_counting(
                 self.sequence_generator,  # type: ignore
                 sample,
                 model,
-                src_glossary_counts=src_glossary_counts,
-                tgt_glossary_counts=tgt_glossary_counts,
             )
-            logging_output["_glossary_src_counts"] = src_glossary_counts
-            logging_output["_glossary_tgt_counts"] = tgt_glossary_counts
         return loss, sample_size, logging_output
 
-    def _inference_with_glossary_counting(
-        self, generator, sample, model, tgt_glossary_counts: Dict[str, int], src_glossary_counts: Dict[str, int]
-    ) -> None:
+    def _inference_with_glossary_counting(self, generator, sample, model) -> None:
         """Take an inference step and update the glossary counts (in-place) with the number of terms in sample."""
         gen_out = self.inference_step(generator, [model], sample, prefix_tokens=None)
 
-        def get_term_count_in_sents(
-            sents: Tensor, glossary: Container[str], idx_dict: Dictionary, lemmatizer: Lemmatizer
-        ) -> Dict[str, int]:
-            decoded_sent = decode_line(
-                sents,
-                bpe=self.bpe,
-                dictionary=idx_dict,
-                extra_symbols_to_ignore=[
-                    idx_dict.index(added_extra_symbol) for added_extra_symbol in self.added_extra_symbols
-                ],
-            )
-            # We also lower-case the lemmas, since we count against lower-cased terms.
-            lemmas = [lemma.lower() for lemma in lemmatizer.lemmatize(decoded_sent)]
-            counts: Dict[str, int] = dict()
-            for lemma in lemmas:
-                if lemma in glossary:
-                    counts[lemma] = counts.get(lemma, 0) + 1
-            return counts
-
         for i in range(len(gen_out)):
             best_translation = gen_out[i][0]["tokens"]
+            best_translation_decoded = decode_line(
+                best_translation,
+                bpe=self.bpe,
+                dictionary=self.target_dictionary,
+                extra_symbols_to_ignore=[
+                    self.target_dictionary.index(added_extra_symbol) for added_extra_symbol in self.added_extra_symbols
+                ],
+            )
             source = utils.strip_pad(sample["net_input"]["src_tokens"][i], self.source_dictionary.pad())
-            src_term_counts = get_term_count_in_sents(
-                source, self._glossary_lower.keys(), self.target_dictionary, self.src_lemmatizer
+            source_decoded = decode_line(
+                source,
+                bpe=self.bpe,
+                dictionary=self.source_dictionary,
+                extra_symbols_to_ignore=[
+                    self.source_dictionary.index(added_extra_symbol) for added_extra_symbol in self.added_extra_symbols
+                ],
             )
-            tgt_term_counts = get_term_count_in_sents(
-                best_translation, self._glossary_lower.values(), self.source_dictionary, self.tgt_lemmatizer
-            )
-            for term, count in src_term_counts.items():
-                src_glossary_counts[term] += count
-                tgt_term_count_true_positive = tgt_term_counts.get(self._glossary_lower[term], 0)
-                # We do not overcount the number of times a term is used in the target.
-                tgt_glossary_counts[self._glossary_lower[term]] += min(tgt_term_count_true_positive, count)
+            self.evaluator.process_line(source_decoded, best_translation_decoded)
 
     def reduce_metrics(self, logging_outputs, criterion):
         super().reduce_metrics(logging_outputs, criterion)
         if self.config.eval_glossary:
-            total_src_counts = Counter(self.get_initial_glossary_counts()[0])
-            total_tgt_counts = Counter(self.get_initial_glossary_counts()[1])
-            for logging_output in logging_outputs:
-                try:
-                    total_src_counts.update(Counter(logging_output["_glossary_src_counts"]))
-                    total_tgt_counts.update(Counter(logging_output["_glossary_tgt_counts"]))
-                # reduce_metrics is also called during training and then we do not have access to these keys.
-                except KeyError:
-                    return
-
-            def compute_glossary_accuracy(src_counts: Counter, tgt_counts: Counter) -> float:
-                total_count = sum(src_counts.values())
-                total_correct = sum(tgt_counts.values())
-                try:
-                    return round(total_correct / total_count, 4)
-                except ZeroDivisionError:
-                    return 0.0
-
-            metrics.log_scalar("glossary_accuracy", compute_glossary_accuracy(total_src_counts, total_tgt_counts))
+            metrics.log_scalar("glossary_accuracy", self.evaluator.compute_glossary_accuracy())
+            self.evaluator.reset()
 
 
 def apply_constraints(constraints: List[Tensor], t: Tensor, constraint_idx: int, sep_idx: int) -> Tensor:
@@ -536,7 +502,6 @@ def whole_word_lengths(whole_word_mask: List[int]) -> List[int]:
     if prev_idx is not None:
         lengths.append(len(whole_word_mask) - prev_idx)
     return lengths
-
 
 
 class FuzzyGlossaryConstraintsDataset(BaseWrapperDataset):
@@ -682,6 +647,7 @@ class SampleWholeWordDataset(BaseWrapperDataset):
             )
         )
         return constraints
+
 
 Translation = str
 Source = str

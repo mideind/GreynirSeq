@@ -19,7 +19,7 @@ class ENLemmatizer(Lemmatizer):
     def __init__(self):
         self.nlp = spacy.load("en_core_web_md")
 
-    def lemmatize(self, sent) -> List[str]:
+    def lemmatize(self, sent: str) -> List[str]:
         lemmas = []
         for sent in self.nlp(sent).sents:
             lemmas.extend(sent.lemma_.split(" "))
@@ -32,9 +32,12 @@ class ISLemmatizer(Lemmatizer):
     def __init__(self):
         self.bin = Bin()
 
-    def lemmatize(self, sent) -> List[str]:
-        sents = tokenizer.split_into_sentences(sent)
-        return [self.lemma_is(w) for s in sents for w in s.split(" ")]
+    def lemmatize(self, sent: str, is_tokenized=False) -> List[str]:
+        if not is_tokenized:
+            sents = [w for s in tokenizer.split_into_sentences(sent) for w in s.split(" ")]
+        else:
+            sents = sent.split(" ")
+        return [self.lemma_is(w) for w in sents]
 
     def lemma_is(self, word: str, **kwargs) -> str:
         _, m = self.bin.lookup(word, **kwargs)

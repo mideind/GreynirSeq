@@ -573,7 +573,6 @@ This is useful to set if you have no backtranslation data but would like the BPE
             LangpairDataset constructor
 
         """
-
         src_dataset, tgt_dataset = load_unpaired_langpair(
             data_path,
             split,
@@ -605,7 +604,7 @@ This is useful to set if you have no backtranslation data but would like the BPE
             bt_src_dataset, bt_tgt_dataset = load_unpaired_langpair(
                 # data_path, "{}.bt".format(split), src, self.src_dict, tgt, self.tgt_dict,
                 data_path,
-                "{}.bt".format(split),
+                "{}-bt".format(split),
                 src,
                 self.src_dict,
                 tgt,
