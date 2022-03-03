@@ -20,8 +20,10 @@ import tokenizer
 from greynirseq.utils.preprocessing.symbols import (
     BANNED_SYMBOLS,
     ICE_QUOTE,
+    NON_STANDARD_SPACES,
     PUNCTUATION_SYMBOLS,
     QUOTE_LIKE,
+    SEPARATORS,
     SUBSTITUTE_FOR_NULL,
     SYMBOL_WHITELIST,
 )
@@ -98,10 +100,7 @@ class Deduplifier:
 
     @classmethod
     def preprocess_example(cls, ex):
-        ice, eng = ex["is"], ex["en"]
-        ice = cls.preprocess_sentence(ice)
-        eng = cls.preprocess_sentence(eng)
-        return eng + "\t" + ice
+        return "\t".join([cls.preprocess_sentence(s) for s in ex.values()])
 
     @classmethod
     def is_unique_example(cls, ex):
@@ -223,9 +222,9 @@ def replace_dashes(ex: Dict[str, str]):
 
 
 @Transformations.register
-def soft_hyphen(ex: Dict[str, str]):
-    """Replace soft hyphens with an empty string."""
-    prog = RegexCache.compile_rx(SUBSTITUTE_FOR_NULL)
+def replace_control_format(ex: Dict[str, str]):
+    """Replace control and format unicode charaters with an empty string."""
+    prog = RegexCache.compile_rx("[" + "|".join(SUBSTITUTE_FOR_NULL) + "]")
     return {lang: prog.sub("", text) for lang, text in ex.items()}
 
 
@@ -234,6 +233,13 @@ def merge_spaces(ex: Dict[str, str]):
     """Merge multiple sequential spaces into a single space."""
     prog = RegexCache.compile_rx(r"\s+")
     return {lang: prog.sub("", text).strip(" ") for lang, text in ex.items()}
+
+
+@Transformations.register
+def normalize_spaces(ex: Dict[str, str]):
+    """Normalize different space unicode characters to a single space."""
+    prog = RegexCache.compile_rx("[" + "|".join(NON_STANDARD_SPACES + SEPARATORS) + "]")
+    return {lang: prog.sub(" ", text) for lang, text in ex.items()}
 
 
 @Filters.register

@@ -156,6 +156,8 @@ HEBREW_SYMBOLS = "פדיאטלבעתשמכהסצגרחקזנו"
 
 THAI_SYMBOLS = "ยบรถณกฑ"
 
+ARABIC_SYMBOLS = "".join(chr(i) for i in range(0x0600, 0x06FF + 1))
+
 UNNAMED_SYMBOLS = (
     "\uf106\uf8e7\x94\x81\uf0fc\uf0a3\uf8ec\uf06d\uf8f8\uf8fe\uf8ed\x89\uf0b4"
     "\uf8fd\x97\x84\uf8f7\uf8f6\uf8eb\x90\uf8fc\x93\uf8fa\uf6da\x9f\x86\x9c"
@@ -175,7 +177,7 @@ MISC_SYMBOLS = (
     "\uf0f1\uf0d8\uf063\uf049\uf0a6\uf0ea\uf041\uf076\uf03a\uf09f\uf02c\uf03c"
     "\uf067\uf02d\uf074\uf0b4"
     "→‡¶·⁺¡◊−─″˂―∙ﬁ©«»˚³♦ﬂ∆¼ª‰′‒‐┼●ʼ♯▲⏐≧¦‑♠ớ̶⁄̴׀¾˃¬∼○¸║ƙ›¢↘̈"
-    "↑↓²↔×§½_º"
+    "↑↓²↔×§½_º（）"
 )
 
 BANNED_SYMBOLS = (
@@ -187,6 +189,7 @@ BANNED_SYMBOLS = (
     + HEBREW_SYMBOLS
     + BAD_SYMBOLS_OS2018
     + MISC_SYMBOLS
+    + ARABIC_SYMBOLS
     + "\\"
 )
 
@@ -210,5 +213,44 @@ class ICE_QUOTE:
 PUNCTUATION_SYMBOLS = (
     "'ʼ∞¥≈€∂‧Ω÷‐℉†℃‛″£™∙§«»@¯^!½³²˜−{$¼¹≠}º‗®‑#¡´&`|·≥―′¿<≤~?±" + '…\\>”_+][°–=*"‘%„“;:-•(),…–`-—!’?;“”:.,'
 )
+NON_STANDARD_SPACES = (
+    "\u0009",  # CHARACTER TABULATION
+    "\u00a0",  # NO-BREAK SPACE
+    "\u115F",  # Hangul filler
+    "\u1160",  # Hangul filler
+    "\u1680",  # OGHAM SPACE MARK
+    *tuple(chr(i) for i in range(0x2000, 0x200A + 1)),  # Various spaces
+    "\u202F",  # NARROW NO-BREAK SPACE
+    "\u205F",  # MEDIUM MATHEMATICAL SPACE
+    "\u3000",  # IDEOGRAPHIC SPACE
+    "\u2800",  # BRAILLE PATTERN BLANK
+    "\u3164",  # HANGUL JUNGSEONG FILLER
+    "\uFFA0",  # HALFWIDTH HANGUL LETTER HAN
+)
+SEPARATORS = (
+    "\u000A",  # LINE FEED (LF)
+    "\u000B",  # LINE TABULATION (VT)
+    "\u000C",  # FORM FEED (FF)
+    "\u000D",  # CARRIAGE RETURN (CR)
+    "\u0085",  # NEXT LINE (NEL)
+    "\u2028",  # LINE SEPARATOR
+    "\u2029",  # PARAGRAPH SEPARATOR
+)
+DASHES = (*tuple(chr(i) for i in range(0x2010, 0x2015 + 1)),)  # Different types of dashes
 
-SUBSTITUTE_FOR_NULL = "\xad"
+SUBSTITUTE_FOR_NULL = (
+    *tuple(chr(i) for i in range(0x0000, 0x0008 + 1)),  # C0 control codes - without separators
+    *tuple(chr(i) for i in range(0x000E, 0x001F + 1)),  # C0 control codes - without separators
+    *tuple(chr(i) for i in range(0x0080, 0x009F + 1)),  # C1 control codes
+    "\u00ad",  # 0xad SOFT HYPHEN
+    "\u034F",  # COMBINING GRAPHEME JOINER
+    "\u17B4",  # Khmer vowel sign aq
+    "\u17B5",  # Khmer vowel sign aa
+    "\u180E",  # MONGOLIAN VOWEL SEPARATOR
+    *tuple(chr(i) for i in range(0x200B, 0x200F + 1)),  # Format characters
+    *tuple(chr(i) for i in range(0x202A, 0x202E + 1)),  # More format characters
+    *tuple(chr(i) for i in range(0x2060, 0x206F + 1)),  # More format characters and invisible separators
+    *tuple(chr(i) for i in range(0xFFF0, 0xFFFF + 1)),  # Specials
+    "\ufe0f",  # Variation Selector-16 - used before emojis
+    "\ufeff",  # ZERO WIDTH NO-BREAK SPACE
+)
