@@ -1,8 +1,41 @@
-#!/usr/bin/env python4
+#!/usr/bin/env python3
 
 # Copyright (C) Miðeind ehf.
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
+
+"""
+filters.py is a module to which defines filters and transformations which can be used to 
+clean up monolingual and bilingual data.
+
+Example usage from command line:
+python src/greynirseq/utils/preprocessing/filters.py -i <INPUT> \\
+    --languages en \\
+    --functions normalize_spaces \\
+        merge_spaces \\
+        replace_control_format \\
+        replace_dashes \\
+        remove_leading_bullet \\
+        null_sentence \\
+        whitelist_symbol \\
+        deduplicate \\
+    --summary -q > <OUTPUT>
+
+The above command will read the input file which is monolingual English, normalize spaces, merge spaces, etc.
+When the --summary flag is set, the output will be a summary of the filters and transformations applied.
+-q is a shorthand for --quiet so the command will not print to stdout the filtered (i.e. removed) examples.
+
+The module can also be used as a library:
+
+from greynirseq.utils.preprocessing.filters import Pipeline
+pipeline = Pipeline(functions=["normalize_spaces", "merge_spaces"])
+examples = [
+    {"en": "This is a   sentence."},
+    {"en": "This is another\n sentence."},
+]
+for clean_ex, transformed, filtered in pipeline.run(examples):
+    print(clean_ex)
+"""
 
 import argparse
 import collections
@@ -12,7 +45,8 @@ import os
 import re
 import sys
 import time
-from typing import Callable, Dict, List, Set
+from io import StringIO
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 import editdistance
 import tokenizer
@@ -49,10 +83,6 @@ def safe_div(a, b):
     if b == 0:
         return 0
     return a / b
-
-
-def print_ex(ex):
-    print("\t".join([ex["en"], ex["is"]]))
 
 
 def get_or_initialize_encoder():
@@ -131,6 +161,10 @@ class Transformations:
         else:
             raise ValueError("Tried to register transform {0} more than once".format(fun.__name__))
 
+    @classmethod
+    def __contains__(cls, name: str):
+        return name in cls._transforms
+
 
 class RegexCache:
     _programs: Dict[str, re.Pattern] = {}  # compiled regular expressions
@@ -157,23 +191,23 @@ class Filters:
             raise ValueError("Tried to register filter {0} more than once".format(fun.__name__))
 
     @classmethod
-    def apply(cls, filter_name: str, ex: Dict[str, str], inverted=False) -> bool:
-        """Filters return True if example is OK."""
+    def apply(cls, filter_name: str, ex: Dict[str, str]) -> bool:
+        """Filters return True if example is OK. If filter name starts with 'inv_' its application is inversed."""
+        inverted = False
+        if filter_name.startswith("inv_"):
+            filter_name = filter_name[4:]
+            inverted = True
         if filter_name not in cls._filters:
             raise KeyError("Could not find filter {0}".format(filter_name))
         else:
             res = cls._filters[filter_name](ex)
             return not res if inverted else res
 
-
-def register_filter(fun: Callable[[Dict[str, str]], bool]):
-    Filters.register(fun)
-    return fun
-
-
-def register_transformation(fun: Callable[[Dict[str, str]], Dict[str, str]]):
-    Transformations.register(fun)
-    return fun
+    @classmethod
+    def __contains__(cls, filter_name: str):
+        if filter_name.startswith("inv_"):
+            filter_name = filter_name[4:]
+        return filter_name in cls._filters
 
 
 @Transformations.register
@@ -232,7 +266,7 @@ def replace_control_format(ex: Dict[str, str]):
 def merge_spaces(ex: Dict[str, str]):
     """Merge multiple sequential spaces into a single space."""
     prog = RegexCache.compile_rx(r"\s+")
-    return {lang: prog.sub("", text).strip(" ") for lang, text in ex.items()}
+    return {lang: prog.sub(" ", text).strip(" ") for lang, text in ex.items()}
 
 
 @Transformations.register
@@ -627,8 +661,208 @@ class MinFrequency(Gather):
 
 
 class Pipeline:
+    """A Pipeline holds a list of functions (transformations or filters) to be applied to a sequence of examples.
 
-    counter = dict()
+    Each example is a dictionary of lang: text."""
+
+    def __init__(self, functions: List[str], view_function: Optional[str] = None) -> None:
+        is_filter = [True if Filters.__contains__(f) else False for f in functions]
+        is_transform = [True if Transformations.__contains__(f) else False for f in functions]
+        is_view = [True if f_name == view_function else False for f_name in functions]
+        self.functions = list(zip(functions, is_filter, is_transform, is_view))
+        self.counter: Dict[str, int] = dict()
+        self.start_time = time.time()
+        self.end_time = time.time()
+
+    def run(self, it_examples: Iterable[Dict[str, str]]) -> Iterable[Tuple[Dict[str, str], bool, bool]]:
+        """Run the functions defined in the Pipeline on the provided examples.
+
+        Returns: An iterable of the (possibly) updated examples along with flags indicating if the example
+        is transformed and whether it is filtered out."""
+        # TODO: add support for view_function
+        self.start_time = time.time()
+        self.counter.clear()
+        for ex in it_examples:
+            self.counter["total"] = self.counter.get("total", 0) + 1
+            is_transformed = False
+            is_filtered_out = False
+            for f_name, is_filter, is_transform, is_view in self.functions:
+                if is_transform:
+                    upd_ex = Transformations.apply(f_name, ex)
+                    if upd_ex != ex:
+                        # We count EACH filter application - even though one is enough to filter out an example.
+                        # This will cause strange relative numbers in the report.
+                        self.counter[f_name] = self.counter.get(f_name, 0) + 1
+                        is_transformed = True
+                        # We might make multiple transformations, so we need to update the example
+                        ex = upd_ex
+                if is_filter:
+                    if not Filters.apply(f_name, ex):
+                        self.counter[f_name] = self.counter.get(f_name, 0) + 1
+                        is_filtered_out = True
+            yield ex, is_transformed, is_filtered_out
+        self.end_time = time.time()
+
+    def function_summary(self, total_filtered: int, total_transformed: int):
+        return {
+            "total": self.counter["total"],
+            "time": self.end_time - self.start_time,
+            "filtered": total_filtered,
+            "transformed": total_transformed,
+            "functions": {
+                f_name: {
+                    "total": self.counter[f_name],
+                    "percent": 100 * safe_div(self.counter[f_name], self.counter["total"]),
+                    "is_filter": is_filter,
+                    "is_transform": is_transform,
+                    "rel_percent": 100
+                    * safe_div(self.counter[f_name], total_filtered if is_filter else total_transformed),
+                }
+                for f_name, is_filter, is_transform, is_view in self.functions
+            },
+        }
+
+
+def print_function_summary(f_summary, indent=4, out_file=sys.stderr):
+    """Summarize the counters for the pipeline."""
+    print(
+        "Examples remaining:  {rem:>8d} / {total:<8d}  {pct:5.2f}%  in {elaps:>5.1f} seconds".format(
+            rem=f_summary["total"] - f_summary["filtered"],
+            total=f_summary["total"],
+            pct=100 * safe_div(f_summary["total"] - f_summary["filtered"], f_summary["total"]),
+            elaps=f_summary["time"],
+        ),
+        file=out_file,
+    )
+    print("-" * 80, file=out_file)
+    print(
+        "{indent}{name:<30s}  {count:>8s}   {pct:>5s}  {rel:>13s}  (   Type  )".format(
+            indent=" " * indent, name="Name", count="Count", pct="Total", rel="Relative"
+        ),
+        file=out_file,
+    )
+    for name, f_data in f_summary["functions"].items():
+        print(
+            "{indent}{name:<30s}  {count:>8d}  {pct:>5.2f}%  {rel:>13.2f}% ({type:>9})".format(
+                indent=" " * indent,
+                name=name,
+                count=f_data["total"],
+                pct=f_data["percent"],
+                rel=f_data["rel_percent"],
+                type="filter" if f_data["is_filter"] else "transform",
+            ),
+            file=out_file,
+        )
+
+
+def lines_to_examples(lines: StringIO, langs: List[str]) -> Iterator[Dict[str, str]]:
+    num_langs = len(langs)
+    for line in lines:
+        line = line.strip("\n")
+        splits = line.split("\t")
+        if len(splits) != num_langs:
+            ValueError("Expected {} tab-splittable columns, got {}".format(num_langs, len(splits)))
+        ex = dict(zip(langs, splits))
+        yield ex
+
+
+def valid_view_function(string):
+
+    fn_names = [fn for fn in Filters._filters] + [fn for fn in Transformations._transforms]
+    if string in fn_names:
+        return string
+    raise argparse.ArgumentError(string, "Invalid filter/transformation name")
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        "Filters and transformation pipelines for monolingual and parallel corpora (tab delimiter)."
+        "Input defaults to stdin if no input file is supplied."
+    )
+
+    parser.add_argument(
+        "-i",
+        "--in_file",
+        dest="in_file",
+        type=argparse.FileType("r"),
+        default=sys.stdin,
+        required=False,
+        help="Sample file to run filter through, defaults to stdin",
+    )
+    parser.add_argument(
+        "-f",
+        "--functions",
+        dest="functions",
+        type=str,
+        required=False,
+        default=[],
+        nargs="+",
+        help="Functions to run sample through. Can be transformations or filters.",
+    )
+    parser.add_argument(
+        "-l",
+        "--languages",
+        dest="langs",
+        type=str,
+        required=True,
+        default=[],
+        nargs="+",
+        help="The languages present in the input-file (is, en, etc.). If multiple, the file should tab delimented.",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        dest="quiet",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Output lines after transformations and filtering.",
+    )
+    parser.add_argument(
+        "-s",
+        "--summary",
+        dest="summary",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Print a summary of function application.",
+    )
+    parser.add_argument(
+        "--hook",
+        dest="view_function",
+        type=valid_view_function,
+        required=False,
+        default=None,
+        help="Display filter or transformation output as occurs in the pipeline.",
+    )
+    parser.add_argument(
+        "-o",
+        "--out_file",
+        dest="out_file",
+        type=argparse.FileType("w"),
+        required=False,
+        default=sys.stdout,
+        help="File where pipline output will be written",
+    )
+
+    args = parser.parse_args()
+    p = Pipeline(args.functions, args.view_function)
+    examples = lines_to_examples(args.in_file, args.langs)
+    total_transformed = 0
+    total_filtered = 0
+    for upd_ex, transformed, filtered in p.run(examples):
+        if filtered:
+            total_filtered += 1
+            if not args.quiet:
+                print("\t".join(upd_ex.values()), file=sys.stderr)
+            continue
+        if transformed:
+            total_transformed += 1
+        print("\t".join(upd_ex.values()), file=args.out_file)
+    if args.summary:
+        print_function_summary(p.function_summary(total_filtered, total_transformed))
+
     _fns = [
         # filters
         null_sentence,
@@ -643,7 +877,7 @@ class Pipeline:
         # transformations
         fix_improper_line_split,
         # remove_leading_bullet,
-        soft_hyphen,
+        replace_control_format,
         replace_dashes,
         merge_spaces,
         # fix_ice_quotes,
@@ -670,95 +904,7 @@ class Pipeline:
         # MinFrequency,
         # MostCommon50k,
     ]
-    start_time = None
-    end_time = None
-
-    @classmethod
-    def run(cls, examples, view_function=None, inverted=False, **kwargs):
-        cls.start_time = time.time()
-        cls.counter.clear()
-        cls.counter["total"] = 0
-        for ex in examples:
-            cls.counter["total"] += 1
-            ex = cls.process(ex, view_function=view_function, inverted=inverted)
-            if ex is not None:
-                yield ex
-
-        for obj in cls._fns:
-            if not isinstance(obj, Gather):
-                continue
-            obj.save_to_file()
-        cls.end_time = time.time()
-
-    @classmethod
-    def process(cls, ex, view_function=None, inverted=False):
-        for obj in cls._fns:
-            fn = obj.gather if isinstance(obj, type) else obj
-            name = obj.__name__ if isinstance(obj, type) else fn.__name__
-            display = view_function == name
-            if name in Transformations._transforms:
-                old = dict(ex)
-                ex = obj(ex)
-                if ex != old:
-                    out_ex = old if inverted else ex
-                    if display:
-                        print_ex(out_ex)
-                    cls.counter[name] = cls.counter.get(name, 0) + 1
-            else:
-                if display and inverted:
-                    print_ex(ex)
-                if not fn(ex):
-                    cls.counter[name] = cls.counter.get(name, 0) + 1
-                    if display and not inverted:
-                        print_ex(ex)
-                    return None
-
-        return ex
-
-    @classmethod
-    def summarize_counter(cls, indent=4, file=sys.stdout):
-        total = cls.counter["total"]
-        cls.counter.pop("total")
-        num_filtered = sum(count for name, count in cls.counter.items() if name not in Transformations._transforms)
-        # num_transformed = sum(count for name, count in cls.counter.items() if name in Transformations._transforms)
-        print(
-            "Examples remaining:  {rem:>8d} / {total:<8d}  {pct:5.2f}%  in {elaps:>5.1f} seconds".format(
-                rem=total - num_filtered,
-                total=total,
-                pct=100 * safe_div(total - num_filtered, total),
-                elaps=cls.end_time - cls.start_time,
-            )
-        )
-        print("-" * 80)
-        print(
-            "{indent}{name:<30s}  {count:>8s}   {pct:>5s}  {rel:<10s}".format(
-                indent=" " * indent, name="Name", count="Count", pct="Total", rel="Total filtered"
-            )
-        )
-        for fn in cls._fns:
-            name = fn.__name__
-            if name not in cls.counter:
-                continue
-            count = cls.counter[name]
-
-            filter_msg = "{indent}{name:<30s}  {count:>8d}  {pct:>5.2f}%  {rel:>13.2f}%".format(
-                indent=" " * indent,
-                name=name,
-                count=count,
-                pct=100 * safe_div(count, total),
-                rel=100 * safe_div(count, num_filtered),
-            )
-
-            transform_msg = "{indent}{name:<30s}  {count:>8d}  {pct:>5.2f}%".format(
-                indent=" " * indent, name=name, count=count, pct=100 * safe_div(count, total)
-            )
-            msg = filter_msg if name in Filters._filters else transform_msg
-            print(msg)
-
-
-class MinimalPipeline(Pipeline):
-
-    counter = dict()
+    # Minimal
     _fns = [
         # filters
         null_sentence,
@@ -772,7 +918,7 @@ class MinimalPipeline(Pipeline):
         # transformations
         fix_improper_line_split,
         # remove_leading_bullet,
-        soft_hyphen,
+        replace_control_format,
         replace_dashes,
         merge_spaces,
         fix_ice_quotes,
@@ -787,159 +933,3 @@ class MinimalPipeline(Pipeline):
         quote_inside_word,
         ocr_word_boundary_avg_length,
     ]
-    start_time = None
-    end_time = None
-
-
-def do_pipeline(in_file, out_file, quiet, summary, view_function, inverted, langs, **kwargs):
-    examples = lines_to_examples(in_file, langs)
-    # pipeline = Pipeline
-    pipeline = MinimalPipeline
-    for ex in pipeline.run(examples, view_function=view_function, inverted=inverted):
-        if not quiet and view_function is None:
-            print("\t".join([ex["en"], ex["is"]]), file=out_file)
-    if summary:
-        pipeline.summarize_counter()
-
-
-def lines_to_examples(lines, langs: List[str]):
-    num_langs = len(langs)
-    for line in lines:
-        line = line.strip("\n")
-        splits = line.split("\t")
-        if len(splits) != num_langs:
-            ValueError("Expected {} tab-splittable columns, got {}".format(num_langs, len(splits)))
-        ex = dict(zip(langs, splits))
-        yield ex
-
-
-class TransformationPipeline(Pipeline):
-    _fns = [fix_improper_line_split, remove_leading_bullet, soft_hyphen, replace_dashes, merge_spaces, fix_ice_quotes]
-
-
-def do_fns(in_file, out_file, transforms, filters, quiet, summary, langs: List[str], **kwargs):
-    transforms = [] if transforms is None else transforms
-    filters = [] if filters is None else filters
-    counter = dict()
-    for ex in lines_to_examples(in_file, langs):
-        counter["total"] = counter.get("total", 0) + 1
-        is_filtered_out = False
-        for transform in transforms:
-            ex = Transformations.apply(transform, ex)
-        for filter_name in filters:
-            inverted = False
-            if filter_name.endswith("_inv"):
-                inverted = True
-                filter_name = filter_name.rstrip("_inv")
-            if not Filters.apply(filter_name, ex, inverted=inverted):
-                counter[filter_name] = counter.get(filter_name, 0) + 1
-                is_filtered_out = True
-                if not quiet:
-                    print("\t".join([ex[lang] for lang in langs]), file=sys.stderr)
-        if not is_filtered_out:
-            print("\t".join([ex[lang] for lang in langs]), file=out_file)
-    if summary:
-        print(counter)
-
-
-def valid_view_function(string):
-
-    fn_names = [fn.__name__ for fn in Pipeline._fns] + [fn.__name__ for fn in MinimalPipeline._fns]
-    if string in fn_names:
-        return string
-    raise argparse.ArgumentError(string, "Invalid filter/transformation name")
-
-
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(
-        "Filters and transformation pipelines for monolingual and parallel corpora (tab delimiter)."
-        "Input defaults to stdin if no input file is supplied."
-    )
-
-    parser.add_argument(
-        "-i",
-        "--in_file",
-        dest="in_file",
-        type=argparse.FileType("r"),
-        default=sys.stdin,
-        required=0,
-        help="Sample file to run filter through, defaults to stdin",
-    )
-    parser.add_argument(
-        "-f",
-        "--filters",
-        dest="filters",
-        type=str,
-        required=False,
-        default=[],
-        nargs="+",
-        help="Filters to run sample through.",
-    )
-    parser.add_argument(
-        "-t",
-        "--transforms",
-        dest="transforms",
-        type=str,
-        required=False,
-        default=[],
-        nargs="+",
-        help="Transforms to run sample through.",
-    )
-    parser.add_argument(
-        "-l",
-        "--languages",
-        dest="langs",
-        type=str,
-        required=True,
-        default=[],
-        nargs="+",
-        help="The languages present in the input-file (is, en, etc.). If multiple, the file should tab delimented.",
-    )
-    parser.add_argument(
-        "-q",
-        "--no_examples",
-        dest="quiet",
-        required=False,
-        default=False,
-        action="store_true",
-        help="Output lines after transformations and filtering.",
-    )
-    parser.add_argument(
-        "-s", "--summary", dest="summary", action="store_true", required=False, default=False, help="Help"
-    )
-    parser.add_argument(
-        "--hook",
-        dest="view_function",
-        type=valid_view_function,
-        required=False,
-        default=None,
-        help="Display filter or transformation output as occurs in the pipeline.",
-    )
-    parser.add_argument(
-        "-v",
-        "--invert",
-        dest="inverted",
-        action="store_true",
-        required=False,
-        default=False,
-        help=(
-            "Print inverse of filter as it occurs in the pipeline"
-            "(or the output that is unaffected by a hooked transformation)."
-        ),
-    )
-    parser.add_argument(
-        "-o",
-        "--out_file",
-        dest="out_file",
-        type=argparse.FileType("w"),
-        required=False,
-        default=sys.stdout,
-        help="File where pipline output will be written",
-    )
-
-    args = parser.parse_args()
-    if args.filters or args.transforms:
-        do_fns(**vars(args))
-    else:
-        do_pipeline(**vars(args))
