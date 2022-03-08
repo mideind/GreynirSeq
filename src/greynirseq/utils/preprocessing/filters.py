@@ -5,7 +5,7 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 """
-filters.py is a module to which defines filters and transformations which can be used to 
+filters.py is a module to which defines filters and transformations which can be used to
 clean up monolingual and bilingual data.
 
 Example usage from command line:
@@ -85,11 +85,10 @@ def safe_div(a, b):
     return a / b
 
 
-def get_or_initialize_encoder():
-    global ENC
-    # This used to have subword encoder from t2t for subword edit-distance.
-    # Removed until this is implemented with fairseq/huggingface/spm
-    raise NotImplementedError
+# TODO: Add support for BPE encoding
+def encode(text: str):
+    """BPE encodes a string."""
+    return text
 
 
 # def probably_correct_language2(text, lang_code, lower_bound=0.8):
@@ -452,27 +451,24 @@ def rel_min_string_edit(ex: Dict[str, str], min_ratio=0.10):
     return (max_edits >= min_ratio) and (min_edits >= min_ratio)
 
 
-# TODO: Maybe fix this filter.
+# TODO: Fix this filter so it can support more than two languages and/or not just "is" and "en".
 @Filters.register
 def abs_min_subtoken_edit(ex: Dict[str, str], min_dist=2):
     if not SUBWORD_TOKENIZER_AVAILABLE:
         return True
-    enc = get_or_initialize_encoder()
-    ice = enc.encode(ex["is"])
-    eng = enc.encode(ex["en"])
+    ice = encode(ex["is"])
+    eng = encode(ex["en"])
     dist = editdistance.eval(ice, eng)
     return dist >= min_dist
 
 
-# TODO: Maybe fix this filter.
+# TODO: Fix this filter so it can support more than two languages and/or not just "is" and "en".
 @Filters.register
 def rel_min_subtoken_edit(ex: Dict[str, str]):
     if not SUBWORD_TOKENIZER_AVAILABLE:
         return True
-    # pylint: disable=assignment-from-no-return
-    enc = get_or_initialize_encoder()
-    ice = enc.encode(ex["is"])
-    eng = enc.encode(ex["en"])
+    ice = encode(ex["is"])
+    eng = encode(ex["en"])
     num_edits = editdistance.eval(ice, eng)
     lengths = [len(ice), len(eng)]
     min_ratio = safe_div(num_edits, min(lengths))
