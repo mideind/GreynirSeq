@@ -14,7 +14,6 @@ from reynir import simpletree
 
 from greynirseq.nicenlp.utils.constituency import unary_branch_labels
 
-
 NULL_CAT_NONTERM = "NULL"
 NULL_LEAF_NONTERM = "LEAF"
 NULL_CAT_TERM = "null"
@@ -36,6 +35,7 @@ def mark_preorder(node, include_terminals=False):
     preorder_list, _ = _mark_preorder_inner(node, include_terminals=include_terminals)
     return preorder_list
 
+
 def _mark_preorder_inner(node, include_terminals=False, preorder_index=-1):
     if node.terminal and include_terminals:
         return [node], preorder_index + 1
@@ -48,7 +48,9 @@ def _mark_preorder_inner(node, include_terminals=False, preorder_index=-1):
 
     ret = [node]
     for child in node.children:
-        desc, preorder_index = _mark_preorder_inner(child, include_terminals=include_terminals, preorder_index=preorder_index)
+        desc, preorder_index = _mark_preorder_inner(
+            child, include_terminals=include_terminals, preorder_index=preorder_index
+        )
         ret.extend(desc)
 
     return ret, preorder_index
@@ -119,10 +121,6 @@ class Node:
 
     @property
     def depth(self):
-        pass
-
-    @property
-    def depth(self):
         return self._depth
 
     @property
@@ -148,17 +146,10 @@ class Node:
     def from_dict(cls, obj):
         if "nonterminal" in obj:
             return NonterminalNode(
-                nonterminal_label=obj["nonterminal"],
-                children=[
-                    cls.from_dict(child) for child in obj["children"]
-                ]
+                nonterminal_label=obj["nonterminal"], children=[cls.from_dict(child) for child in obj["children"]]
             )
         elif "terminal" in obj:
-            return TerminalNode(
-                text=obj["text"],
-                terminal_label=obj["terminal"],
-                lemma=obj["lemma"],
-            )
+            return TerminalNode(text=obj["text"], terminal_label=obj["terminal"], lemma=obj["lemma"])
         else:
             raise ValueError("Expected object with nonterminal or terminal")
 
@@ -195,7 +186,7 @@ class Node:
         if obj.is_terminal:
             try:
                 term = obj.terminal_with_all_variants
-            except IndexError as e:
+            except IndexError:
                 # this is mostly "so_0" terminals that cause this
                 sys.stderr.write(f"Could not generate flat terminal with all variants: {obj}\n")
                 raise IllegalGreynirNode(f"Could not generate flat terminal with all variants: {obj}\n")
@@ -207,7 +198,7 @@ class Node:
 
             try:
                 node = TerminalNode(obj.text, term, lemma=obj.lemma)
-            except Exception as e:
+            except Exception:
                 sys.stderr.write(f"Could not parse flat terminal: {obj}\n")
                 raise IllegalGreynirNode(f"Could not parse flat terminal: {obj}\n")
             return node
@@ -279,7 +270,9 @@ class Node:
         return NltkTree(
             node.tag,
             [
-                cls.convert_to_nltk_tree(child, simplify_leaves=simplify_leaves, html_escape=html_escape, include_lemma=include_lemma)
+                cls.convert_to_nltk_tree(
+                    child, simplify_leaves=simplify_leaves, html_escape=html_escape, include_lemma=include_lemma
+                )
                 for child in node.children
             ],
         )
@@ -298,7 +291,9 @@ class Node:
         return new_node
 
     def as_nltk_tree(self, simplify_leaves=False, html_escape=False, include_lemma=False):
-        return self.convert_to_nltk_tree(self, simplify_leaves=simplify_leaves, html_escape=html_escape, include_lemma=include_lemma)
+        return self.convert_to_nltk_tree(
+            self, simplify_leaves=simplify_leaves, html_escape=html_escape, include_lemma=include_lemma
+        )
 
     def pretty_print(self, stream=None, simplify_leaves=False, html_escape=False, include_lemma=True):
         tree = self.as_nltk_tree(simplify_leaves=simplify_leaves, html_escape=html_escape, include_lemma=include_lemma)
@@ -443,7 +438,11 @@ class Node:
         if self.terminal:
             return self
         if len(self.children) > 1:
-            new_node = NonterminalNode(self.nonterminal, [child.collapse_unary() for child in self.children], preorder_index=self.preorder_index)
+            new_node = NonterminalNode(
+                self.nonterminal,
+                [child.collapse_unary() for child in self.children],
+                preorder_index=self.preorder_index,
+            )
             return new_node
         elif self.children[0].terminal:
             return NonterminalNode(self.nonterminal, list(self.children), preorder_index=self.preorder_index)
@@ -463,7 +462,9 @@ class Node:
             labels.append(elem.tag)
         label = ">".join(labels)
 
-        new_node = NonterminalNode(label, [child.collapse_unary() for child in merge_list[-1].children], preorder_index=self.preorder_index)
+        new_node = NonterminalNode(
+            label, [child.collapse_unary() for child in merge_list[-1].children], preorder_index=self.preorder_index
+        )
         if self.preorder_index:
             new_node._composite_preorder_indices = [elem.preorder_index for elem in merge_list]
         return new_node
@@ -635,7 +636,11 @@ class Node:
             return [self], preorder_index
 
         for child in self.children:
-            desc, preorder_index = child._preorder_list(include_terminals=include_terminals, preorder_index=preorder_index + 1, preserve_indices=preserve_indices)
+            desc, preorder_index = child._preorder_list(
+                include_terminals=include_terminals,
+                preorder_index=preorder_index + 1,
+                preserve_indices=preserve_indices,
+            )
             ret.extend(desc)
 
         return ret, preorder_index
@@ -664,10 +669,11 @@ class Node:
         return self
 
 
-
 class NonterminalNode(Node):
     def __init__(self, nonterminal_label, children=None, preorder_index=None, composite_preorder_indices=None):
-        super(NonterminalNode, self).__init__(preorder_index=preorder_index, composite_preorder_indices=composite_preorder_indices)
+        super(NonterminalNode, self).__init__(
+            preorder_index=preorder_index, composite_preorder_indices=composite_preorder_indices
+        )
         self._nonterminal = nonterminal_label
         self._children = children if children is not None else []
         if not isinstance(self.children, list):
@@ -731,13 +737,15 @@ class NonterminalNode(Node):
         return self._split_multiword_tokens(self)
 
     def clone(self):
-        return NonterminalNode(self.nonterminal, [child.clone() for child in self.children], preorder_index=self.preorder_index, composite_preorder_indices=self._composite_preorder_indices)
+        return NonterminalNode(
+            self.nonterminal,
+            [child.clone() for child in self.children],
+            preorder_index=self.preorder_index,
+            composite_preorder_indices=self._composite_preorder_indices,
+        )
 
     def to_dict(self):
-        obj = {
-            "nonterminal": self.nonterminal,
-            "children": [],
-        }
+        obj = {"nonterminal": self.nonterminal, "children": []}
         for child in self.children:
             obj["children"].append(child.to_dict())
         return obj
@@ -847,11 +855,7 @@ class TerminalNode(Node):
         )
 
     def to_dict(self):
-        return {
-            "text": self.text,
-            "terminal": self.terminal,
-            "lemma": self.lemma,
-        }
+        return {"text": self.text, "terminal": self.terminal, "lemma": self.lemma}
 
 
 class VARIANT:

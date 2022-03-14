@@ -2,7 +2,6 @@ from icecream import ic
 
 from greynirseq.nicenlp.utils.constituency.greynir_utils import NonterminalNode, TerminalNode
 from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
-    NULL_LABEL,
     ROOT_LABEL,
     ParseAction,
     get_incremental_parse_actions,
@@ -26,7 +25,7 @@ def mark_frozen(node, children_only=False):
 
 
 class IncrementalParser:
-    def __init__(self, tokens):
+    def __init__(self, tokens, collapse=True, strict=True):
         """docstring"""
         if not tokens:
             raise ValueError("Must provide tokens or number of tokens")
@@ -36,58 +35,68 @@ class IncrementalParser:
         self.root.frozen = False
         self.actions = []
         self.token_index = 0
+        self.should_collapse = collapse
+        self.strict = strict
 
-    def is_illegal_action(self, action, as_str=False, strict=True):
+    def is_illegal_action(self, action, result_as_str=False):
         """docstring"""
         if not self.actions:
             # First parse action must an append to pseudo-root
             msg = ""
             if (action.depth == 0) and (not action.parent.is_null()):
                 msg = "First parse action must an append to pseudo-root"
-            return msg if as_str else bool(msg)
+            return msg if result_as_str else bool(msg)
         elif action.depth == 0:
             # Only the first action can add to the pseudo-root
             msg = "Cannot modify pseudo-root"
-            return msg if as_str else bool(msg)
+            return msg if result_as_str else bool(msg)
 
         msg = ""
         right_chain = self.get_right_chain()
         if action.depth >= len(right_chain):
             msg = "Action depth exceeds right-chain depth"
-        elif strict and right_chain[action.depth].frozen:
+        elif self.strict and right_chain[action.depth].frozen:
             # the last allowable action in a subtree is an uncontraction
             # afterwards, no modification of the subtree is allowed
             msg = "Cannot modify subtree after node uncontraction"
-        return msg if as_str else bool(msg)
+        return msg if result_as_str else bool(msg)
 
     def get_tree(self):
         if self.root.children:
-            return self.root.children[0]
+            if self.should_collapse:
+                return self.root.children[0]
+            else:
+                return self.root.children[0].uncollapse_unary()
         return None
 
-    def add_many(self, actions, verbose=False, strict=True):
+    def add_many(self, actions, verbose=False):
         for action in actions:
-            self.add(action, verbose=verbose, strict=strict)
+            self.add(action, verbose=verbose)
 
     def get_right_chain(self):
         return get_right_chain(self.root)
 
-    def add(self, action, verbose=False, strict=True):
+    def add(self, action, verbose=False):
         """docstring"""
         if verbose:
             self.root.pretty_print()
-        ic(action)
-        maybe_error_str = self.is_illegal_action(action, as_str=True, strict=strict)
+        maybe_error_str = self.is_illegal_action(action, result_as_str=True)
         if maybe_error_str:
             raise ParseError(self.root, action, reason=maybe_error_str)
         self.actions.append(action)
         right_chain = self.get_right_chain()
 
         if action.preterminal.is_null():
-            ic("incremental_parser: uncontracting non-root node")
-            old_nt = right_chain[action.depth].nonterminal
-            right_chain[action.depth]._nonterminal = f"{action.parent.label}>{old_nt}"
-            mark_frozen(right_chain[action.depth], children_only=True)
+            old_node = right_chain[action.depth]
+            if self.should_collapse:
+                old_node._nonterminal = f"{action.parent.label}>{old_node.nonterminal}"
+                mark_frozen(old_node, children_only=True)
+            else:
+                # we already checked whether the action was legal
+                new_node = NonterminalNode(action.parent.label, [old_node])
+                # splice in new_node between the parent node of old_node and old_node itself
+                right_chain[action.depth - 1]._children[-1] = new_node
+                mark_frozen(new_node, children_only=True)
             return
 
         leaf = TerminalNode(self.tokens[self.token_index], "x", "x")
@@ -164,8 +173,10 @@ def test_parser():
         ParseAction(parent=None, preterminal="VP", depth=2, parent_span=None, preterminal_span=(5, 6)),
         ParseAction(parent="VP", preterminal="ADVP", depth=3, parent_span=(5, 7), preterminal_span=(6, 7)),
         ParseAction(parent="VP", preterminal="P", depth=2, parent_span=(3, 10), preterminal_span=(7, 8)),
-        ParseAction(parent="PP-ARG>PP-DIR>PP", preterminal="ADVP", depth=3, parent_span=(7, 10), preterminal_span=(8, 9)),
-        ParseAction(parent="NP", preterminal="DP>NP", depth=4, parent_span=(8, 10), preterminal_span=(9, 10))
+        ParseAction(
+            parent="PP-ARG>PP-DIR>PP", preterminal="ADVP", depth=3, parent_span=(7, 10), preterminal_span=(8, 9)
+        ),
+        ParseAction(parent="NP", preterminal="DP>NP", depth=4, parent_span=(8, 10), preterminal_span=(9, 10)),
     ]
     assert all(a == g for (a, g) in zip(correct_collapsed_actions, collapsed_actions))
     # breakpoint()
@@ -195,8 +206,7 @@ def test_parser():
         ParseAction(parent="DP", preterminal=None, depth=5, parent_span=(9, 10), preterminal_span=None),
         ParseAction(parent="PP-DIR", preterminal=None, depth=3, parent_span=(7, 10), preterminal_span=None),
         ParseAction(parent="PP-ARG", preterminal=None, depth=3, parent_span=(7, 10), preterminal_span=None),
-        ParseAction(parent="S0", preterminal=None, depth=1, parent_span=(0, 10), preterminal_span=None)
-
+        ParseAction(parent="S0", preterminal=None, depth=1, parent_span=(0, 10), preterminal_span=None),
     ]
     uncollapsed_actions = get_incremental_parse_actions(sentence.clone(), collapse=False)[0]
     assert all(a == g for (a, g) in zip(correct_uncollapsed_actions, uncollapsed_actions))
@@ -208,7 +218,6 @@ def test_parser():
         (orig.span == repar.span and orig.label == repar.label)
         for (orig, repar) in zip(sentence.labelled_spans()[0], uncollapsed_reparsed.labelled_spans()[0])
     )
-
 
     # def preorderlist(node):
     #     if node.terminal:

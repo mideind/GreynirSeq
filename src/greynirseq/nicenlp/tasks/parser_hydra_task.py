@@ -4,65 +4,62 @@
 
 import logging
 import os
-from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List, Any, Callable, Optional
-import json
 from functools import lru_cache
+from pathlib import Path
+from typing import Any, List, Optional
 
 import numpy as np
 import torch
 from fairseq.data import (
+    BaseWrapperDataset,
     Dictionary,
     IdDataset,
     ListDataset,
     NumelDataset,
     NumSamplesDataset,
-    PrependTokenDataset,
     RightPadDataset,
     SortDataset,
     data_utils,
     encoders,
 )
-from fairseq.tasks import FairseqTask, register_task
 from fairseq.dataclass import FairseqDataclass
-from fairseq.data import (
-    BaseWrapperDataset,
-    Dictionary,
-    LRUCacheDataset,
-    NestedDictionaryDataset,
-    data_utils,
-    RightPadDataset,
-)
-
-from torch.utils.data import Dataset
-from torch.nn.utils.rnn import pad_sequence
+from fairseq.tasks import FairseqTask, register_task
+from icecream import ic
+from omegaconf import II
 from torch import Tensor
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
 
-from omegaconf import MISSING, II
-
+import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.data.datasets import (
-    DynamicLabelledSpanDataset,
     NestedDictionaryDatasetFix,
     NumWordsDataset,
-    WordEndMaskDataset,
     RightPad2dDataset,
+    WordEndMaskDataset,
 )
-from greynirseq.nicenlp.utils.constituency import token_utils
+from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
+    NULL_LABEL,
+    ROOT_LABEL,
+    ParseAction,
+    get_incremental_parse_actions,
+    get_preorder_index_of_right_chain,
+)
 from greynirseq.nicenlp.utils.label_schema.label_schema import label_schema_as_dictionary, parse_label_schema
-import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
-
-from greynirseq.nicenlp.utils.constituency.incremental_parsing import get_incremental_parse_actions, ParseAction, ROOT_LABEL
-
-from icecream import ic
-
 
 logger = logging.getLogger(__name__)
 
 
 class TextEncodingDataset(BaseWrapperDataset):
     # temporary placement
-    def __init__(self, dataset: Dataset, dictionary: Dictionary, bpe: Any, prepend_token: Optional[int] = None, add_prefix_space=True):
+    def __init__(
+        self,
+        dataset: Dataset,
+        dictionary: Dictionary,
+        bpe: Any,
+        prepend_token: Optional[int] = None,
+        add_prefix_space=True,
+    ):
         super().__init__(dataset)
         self.dictionary = dictionary
         self.bpe = bpe
@@ -117,6 +114,7 @@ class GreynirTreeJSONLDataset(BaseWrapperDataset):
     @lru_cache(maxsize=64)
     def __getitem__(self, index: int):
         tree = greynir_utils.Node.from_json(self.dataset[index])
+        tree = tree.split_multiword_tokens()
         tree.wrap_bare_terminals()
         return tree
 
@@ -245,6 +243,40 @@ class GreynirParsingDataset(BaseWrapperDataset):
             "target_preterm_flags": target_preterm_flags,
         }
 
+    def prepare_tree_for_inference(self, tree: Any, collated=False):
+        preorder_list = tree.preorder_list()
+        preorder_nts = torch.tensor(
+            [self.label_dictionary.index(node.label_without_flags) for node in preorder_list], dtype=torch.long
+        )
+        preorder_spans = torch.tensor([node.span for node in preorder_list], dtype=torch.long)
+        padded_flags = pad_sequence(
+            [
+                torch.tensor([self.label_dictionary.index(f) for f in node.label_flags], dtype=torch.long)
+                if node.label_flags
+                else torch.tensor([self.padding_idx], dtype=torch.long)
+                for node in preorder_list
+            ],
+            batch_first=True,
+            padding_value=self.padding_idx,
+        )
+        preorder_mask = torch.ones(len(preorder_list), dtype=torch.bool)
+        chain_mask = torch.zeros(len(preorder_list), dtype=torch.bool)
+        right_chain_indices = get_preorder_index_of_right_chain(tree, include_terminals=False, preserve_indices=True)
+        chain_mask[right_chain_indices] = 1
+        nwords = torch.tensor(len(tree.leaves))
+        ret = {
+            "preorder_nts": preorder_nts,
+            "preorder_spans": preorder_spans,
+            "preorder_flags": padded_flags,
+            "preorder_mask": preorder_mask,
+            "chain_mask": chain_mask,
+            "nwords": nwords,
+        }
+        if collated:
+            for key in ret:
+                ret[key] = ret[key].unsqueeze(0)
+        return ret
+
     @property
     def sizes(self):
         if self._sizes is not None:
@@ -261,7 +293,9 @@ class ParserHydraConfig(FairseqDataclass):
     data: Optional[Any] = field(default=None, metadata={"help": "Data directory, it should also contain dict.txt file"})
     nonterm_schema: Optional[str] = field(default=None, metadata={"help": "Hierarchical label-schema for nonterminals"})
     term_schema: Optional[str] = field(default=None, metadata={"help": "Hierarchical label-schema for terminals"})
-    label_file: Optional[str] = field(default=None, metadata={"help": "Label dictionary file, analogous to fairseqs dict.txt"})
+    label_file: Optional[str] = field(
+        default=None, metadata={"help": "Label dictionary file, analogous to fairseqs dict.txt"}
+    )
     # borrow from top level
     _bpe: Any = II("bpe")
     _dataset: Optional[Any] = II("dataset")
@@ -388,8 +422,8 @@ class ParserHydraTask(FairseqTask):
             bpe=bpe,
             prepend_token=self.source_dictionary.bos(),
         )
-        word_masks_w_bos = WordEndMaskDataset(
-            src_tokens, self.source_dictionary, self.is_word_initial, bos_value=1, eos_value=0
+        word_mask = WordEndMaskDataset(
+            src_tokens, self.source_dictionary, self.is_word_initial, bos_value=0, eos_value=0
         )
 
         with data_utils.numpy_seed(self.cfg._seed):
@@ -399,7 +433,7 @@ class ParserHydraTask(FairseqTask):
             "id": IdDataset(),
             "net_input": {
                 "src_tokens": RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad()),
-                "word_masks_w_bos": RightPadDataset(word_masks_w_bos, pad_idx=0),
+                "word_mask": RightPadDataset(word_mask, pad_idx=0),
                 "preorder_nts": RightPadDataset(
                     _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_nts"]),
                     pad_idx=self.label_dictionary.pad(),
@@ -461,25 +495,22 @@ class ParserHydraTask(FairseqTask):
         return self.datasets[split]
 
     def prepare_sentences(self, sentences: List[str]):
-        tokens = [self.encode(token_utils.tokenize_to_string(sentence)) for sentence in sentences]
-        return self.task.prepare_tokens(tokens)
+        bpe = encoders.build_bpe(self.cfg._bpe)
+        src_tokens = TextEncodingDataset(
+            sentences, self.source_dictionary, bpe=bpe, prepend_token=self.source_dictionary.bos()
+        )
+        return self.prepare_tokens(src_tokens)
 
     def prepare_tokens(self, tokens: torch.Tensor):
         sizes = [len(seq) for seq in tokens]
         src_tokens = ListDataset(tokens, sizes=sizes)
         src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
 
-        word_masks_w_bos = WordEndMaskDataset(
-            src_tokens, self.dictionary, self.is_word_initial, bos_value=1, eos_value=0
-        )
+        word_mask = WordEndMaskDataset(src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0)
 
         dataset = {
             "id": IdDataset(),
-            "net_input": {
-                "src_tokens": src_tokens,
-                "nsrc_tokens": NumelDataset(src_tokens),
-                "word_mask_w_bos": RightPadDataset(word_masks_w_bos, pad_idx=0),
-            },
+            "net_input": {"src_tokens": src_tokens, "word_mask": RightPadDataset(word_mask, pad_idx=0)},
             "ntokens": NumelDataset(src_tokens, reduce=True),
             "nwords": NumWordsDataset(src_tokens, self.dictionary, self.is_word_initial),
             "nsentences": NumSamplesDataset(),
@@ -498,3 +529,31 @@ class ParserHydraTask(FairseqTask):
     @property
     def root_label_index(self):
         return self.label_dictionary.index(ROOT_LABEL)
+
+    def logits_to_actions(self, state: Any) -> ParseAction:
+        parents = [self.label_dictionary.symbols[i] for i in state.parent_logits[-1].argmax(-1)]
+        preterms = [self.label_dictionary.symbols[i] for i in state.preterm_logits[-1].argmax(-1)]
+        depths = state.attention[-1].argmax(-1)
+
+        threshold = 0
+        state.parent_flag_logits[-1][:, self.label_dictionary.pad()] = float("-inf")
+        state.preterm_flag_logits[-1][:, self.label_dictionary.pad()] = float("-inf")
+        for seq_idx in range(len(state.preterm_flag_logits[-1])):
+            if parents[seq_idx] == preterms[seq_idx] == NULL_LABEL:
+                # force preterminal to be non-null
+                preterms[seq_idx] = self.label_dictionary.symbols[
+                    state.preterm_logits[-1][seq_idx].sort(descending=True).indices[1]
+                ]
+            if parents[seq_idx] != NULL_LABEL and state.parent_flag_logits[-1][seq_idx].gt(threshold).any():
+                idxs = state.parent_flag_logits[-1][seq_idx].gt(threshold).nonzero().squeeze(-1)
+                parents[seq_idx] = parents[seq_idx] + "-" + "-".join(self.label_dictionary.string(idxs).split(" "))
+            if preterms[seq_idx] != NULL_LABEL and state.preterm_flag_logits[-1][seq_idx].gt(threshold).any():
+                idxs = state.preterm_flag_logits[-1][seq_idx].gt(threshold).nonzero().squeeze(-1)
+                preterms[seq_idx] = preterms[seq_idx] + "-" + "-".join(self.label_dictionary.string(idxs).split(" "))
+
+        assert not any(NULL_LABEL in parents[idx] and NULL_LABEL in preterms[idx] for idx in range(len(parents)))
+        parse_actions = [
+            ParseAction(parent=par, preterminal=pret, depth=dep)
+            for (par, pret, dep) in zip(parents, preterms, depths.tolist())
+        ]
+        return parse_actions

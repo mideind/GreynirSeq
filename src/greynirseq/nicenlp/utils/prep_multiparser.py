@@ -6,13 +6,13 @@
 
 import json
 import random
-from pathlib import Path
 from collections import Counter
+from pathlib import Path
 
 import click
 
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
-from greynirseq.nicenlp.utils.constituency.incremental_parsing import ROOT_LABEL, NULL_LABEL
+from greynirseq.nicenlp.utils.constituency.incremental_parsing import NULL_LABEL, ROOT_LABEL
 
 
 @click.group()
@@ -27,16 +27,10 @@ def main():
 @click.option("--ignore-errors", default=False, is_flag=True)
 @click.option("--error-log", type=click.File("w"))
 @click.option("--limit", default=-1, type=int)
-@click.option("--label-file", type=click.File("w"), required=True, help="Label dictionary file, analogous to fairseqs dict.txt")
-def export_greynir(
-    input_file,
-    output_file,
-    seed,
-    ignore_errors,
-    error_log,
-    limit,
-    label_file,
-):
+@click.option(
+    "--label-file", type=click.File("w"), required=True, help="Label dictionary file, analogous to fairseqs dict.txt"
+)
+def export_greynir(input_file, output_file, seed, ignore_errors, error_log, limit, label_file):
     print(f"Extracting data from {input_file.name} to: {Path(output_file.name)}")
     random.seed(seed)
 
@@ -64,7 +58,7 @@ def export_greynir(
 
         output_file.write(tree.to_json())
         output_file.write("\n")
-    for label, freq in label_dict.most_common(2**100):
+    for label, freq in label_dict.most_common(2 ** 100):
         label_file.write(f"{label} {freq}\n")
     if ignore_errors:
         print(f"Skipped {num_skipped}/{_tree_idx + 1} trees ({round(100 * num_skipped/(_tree_idx + 1), 3)}%)")
@@ -72,9 +66,7 @@ def export_greynir(
 
 @main.command()
 @click.argument("input_file", type=click.File("r"))
-def parse_greynir(
-    input_file,
-):
+def parse_greynir(input_file,):
     for line in input_file:
         tree = greynir_utils.Node.from_json(line)
         tree.pretty_print()
@@ -121,7 +113,7 @@ def merge_dicts(input_dictionaries, output):
             cntr[label] += int(freq)
     if not cntr:
         return
-    for label, freq in cntr.most_common(2**100):
+    for label, freq in cntr.most_common(2 ** 100):
         output.write(f"{label} {freq}\n")
 
 

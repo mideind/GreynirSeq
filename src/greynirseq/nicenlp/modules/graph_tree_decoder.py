@@ -3,48 +3,32 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 from argparse import Namespace
-from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Dict, Any, NamedTuple, Union, Optional, Tuple
-
-from omegaconf import II
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple, Union
 
 import torch
-from torch import Tensor
-from torch import nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
-
 from fairseq import utils
 from fairseq.data.data_utils import lengths_to_padding_mask
-from fairseq.modules.transformer_sentence_encoder import TransformerSentenceEncoderLayer
-from fairseq.modules import LearnedPositionalEmbedding, PositionalEmbedding, FairseqDropout, LayerNorm
 from fairseq.dataclass import FairseqDataclass
 from fairseq.models.roberta.model import roberta_base_architecture
+from fairseq.modules import FairseqDropout, LayerNorm, LearnedPositionalEmbedding, PositionalEmbedding
+from fairseq.modules.transformer_sentence_encoder import TransformerSentenceEncoderLayer
+from omegaconf import II
+from torch import Tensor, nn
+from torch.nn.utils.rnn import pad_sequence
 
-from greynirseq.nicenlp.utils.constituency.greynir_utils import NonterminalNode, TerminalNode, Node
-from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
-    NULL_LABEL,
-    ROOT_LABEL,
-    ParseAction,
-    get_incremental_parse_actions,
-    get_right_chain,
-    parse_by_actions,
-    get_preorder_index_of_right_chain,
-)
-from greynirseq.nicenlp.utils.constituency.scratch_incremental import IncrementalParser
-from greynirseq.nicenlp.models.simple_parser import ChartParserHead
 from greynirseq.nicenlp.criterions.incremental_parser import (
     IncrementalParserCriterion,
     IncrementalParserCriterionConfig,
 )
 from greynirseq.nicenlp.data.datasets import collate_2d
-
-from icecream import ic
-
+from greynirseq.nicenlp.utils.constituency.greynir_utils import NonterminalNode, TerminalNode
+from greynirseq.nicenlp.utils.constituency.incremental_parsing import NULL_LABEL, ROOT_LABEL
+from greynirseq.nicenlp.utils.constituency.scratch_incremental import IncrementalParser
 
 PADDING_VALUE_FOR_NON_INDEX = -100
 NULL_SPAN = (PADDING_VALUE_FOR_NON_INDEX, PADDING_VALUE_FOR_NON_INDEX)
-TensorListOrTensor = Union[List[Tensor], Tensor]
 _roberta_base_args = Namespace()
 roberta_base_architecture(_roberta_base_args)
 
@@ -53,15 +37,11 @@ roberta_base_architecture(_roberta_base_args)
 class ConstituencyParserOutput:
     """Simple container for incremental outputs of constituency part of GraphTreeDecoder"""
 
-    # simple container for incremental outputs
-    parent_logits: TensorListOrTensor
-    preterm_logits: TensorListOrTensor
-    parent_flag_logits: TensorListOrTensor
-    preterm_flag_logits: TensorListOrTensor
-    attention: TensorListOrTensor
-
-
-# GraphDecoderOutput = NamedTuple("GraphDecoderOutput", [("constituency", ConstituencyParserOutput)])
+    parent_logits: Union[List[Tensor], Tensor]
+    preterm_logits: Union[List[Tensor], Tensor]
+    parent_flag_logits: Union[List[Tensor], Tensor]
+    preterm_flag_logits: Union[List[Tensor], Tensor]
+    attention: Union[List[Tensor], Tensor]
 
 
 @dataclass
@@ -93,6 +73,12 @@ class TreeGraphDecoderConfig(FairseqDataclass):
     mlp_attn_is_sigmoid: bool = field(default=True, metadata={"help": ""})
     freeze_position_embeddings: bool = field(default=True)
     num_recursions: int = field(default=0)
+    shared_embeddings: bool = field(default=True)
+    chain_classifiers: bool = field(default=False)
+    use_word_position: bool = field(default=False)
+    add_attention_outputs: bool = field(
+        default=True, metadata={"help": "Add the output from MLPAttention or concatenate it"}
+    )
 
 
 # @dataclass
@@ -123,6 +109,7 @@ class TreeGraphDecoder(nn.Module):
         padding_idx: int = 1,
         num_labels: int = -1,
         root_label_index: int = -1,
+        project_input_from: Optional[int] = None,
     ):
         # XXX: dropout is missing
         super().__init__()
@@ -131,25 +118,26 @@ class TreeGraphDecoder(nn.Module):
         assert root_label_index > 0
         self.embed_dim = cfg._embedding_dim
         self.num_labels = num_labels
-        self.embed_positions = embed_positions
         self.padding_idx = padding_idx
         self.root_label_index = root_label_index
         assert cfg.learned_pos, "Currently unsupported"
-        if embed_positions is None:
-            self.embed_positions = PositionalEmbedding(
-                num_embeddings=cfg.max_positions,
-                embedding_dim=self.embed_dim,
-                padding_idx=padding_idx,
-                learned=cfg.learned_pos,
-            )
+        self.embed_positions = PositionalEmbedding(
+            num_embeddings=cfg.max_positions,
+            embedding_dim=project_input_from or self.embed_dim,
+            padding_idx=padding_idx,
+            learned=cfg.learned_pos,
+        )
 
         # XXX: these are nonterminal labels, as well as attribute labels
         self.embed_labels = nn.Embedding(self.num_labels, self.embed_dim, self.padding_idx)
 
+        self.input_projection = None
+        if project_input_from is not None and project_input_from != self.embed_dim:
+            self.input_projection = nn.Linear(project_input_from, self.embed_dim, bias=False)
+
         self.layers = nn.ModuleList(
             [
                 TransformerSentenceEncoderLayer(**cfg.transformer)
-                # TransformerEncoderLayer(cfg.transformer)  # requires changing self_attn_padding_mask to attn_mask in forward_nodes
                 for _ in range(cfg.layers)
             ]
         )
@@ -161,18 +149,36 @@ class TreeGraphDecoder(nn.Module):
 
         # XXX: should the output heads be here or on the wrapping model?
         # XXX: the out-projection should be shared with the input label embedding matrix of the decoder!
+        classifier_input_dim = self.embed_dim if self.cfg.add_attention_outputs else 2 * self.embed_dim
         self.classification_heads = nn.ModuleDict()
-        self.classification_heads["constit_parent"] = ScaffoldHead(
-            self.embed_dim, self.num_labels, self.cfg.dropout, out_projection=self.embed_labels.weight
-        )
+        out_projection = self.embed_labels.weight if cfg.shared_embeddings else None
         self.classification_heads["constit_preterm"] = ScaffoldHead(
-            self.embed_dim, self.num_labels, self.cfg.dropout, out_projection=self.embed_labels.weight
+            classifier_input_dim,
+            self.num_labels,
+            self.cfg.dropout,
+            out_projection=out_projection,
+            inner_dim=self.embed_dim,
+        )
+        self.classification_heads["constit_parent"] = ScaffoldHead(
+            classifier_input_dim,
+            self.num_labels,
+            self.cfg.dropout,
+            out_projection=out_projection,
+            inner_dim=self.embed_dim,
         )
         self.classification_heads["constit_parent_flags"] = ScaffoldHead(
-            self.embed_dim, self.num_labels, self.cfg.dropout, out_projection=self.embed_labels.weight
+            classifier_input_dim,
+            self.num_labels,
+            self.cfg.dropout,
+            out_projection=out_projection,
+            inner_dim=self.embed_dim,
         )
         self.classification_heads["constit_preterm_flags"] = ScaffoldHead(
-            self.embed_dim, self.num_labels, self.cfg.dropout, out_projection=self.embed_labels.weight
+            classifier_input_dim,
+            self.num_labels,
+            self.cfg.dropout,
+            out_projection=out_projection,
+            inner_dim=self.embed_dim,
         )
         self.mlp_attention = SingleVectorMLPAttention(
             2 * self.embed_dim, self.embed_dim // 4, self.cfg.dropout, use_sigmoid=cfg.mlp_attn_is_sigmoid
@@ -215,7 +221,26 @@ class TreeGraphDecoder(nn.Module):
                 self.embed_positions.sparse,
             )
         ) / 2
+        if self.input_projection is not None:
+            return self.input_projection(span_embs)
         return span_embs
+
+    def embed_word_positions(self, nwords) -> Tensor:
+        bsz, = nwords.shape
+        start = self.padding_idx + 1
+        positions = torch.arange(start, start + nwords.max()).to(nwords.device)
+        pos_emb = F.embedding(
+            positions,
+            self.embed_positions.weight,
+            self.embed_positions.padding_idx,
+            self.embed_positions.max_norm,
+            self.embed_positions.norm_type,
+            self.embed_positions.scale_grad_by_freq,
+            self.embed_positions.sparse,
+        )
+        if self.input_projection is not None:
+            pos_emb = self.input_projection(pos_emb)
+        return pos_emb.tile(bsz, 1, 1)
 
     def forward_nodes(self, x: Tensor, self_attn_padding_mask: Tensor) -> Tensor:
         if self.layernorm_embedding:
@@ -224,7 +249,8 @@ class TreeGraphDecoder(nn.Module):
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
-        for _recursive_iterations in range(self.cfg.num_recursions):
+        niterations = self.cfg.num_recursions or 1
+        for _recursive_iterations in range(niterations):
             for _idx, layer in enumerate(self.layers):
                 x, _layer_attn = layer(x, self_attn_padding_mask=self_attn_padding_mask, self_attn_mask=None)
 
@@ -252,19 +278,22 @@ class TreeGraphDecoder(nn.Module):
             nwords: bsz x nsteps
             preorder_flags: bsz x nodes x flags
         """
+        if self.input_projection is not None:
+            encoder_out = self.input_projection(encoder_out)
         assert nwords.gt(0).all(), "Empty sequences in decoder results in nans during training"
         # bsz x nsteps x nodes ->  nsteps x bsz x nodes
         bsz, _num_nodes = preorder_mask.shape
-        emb_preorder_nts = self.embed_labels(preorder_nts)
+        preorder_embs = self.embed_labels(preorder_nts)
         # bsz x nodes x flags  ->  bsz x nodes x flags x features  ->  bsz x nodes x features
-        emb_preorder_nts += self.embed_labels(preorder_flags).sum(dim=-2)
-
+        preorder_embs += self.embed_labels(preorder_flags).sum(dim=-2)
         # simple container for incremental outputs
         max_span = nwords - 1  # newest word is not actually in the incremental tree yet, so subtract 1
+        preorder_embs = preorder_embs + self.embed_spans(preorder_spans, end_thresholds=max_span)
+        preorder_embs *= preorder_mask.unsqueeze(-1)
+
         root_spans = torch.stack([nwords.new_zeros(bsz), max_span], dim=1)
         # root_spans: B x 2  ->  B x 1 x 2  ->  B x 1 x C
         root_span_emb = self.embed_spans(root_spans.unsqueeze(1), end_thresholds=max_span)
-
         # root_emb: 0  ->  C  ->  B x 1 x C
         root_emb = self.embed_labels(root_spans.new_tensor(1).fill_(self.root_label_index)).tile((bsz, 1, 1))
         root_emb = root_emb + root_span_emb
@@ -272,30 +301,36 @@ class TreeGraphDecoder(nn.Module):
         word_mask = lengths_to_padding_mask(nwords).logical_not()
         word_embs = encoder_out[:, : nwords.max(), :][word_mask]
         word_embs = pad_sequence(word_embs.split(word_mask.sum(-1).tolist()), batch_first=True, padding_value=0)
-        preorder_embs = emb_preorder_nts + self.embed_spans(preorder_spans, end_thresholds=max_span)
-        preorder_embs *= preorder_mask.unsqueeze(-1)
-        # sequences that are finished have 0 words this step
+        if self.cfg.use_word_position:
+            word_embs = word_embs + self.embed_word_positions(nwords)
         root_mask = preorder_mask.new_ones(bsz).unsqueeze(-1)
         input_mask = torch.cat([word_mask, root_mask, preorder_mask], dim=1)
         input_embs = torch.cat([word_embs, root_emb, preorder_embs], dim=1) * input_mask.unsqueeze(-1)
 
         # x shape: bsz x (nodes+1) x features  # we add one for root
-        x = self.forward_nodes(input_embs, self_attn_padding_mask=input_mask.logical_not()) #  * input_mask.unsqueeze(-1)
+        x = self.forward_nodes(
+            input_embs, self_attn_padding_mask=input_mask.logical_not()
+        )
+        #  * input_mask.unsqueeze(-1)
         assert not x.isnan().any()
 
         # chain_nodes x features
         output_chain_mask = torch.cat([torch.zeros_like(word_mask), root_mask, chain_mask], dim=1)
         right_chain_outputs = x[output_chain_mask].split(output_chain_mask.sum(dim=-1).tolist())
         # bsz x maxchainlen x features
-        right_chain_outputs = pad_sequence(right_chain_outputs, batch_first=True, padding_value=0)  # XXX: this is probably not needed since we extract them with mask anyway?
-
+        right_chain_outputs = pad_sequence(right_chain_outputs, batch_first=True, padding_value=0)
         # bsz x features  ->  bsz x 1 x features
         attending_words = x[torch.arange(bsz), nwords - 1, :].unsqueeze(1)
-
-        attn_output_features, attn = self.mlp_attention(right_chain_outputs, attending_words)
+        attn_padding_mask = lengths_to_padding_mask(output_chain_mask.sum(-1))
+        attn_output_features, attn = self.mlp_attention(
+            right_chain_outputs, attending_words, attn_padding_mask=attn_padding_mask
+        )
         assert attending_words.shape == attn_output_features.shape
-        # merge attention output and newest word, this should eithger be an add or cat
-        clsf_features = attending_words + attn_output_features
+
+        if self.cfg.add_attention_outputs:
+            clsf_features = attending_words + attn_output_features
+        else:
+            clsf_features = torch.cat([attending_words, attn_output_features], dim=-1)
 
         # pp [(v.isnan().any().item(),k) for k,v in locals().items() if hasattr(v, "isnan")]
         # bsz x 1 x features  ->  bsz x features
@@ -352,31 +387,39 @@ class TreeGraphDecoder(nn.Module):
 
 
 class ScaffoldHead(nn.Module):
-    def __init__(self, input_dim, output_dim, dropout, out_projection: Optional[Tensor] = None):
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        dropout,
+        inner_dim: Optional[Tensor] = None,
+        out_projection: Optional[Tensor] = None,
+        bias=False,
+    ):
         super().__init__()
         self.input_dim = input_dim
-        self.inner_dim = input_dim
+        self.inner_dim = input_dim if inner_dim is None else inner_dim
         self.output_dim = output_dim
 
         self.dropout = nn.Dropout(p=dropout)
-        self.layer_norm = LayerNorm(self.inner_dim)
+        self.layer_norm = LayerNorm(self.input_dim)
         self.activation_fn = utils.get_activation_fn("relu")
 
-        self.dense = nn.Linear(self.input_dim, self.inner_dim)
-        self.dense2 = nn.Linear(self.inner_dim, self.inner_dim)
-        self.out_projection = nn.Linear(self.inner_dim, self.output_dim, bias=False)
+        self.dense = nn.Linear(self.input_dim, self.input_dim)
+        self.dense2 = nn.Linear(self.input_dim, self.inner_dim)
+        # NOTE: the linear part may be shared but not the bias is separate
+        self.out_projection = nn.Linear(self.inner_dim, self.output_dim, bias=True)
         if out_projection is not None:
             self.out_projection.weight = out_projection
 
     def forward(self, x, **kwargs) -> Tensor:
         x = self.dropout(x)
         x = self.dense(x)
-        x = self.layer_norm(x)
         x = self.activation_fn(x)
+        x = self.layer_norm(x)
         x = self.dense2(x)
         x = self.activation_fn(x)
-        logits = self.out_projection(x)
-        return logits
+        return self.out_projection(x)
 
 
 class SingleVectorMLPAttention(nn.Module):
@@ -397,7 +440,7 @@ class SingleVectorMLPAttention(nn.Module):
         self.dense2 = nn.Linear(self.inner_dim, self.inner_dim)
         self.out_projection = nn.Linear(self.inner_dim, 1, bias=False)
 
-    def forward(self, right_chain_nodes, newest_word) -> Tuple[Tensor, Tensor]:
+    def forward(self, right_chain_nodes, newest_word, attn_padding_mask) -> Tuple[Tensor, Tensor]:
         """The vector v[i] attends to each vector in right_chain_nodes[i, :] (in batched manner)
 
            newest_word:       v has shape (Batch,    1, Features)
@@ -409,7 +452,6 @@ class SingleVectorMLPAttention(nn.Module):
         tiled_newest_word = torch.tile(newest_word, dims=(1, right_chain_len, 1))
         # concatenate along feature dimension
         x = torch.cat([right_chain_nodes, tiled_newest_word], dim=-1)
-        # ic(right_chain_nodes.shape, newest_word.shape, tiled_newest_word.shape, x.shape)
 
         x = self.dropout(x)
         x = self.dense(x)
@@ -419,14 +461,15 @@ class SingleVectorMLPAttention(nn.Module):
         x = self.activation_fn(x)
         # attn: B x T x 1
         attn = self.out_projection(x)
-        # ic(attn.shape)
+        attn[attn_padding_mask] = float("-inf")
 
         # add the contribution of each node in the right-chain to the output, weighted by its attention
         # (B x T x C) * (B x T x 1)
+        # NOTE: this does not use a Value matrix like regular attention, maybe we should try it
         if self.use_sigmoid:
-            output_features = (right_chain_nodes * attn.sigmoid()).sum(dim=1)
+            output_features = (right_chain_nodes * attn.sigmoid()).mean(dim=1)
         else:
-            output_features = (right_chain_nodes * attn.softmax(dim=1)).sum(dim=1)
+            output_features = (right_chain_nodes * attn.softmax(dim=1)).mean(dim=1)
 
         # B x C  ->  B x 1 x C
         return output_features.unsqueeze(dim=1), attn
@@ -720,8 +763,8 @@ def test_forward():
             padded_chain_step.append(act_chain)
         padded_input_masks.append(pad_sequence(padded_inputs_step, batch_first=True, padding_value=0))
         padded_chain_masks.append(pad_sequence(padded_chain_step, batch_first=True, padding_value=0))
-    padded_input_masks = pad_sequence(padded_input_masks, batch_first=True, padding_value=0).transpose(0, 1)  # T x B x L -> B x T x L
-    padded_chain_masks = pad_sequence(padded_chain_masks, batch_first=True, padding_value=0).transpose(0, 1)  # T x B x L -> B x T x L
+    padded_input_masks = pad_sequence(padded_input_masks, batch_first=True, padding_value=0).transpose(0, 1)
+    padded_chain_masks = pad_sequence(padded_chain_masks, batch_first=True, padding_value=0).transpose(0, 1)
 
     ic([t.long() for t in padded_input_masks])
     ic([t.long() for t in padded_chain_masks])
@@ -785,6 +828,7 @@ def test_forward():
     }
 
     from omegaconf import OmegaConf
+
     cfg = OmegaConf.create()
     cfg.model = OmegaConf.create()
     cfg.model.graph_decoder = OmegaConf.create()

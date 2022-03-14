@@ -3,24 +3,16 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
-from typing import List, Any, Dict, Optional
-from dataclasses import dataclass, field, asdict
-
-from omegaconf import II
+from dataclasses import dataclass, field
+from typing import Any, List
 
 import torch
-from fairseq import utils
-from fairseq.models import register_model, register_model_architecture
-from fairseq.models.roberta.hub_interface import RobertaHubInterface
-from fairseq.models.roberta.model import RobertaModel, roberta_base_architecture
-from fairseq.modules import LayerNorm
-from fairseq.utils import safe_hasattr, safe_getattr
-from fairseq.models.roberta.model import roberta_base_architecture
-
-from torch import nn, Tensor
-from torch.nn.utils.rnn import pad_sequence
-
 from fairseq.dataclass import FairseqDataclass
+from fairseq.models import register_model
+from fairseq.models.roberta.model import RobertaModel, roberta_base_architecture
+from fairseq.utils import safe_hasattr
+from torch import Tensor, nn
+from torch.nn.utils.rnn import pad_sequence
 
 from greynirseq.nicenlp.modules.graph_tree_decoder import TreeGraphDecoder, TreeGraphDecoderConfig
 
@@ -88,7 +80,9 @@ class GraphTreeParserModel(RobertaModel):
                     continue
                 state_dict[new_key] = value
             # inherit position encoding from bert model into decoder
-            state_dict["graph_decoder.embed_positions.weight"] = state_dict["encoder.sentence_encoder.embed_positions.weight"]
+            state_dict["graph_decoder.embed_positions.weight"] = state_dict[
+                "encoder.sentence_encoder.embed_positions.weight"
+            ]
 
         return super().upgrade_state_dict_named(state_dict, name)
 
@@ -115,11 +109,9 @@ class GraphTreeParserModel(RobertaModel):
             cfg.graph_decoder,
             root_label_index=task.root_label_index,
             padding_idx=task.label_dictionary.pad(),
-            embed_positions=encoder.sentence_encoder.embed_positions,
             num_labels=task.num_labels,
+            project_input_from=encoder.args.encoder_embed_dim,
         )
-        decoder.embed_spans(torch.arange(24).reshape(3,4,2))
-
         return cls(cfg, encoder, decoder, task)
 
     def forward(
@@ -131,19 +123,24 @@ class GraphTreeParserModel(RobertaModel):
         preorder_spans: Tensor,
         nwords_per_step: Tensor,
         preorder_flags: Tensor,
-        **kwargs
+        word_mask: Tensor,
+        **kwargs,
     ):
         """
             preorder_nts: bsz x nodes
             preorder_mask: nsteps x bsz x nodes
             chain_mask: nsteps x bsz x num_nodes
             preorder_spans: bsz x num_nodes x 2
-            nwords_per_step: nwords x bsz
+            nwords_per_step: bsz x nsteps
             preorder_flags: bsz x nodes x flags
+            word_mask_w_bos: bsz x ntokens
         """
         encoder_out, _extra = self.encoder(src_tokens, features_only=True, return_all_hiddens=False, **kwargs)
+        _, _, enc_embed_dim = encoder_out.shape
+        words = encoder_out.masked_select(word_mask.unsqueeze(-1).bool()).reshape(-1, enc_embed_dim)
+        words_padded = pad_sequence(words.split(word_mask.sum(dim=-1).tolist()), padding_value=0, batch_first=True)
         decoder_out = self.graph_decoder(
-            encoder_out=encoder_out,
+            encoder_out=words_padded,
             preorder_nts=preorder_nts,
             preorder_mask=preorder_mask,
             chain_mask=chain_mask,
@@ -155,12 +152,7 @@ class GraphTreeParserModel(RobertaModel):
 
     @classmethod
     def from_pretrained(
-        cls,
-        model_name_or_path,
-        checkpoint_file="model.pt",
-        data_name_or_path=".",
-        bpe="gpt2",
-        **kwargs,
+        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs
     ):
         from fairseq import hub_utils
 
@@ -183,10 +175,18 @@ class GraphTreeParserHubInterface(nn.Module):
         self.task = task
         self.model = model
 
-        # self.bpe = encoders.build_bpe(cfg.bpe)
+        from fairseq.data import encoders
+
+        self.bpe = encoders.build_bpe(cfg.bpe)
+
+        # this is useful for determining the device
+        self.register_buffer("_float_tensor", torch.tensor([0], dtype=torch.float))
+
     def predict_sample(self, sample):
         ...
+
     def predict(self, sentences, device="cuda"):
         ...
+
     def prepare_sentences(self, sentences: List[str]):
-        ...
+        return self.task.prepare_sentences(sentences)

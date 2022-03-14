@@ -1,20 +1,15 @@
-from dataclasses import dataclass, field
 import math
-from typing import Dict, Any
+from dataclasses import dataclass, field
+from typing import Any, Dict
 
 import torch
 import torch.nn.functional as F
-
 from fairseq import metrics, utils
+from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.data.data_utils import lengths_to_padding_mask
+from fairseq.dataclass import FairseqDataclass
 from fairseq.models import FairseqModel
 from fairseq.tasks import FairseqTask
-from fairseq.criterions import FairseqCriterion, register_criterion
-from fairseq.dataclass import FairseqDataclass
-from fairseq.data.data_utils import lengths_to_padding_mask
-from torch.nn.utils.rnn import pad_sequence
-
-from icecream import ic
-
 
 IGNORE_INDEX = -100
 NEGLIGIBLE_LOGIT_VALUE = -100
@@ -46,27 +41,46 @@ class IncrementalParserCriterion(FairseqCriterion):
         parent_mask = sample["target_parents"].not_equal(padding_idx)
         preterm_mask = sample["target_preterminals"].not_equal(padding_idx)
 
-        # after transposition, targets are ordered by step first, then batch ie [targets for step1, targets for step2, ..., targets for stepk]
-        # nb that not all sequences in batch are of equal length
+        # targets are ordered by step first,then batch
+        #   Eg. [targets for step1, targets for step2, ..., targets for stepk]
+        # NB that not all sequences in batch are of equal length
         # XXX: add class weights
         flat_tgt_preterms = sample["target_preterminals"].T[preterm_mask.T]
-        preterm_loss = F.cross_entropy(constit_output.preterm_logits, flat_tgt_preterms, reduction="sum" if reduce else "none")
+        preterm_loss = F.cross_entropy(
+            constit_output.preterm_logits, flat_tgt_preterms, reduction="sum" if reduce else "none"
+        )
         flat_tgt_parents = sample["target_parents"].T[parent_mask.T]
-        parent_loss = F.cross_entropy(constit_output.parent_logits, flat_tgt_parents, reduction="sum" if reduce else "none")
+        parent_loss = F.cross_entropy(
+            constit_output.parent_logits, flat_tgt_parents, reduction="sum" if reduce else "none"
+        )
 
         _, nclasses = constit_output.preterm_flag_logits.shape
         class_weights = constit_output.preterm_flag_logits.new_ones(nclasses)
         class_weights[padding_idx] = 0
 
-        # after transposition, targets are ordered by step first, then batch ie [targets for step1, targets for step2, ..., targets for stepk]
-        # nb that not all sequences in batch are of equal length
         sparse_flat_tgt_parent_flags = sample["target_parent_flags"].transpose(0, 1)[parent_mask.T]
-        dense_flat_tgt_parent_flags = torch.zeros_like(constit_output.parent_flag_logits.squeeze(1)).scatter_(-1, sparse_flat_tgt_parent_flags, 1)
-        parent_flag_loss = F.binary_cross_entropy_with_logits(constit_output.parent_flag_logits, dense_flat_tgt_parent_flags, weight=class_weights, reduction="sum" if reduce else "none", pos_weight=None)
+        dense_flat_tgt_parent_flags = torch.zeros_like(constit_output.parent_flag_logits.squeeze(1)).scatter_(
+            -1, sparse_flat_tgt_parent_flags, 1
+        )
+        parent_flag_loss = F.binary_cross_entropy_with_logits(
+            constit_output.parent_flag_logits,
+            dense_flat_tgt_parent_flags,
+            weight=class_weights,
+            reduction="sum" if reduce else "none",
+            pos_weight=None,
+        )
 
         sparse_flat_tgt_preterm_flags = sample["target_preterm_flags"].transpose(0, 1)[preterm_mask.T]
-        dense_flat_tgt_preterm_flags = torch.zeros_like(constit_output.preterm_flag_logits.squeeze(1)).scatter_(-1, sparse_flat_tgt_preterm_flags, 1)
-        preterm_flag_loss = F.binary_cross_entropy_with_logits(constit_output.preterm_flag_logits, dense_flat_tgt_preterm_flags, weight=class_weights, reduction="sum" if reduce else "none", pos_weight=None)
+        dense_flat_tgt_preterm_flags = torch.zeros_like(constit_output.preterm_flag_logits.squeeze(1)).scatter_(
+            -1, sparse_flat_tgt_preterm_flags, 1
+        )
+        preterm_flag_loss = F.binary_cross_entropy_with_logits(
+            constit_output.preterm_flag_logits,
+            dense_flat_tgt_preterm_flags,
+            weight=class_weights,
+            reduction="sum" if reduce else "none",
+            pos_weight=None,
+        )
 
         attachment_losses = []
         num_attachments = 0
@@ -85,8 +99,9 @@ class IncrementalParserCriterion(FairseqCriterion):
                     # there is only one attendable vector per seq, no need to do anything
                     continue
 
-                # while not zero, padding now has negligible effect on loss, we need to do it this way since cross_entropy assumes
-                # all sequences have the same number of "classes" (which is equal to input length)
+                # while not zero, padding now has negligible effect on loss, we need to do it this way
+                # since cross_entropy assumes all sequences have the same number of "classes"
+                # (which is equal to input length)
                 is_alive = nwords_per_step[step] > 0
                 attn_padding = lengths_to_padding_mask(chain_mask[step, is_alive].sum(-1))
                 attn_ = attn.clone()
