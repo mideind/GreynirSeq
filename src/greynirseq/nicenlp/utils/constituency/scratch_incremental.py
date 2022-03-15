@@ -179,7 +179,6 @@ def test_parser():
         ParseAction(parent="NP", preterminal="DP>NP", depth=4, parent_span=(8, 10), preterminal_span=(9, 10)),
     ]
     assert all(a == g for (a, g) in zip(correct_collapsed_actions, collapsed_actions))
-    # breakpoint()
 
     parser = IncrementalParser(tokens=ic(tokens))
     parser.add_many(collapsed_actions)

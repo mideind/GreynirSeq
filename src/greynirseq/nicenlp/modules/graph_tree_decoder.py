@@ -76,6 +76,8 @@ class TreeGraphDecoderConfig(FairseqDataclass):
     shared_embeddings: bool = field(default=True)
     chain_classifiers: bool = field(default=False)
     use_word_position: bool = field(default=False)
+    separate_word_position_embedding: bool = field(default=False)
+    use_depth_embedding: bool = field(default=False)
     add_attention_outputs: bool = field(
         default=True, metadata={"help": "Add the output from MLPAttention or concatenate it"}
     )
@@ -131,24 +133,34 @@ class TreeGraphDecoder(nn.Module):
         # XXX: these are nonterminal labels, as well as attribute labels
         self.embed_labels = nn.Embedding(self.num_labels, self.embed_dim, self.padding_idx)
 
+        self.embed_depth = None
+        if self.cfg.use_depth_embedding:
+            self.embed_depth = PositionalEmbedding(
+                num_embeddings=cfg.max_positions,
+                embedding_dim=self.embed_dim,
+                padding_idx=None,
+                learned=cfg.learned_pos,
+            )
+        self.embed_word_positions = None
+        if self.cfg.separate_word_position_embedding:
+            self.embed_word_positions = PositionalEmbedding(
+                num_embeddings=cfg.max_positions,
+                embedding_dim=project_input_from or self.embed_dim,
+                padding_idx=padding_idx,
+                learned=cfg.learned_pos,
+            )
+
         self.input_projection = None
         if project_input_from is not None and project_input_from != self.embed_dim:
             self.input_projection = nn.Linear(project_input_from, self.embed_dim, bias=False)
 
-        self.layers = nn.ModuleList(
-            [
-                TransformerSentenceEncoderLayer(**cfg.transformer)
-                for _ in range(cfg.layers)
-            ]
-        )
+        self.layers = nn.ModuleList([TransformerSentenceEncoderLayer(**cfg.transformer) for _ in range(cfg.layers)])
         self.dropout_module = FairseqDropout(cfg.dropout, module_name=self.__class__.__name__)
         self.layernorm_embedding = None
         if self.cfg.layernorm_embedding:
             self.layernorm_embedding = LayerNorm(self.embed_dim)
         self.layer_norm = LayerNorm(self.embed_dim)
 
-        # XXX: should the output heads be here or on the wrapping model?
-        # XXX: the out-projection should be shared with the input label embedding matrix of the decoder!
         classifier_input_dim = self.embed_dim if self.cfg.add_attention_outputs else 2 * self.embed_dim
         self.classification_heads = nn.ModuleDict()
         out_projection = self.embed_labels.weight if cfg.shared_embeddings else None
@@ -225,18 +237,19 @@ class TreeGraphDecoder(nn.Module):
             return self.input_projection(span_embs)
         return span_embs
 
-    def embed_word_positions(self, nwords) -> Tensor:
+    def compute_word_position_embeddings(self, nwords) -> Tensor:
         bsz, = nwords.shape
         start = self.padding_idx + 1
         positions = torch.arange(start, start + nwords.max()).to(nwords.device)
+        embedder = self.embed_word_positions if self.embed_word_positions is not None else self.embed_positions
         pos_emb = F.embedding(
             positions,
-            self.embed_positions.weight,
-            self.embed_positions.padding_idx,
-            self.embed_positions.max_norm,
-            self.embed_positions.norm_type,
-            self.embed_positions.scale_grad_by_freq,
-            self.embed_positions.sparse,
+            embedder.weight,
+            embedder.padding_idx,
+            embedder.max_norm,
+            embedder.norm_type,
+            embedder.scale_grad_by_freq,
+            embedder.sparse,
         )
         if self.input_projection is not None:
             pos_emb = self.input_projection(pos_emb)
@@ -267,6 +280,7 @@ class TreeGraphDecoder(nn.Module):
         preorder_spans: Tensor,
         nwords: Tensor,
         preorder_flags: Tensor,
+        preorder_depths: Tensor,
         state: ConstituencyParserOutput,
         **kwargs,
     ) -> ConstituencyParserOutput:
@@ -289,6 +303,8 @@ class TreeGraphDecoder(nn.Module):
         # simple container for incremental outputs
         max_span = nwords - 1  # newest word is not actually in the incremental tree yet, so subtract 1
         preorder_embs = preorder_embs + self.embed_spans(preorder_spans, end_thresholds=max_span)
+        if self.embed_depth is not None:
+            preorder_embs += self.embed_depth(None, positions=preorder_depths)
         preorder_embs *= preorder_mask.unsqueeze(-1)
 
         root_spans = torch.stack([nwords.new_zeros(bsz), max_span], dim=1)
@@ -302,15 +318,13 @@ class TreeGraphDecoder(nn.Module):
         word_embs = encoder_out[:, : nwords.max(), :][word_mask]
         word_embs = pad_sequence(word_embs.split(word_mask.sum(-1).tolist()), batch_first=True, padding_value=0)
         if self.cfg.use_word_position:
-            word_embs = word_embs + self.embed_word_positions(nwords)
+            word_embs = word_embs + self.compute_word_position_embeddings(nwords)
         root_mask = preorder_mask.new_ones(bsz).unsqueeze(-1)
         input_mask = torch.cat([word_mask, root_mask, preorder_mask], dim=1)
         input_embs = torch.cat([word_embs, root_emb, preorder_embs], dim=1) * input_mask.unsqueeze(-1)
 
         # x shape: bsz x (nodes+1) x features  # we add one for root
-        x = self.forward_nodes(
-            input_embs, self_attn_padding_mask=input_mask.logical_not()
-        )
+        x = self.forward_nodes(input_embs, self_attn_padding_mask=input_mask.logical_not())
         #  * input_mask.unsqueeze(-1)
         assert not x.isnan().any()
 
@@ -350,6 +364,7 @@ class TreeGraphDecoder(nn.Module):
         preorder_spans: Tensor,
         nwords_per_step: Tensor,
         preorder_flags: Tensor,
+        preorder_depths: Tensor,
         **kwargs,
     ) -> ConstituencyParserOutput:
         """
@@ -365,12 +380,12 @@ class TreeGraphDecoder(nn.Module):
         state = ConstituencyParserOutput([], [], [], [], [])
         _bsz, nsteps = nwords_per_step.shape
 
-        # for curr_step in
         for curr_step in range(nsteps):
             is_alive = nwords_per_step[:, curr_step] > 0
             self.forward_step(
                 encoder_out=encoder_out[is_alive],
                 preorder_nts=preorder_nts[is_alive],
+                preorder_depths=preorder_depths[is_alive, curr_step],
                 preorder_flags=preorder_flags[is_alive],
                 preorder_spans=preorder_spans[is_alive],
                 preorder_mask=preorder_mask[is_alive, curr_step],
@@ -655,10 +670,10 @@ def test_example():
 
 
 def test_forward():
-    from greynirseq.nicenlp.utils.constituency.incremental_parsing import get_incremental_parse_actions
-    from pprint import pprint
     from fairseq.data import Dictionary
     from icecream import ic
+
+    from greynirseq.nicenlp.utils.constituency.incremental_parsing import get_incremental_parse_actions
 
     ic.enable()
 

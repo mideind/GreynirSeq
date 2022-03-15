@@ -39,6 +39,7 @@ from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
 )
 from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
+    EOS_LABEL,
     NULL_LABEL,
     ROOT_LABEL,
     ParseAction,
@@ -148,7 +149,7 @@ class GreynirParsingDataset(BaseWrapperDataset):
     @lru_cache(maxsize=64)
     def __getitem__(self, index: int):
         tree = self.dataset[index]
-        action_seq, preorder_list = get_incremental_parse_actions(tree, collapse=False)
+        action_seq, preorder_list = get_incremental_parse_actions(tree, collapse=False, eos=EOS_LABEL)
 
         ret = {
             "inputs": GreynirParsingDataset._encode_inputs(
@@ -191,14 +192,17 @@ class GreynirParsingDataset(BaseWrapperDataset):
             padding_value=padding_idx,
         )
         preorder_mask = torch.zeros(len(action_seq), len(preorder_list), dtype=torch.bool)
-        chain_mask = torch.zeros(len(action_seq), len(preorder_list), dtype=torch.bool)
+        chain_mask = torch.zeros_like(preorder_mask)
+        preorder_depths = torch.zeros(len(action_seq), len(preorder_list), dtype=torch.long)
         for step, action in enumerate(action_seq):
             preorder_mask[step, action.preorder_indices] = 1
             chain_mask[step, action.right_chain_indices] = 1
+            preorder_depths[step, action.preorder_indices] = torch.tensor(action.preorder_depths, dtype=torch.long)
         nwords_per_step = torch.tensor([node.nwords for node in action_seq], dtype=torch.long)
         return {
             "preorder_nts": preorder_nts,
             "preorder_spans": preorder_spans,
+            "preorder_depths": preorder_depths,
             "preorder_flags": padded_flags,
             "preorder_mask": preorder_mask,
             "chain_mask": chain_mask,
@@ -337,6 +341,7 @@ class ParserHydraTask(FairseqTask):
         data_dict = cls.load_dictionary(cls, os.path.join(cfg.data, "dict.txt"))
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
         label_dict = cls.load_dictionary(cls, cfg.label_file)
+        label_dict.add_symbol(EOS_LABEL)
         logger.info("[label] dictionary: {} types".format(len(label_dict)))
 
         assert cfg._bpe._name == cfg._parent.bpe._name
@@ -423,7 +428,7 @@ class ParserHydraTask(FairseqTask):
             prepend_token=self.source_dictionary.bos(),
         )
         word_mask = WordEndMaskDataset(
-            src_tokens, self.source_dictionary, self.is_word_initial, bos_value=0, eos_value=0
+            src_tokens, self.source_dictionary, self.is_word_initial, bos_value=0, eos_value=1
         )
 
         with data_utils.numpy_seed(self.cfg._seed):
@@ -437,6 +442,10 @@ class ParserHydraTask(FairseqTask):
                 "preorder_nts": RightPadDataset(
                     _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_nts"]),
                     pad_idx=self.label_dictionary.pad(),
+                ),
+                "preorder_depths": RightPad2dDataset(
+                    _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_depths"]),
+                    pad_idx=0,
                 ),
                 "preorder_mask": RightPad2dDataset(
                     _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_mask"]), pad_idx=0
@@ -506,7 +515,7 @@ class ParserHydraTask(FairseqTask):
         src_tokens = ListDataset(tokens, sizes=sizes)
         src_tokens = RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad())
 
-        word_mask = WordEndMaskDataset(src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=0)
+        word_mask = WordEndMaskDataset(src_tokens, self.dictionary, self.is_word_initial, bos_value=0, eos_value=1)
 
         dataset = {
             "id": IdDataset(),

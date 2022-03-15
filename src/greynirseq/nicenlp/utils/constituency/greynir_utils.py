@@ -465,8 +465,6 @@ class Node:
         new_node = NonterminalNode(
             label, [child.collapse_unary() for child in merge_list[-1].children], preorder_index=self.preorder_index
         )
-        if self.preorder_index:
-            new_node._composite_preorder_indices = [elem.preorder_index for elem in merge_list]
         return new_node
 
     def separate_unary(self):

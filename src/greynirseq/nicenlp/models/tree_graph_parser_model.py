@@ -82,7 +82,11 @@ class GraphTreeParserModel(RobertaModel):
             # inherit position encoding from bert model into decoder
             state_dict["graph_decoder.embed_positions.weight"] = state_dict[
                 "encoder.sentence_encoder.embed_positions.weight"
-            ]
+            ].clone()
+            if "graph_decoder.embed_word_positions.weight" in state_dict:
+                state_dict["graph_decoder.embed_word_positions.weight"] = state_dict[
+                    "encoder.sentence_encoder.embed_positions.weight"
+                ].clone()
 
         return super().upgrade_state_dict_named(state_dict, name)
 
@@ -124,6 +128,7 @@ class GraphTreeParserModel(RobertaModel):
         nwords_per_step: Tensor,
         preorder_flags: Tensor,
         word_mask: Tensor,
+        preorder_depths: Tensor,
         **kwargs,
     ):
         """
@@ -147,6 +152,7 @@ class GraphTreeParserModel(RobertaModel):
             preorder_spans=preorder_spans,
             nwords_per_step=nwords_per_step,
             preorder_flags=preorder_flags,
+            preorder_depths=preorder_depths,
         )
         return decoder_out
 

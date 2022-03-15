@@ -7,6 +7,7 @@ from greynirseq.nicenlp.utils.constituency.greynir_utils import NonterminalNode,
 
 NULL_LABEL = "NULL"
 ROOT_LABEL = "ROOT"
+EOS_LABEL = "EOS"
 
 
 @dataclass
@@ -40,6 +41,7 @@ class ParseAction:
         preterminal_span: Optional[Tuple[int, int]] = None,
         right_chain_indices: Optional[List[int]] = None,
         preorder_indices: Optional[List[int]] = None,
+        preorder_depths: Optional[List[int]] = None,
         nwords: int = None,
     ):
         self.depth = depth
@@ -48,6 +50,7 @@ class ParseAction:
         self.right_chain_indices = right_chain_indices
         self.preorder_indices = preorder_indices
         self.nwords = nwords
+        self.preorder_depths = preorder_depths
 
     def __eq__(self, other: Any):
         if not isinstance(other, ParseAction):
@@ -57,9 +60,9 @@ class ParseAction:
     def __repr__(self):
         return (
             f"ParseAction(parent='{self.parent.label}', preterminal='{self.preterminal.label}',"
-            " depth={self.depth}, parent_span={self.parent.span}, preterminal_span={self.preterminal.span},"
-            " nwords={self.nwords}, right_chain_indices={self.right_chain_indices},"
-            " preorder_indices={self.preorder_indices})"
+            f" depth={self.depth}, parent_span={self.parent.span}, preterminal_span={self.preterminal.span},"
+            f" nwords={self.nwords}, right_chain_indices={self.right_chain_indices},"
+            f" preorder_indices={self.preorder_indices}, preorder_depths{self.preorder_depths})"
         )
 
 
@@ -90,39 +93,60 @@ def mark_preterminal_and_parent(node, depth=1):
         mark_preterminal_and_parent(child, depth=depth + 1)
 
 
-def get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=True):
+def get_preorder_index_of_right_chain(root, include_terminals=False, preserve_indices=True, collapse=False):
     if not preserve_indices:
         _ = root.preorder_list()  # re-precompute preorder_index for each node
     right_chain = []
-    if root.composite_preorder_indices:
-        right_chain.extend(root.composite_preorder_indices)
-    else:
-        right_chain = [root.preorder_index]
+
+    unary_len = root.nonterminal.count(">") + 1 if not collapse else 1
+    right_chain.extend(range(root.preorder_index, root.preorder_index + unary_len))
+
     cursor = root
     while cursor.children:
         cursor = cursor.children[-1]
-        if cursor.nonterminal and not cursor.composite_preorder_indices:
+        if cursor.terminal and include_terminals:
             right_chain.append(cursor.preorder_index)
         elif cursor.nonterminal:
-            right_chain.extend(cursor.composite_preorder_indices)
-        elif cursor.terminal and include_terminals:
-            right_chain.append(cursor.preorder_index)
+            unary_len = cursor.nonterminal.count(">") + 1 if not collapse else 1
+            right_chain.extend(range(cursor.preorder_index, cursor.preorder_index + unary_len))
     return right_chain
 
 
-def get_preorder_indices(node, include_terminals=False, preserve_indices=True):
+def get_preorder_indices(node, include_terminals=False, preserve_indices=True, collapse=False):
     ret = []
     for desc in node.preorder_list(include_terminals=include_terminals, preserve_indices=preserve_indices):
-        if desc.composite_preorder_indices:
-            ret.extend(desc.composite_preorder_indices)
-        else:
-            ret.append(desc.preorder_index)
-        if None in ret:
-            breakpoint()
+        unary_len = desc.nonterminal.count(">") + 1 if not collapse else 1
+        ret.extend(range(desc.preorder_index, desc.preorder_index + unary_len))
     return ret
 
 
-def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_index_to_original=True, bp=False):
+def mark_depth(node, depth=0, overwrite=False, collapse=False):
+    if not hasattr(node, "__depth"):
+        node.__depth = None
+    if node.__depth is None or overwrite:
+        node.__depth = depth
+    if node.terminal:
+        return
+    child_depth = depth + 1 if collapse else depth + node.nonterminal.count(">") + 1
+    for child in node.children:
+        mark_depth(child, depth=child_depth, overwrite=overwrite)
+
+
+def __depth_as_iter(node):
+    if node.terminal:
+        raise ValueError
+    unary_len = node.nonterminal.count(">") + 1
+    return range(node.__depth, node.__depth + unary_len)
+
+
+def get_depths(root):
+    mark_depth(root, overwrite=True)
+    return [
+        d for node in root.preorder_list(include_terminals=False, preserve_indices=True) for d in __depth_as_iter(node)
+    ]
+
+
+def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_index_to_original=True, eos=None):
     ic_enabled = ic.enabled
     if not verbose:
         ic.disable()
@@ -145,6 +169,36 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
     cursor = root
     actions = []
 
+    if eos is not None:
+        _ = root.span
+        mark_preterminal_and_parent(root)
+        # we add one to nwords to account for the eos token in src_tokens
+        nwords_w_eos = len(root.leaves) + 1
+        actions.append(ParseAction(eos, NULL_LABEL, 1, parent_span=root.span, nwords=nwords_w_eos))
+        actions[-1].right_chain_indices = get_preorder_index_of_right_chain(
+            root, include_terminals=False, preserve_indices=preorder_index_to_original
+        )
+        actions[-1].preorder_indices = get_preorder_indices(
+            root, include_terminals=False, preserve_indices=preorder_index_to_original
+        )
+        actions[-1].preorder_depths = get_depths(root)
+
+        while not collapse and ">" in root.nonterminal:
+            ic("root is composite, decomposing")
+            top_nt, *rest = root.nonterminal.split(">", 1)
+            rest = rest[0]
+            actions.append(ParseAction(top_nt, NULL_LABEL, 1, parent_span=root.span, nwords=nwords_w_eos))
+            root._nonterminal = rest
+            root._preorder_index += 1
+            actions[-1].right_chain_indices = get_preorder_index_of_right_chain(
+                root, include_terminals=False, preserve_indices=preorder_index_to_original
+            )
+            actions[-1].preorder_indices = get_preorder_indices(
+                root, include_terminals=False, preserve_indices=preorder_index_to_original
+            )
+            actions[-1].preorder_depths = get_depths(root)
+            ic(actions[-1])
+
     while root.children:
         if verbose:
             print()
@@ -158,15 +212,14 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             rest = rest[0]
             actions.append(ParseAction(top_nt, NULL_LABEL, 1, parent_span=root.span, nwords=len(root.leaves)))
             root._nonterminal = rest
-            if root.composite_preorder_indices:
-                root._composite_preorder_indices.pop(0)
-                root._preorder_index = root.composite_preorder_indices[0]
+            root._preorder_index += 1
             actions[-1].right_chain_indices = get_preorder_index_of_right_chain(
                 root, include_terminals=False, preserve_indices=preorder_index_to_original
             )
             actions[-1].preorder_indices = get_preorder_indices(
                 root, include_terminals=False, preserve_indices=preorder_index_to_original
             )
+            actions[-1].preorder_depths = get_depths(root)
             ic(actions[-1])
 
         while not collapse and ">" in cursor.nonterminal:
@@ -183,6 +236,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             actions[-1].preorder_indices = get_preorder_indices(
                 root, include_terminals=False, preserve_indices=preorder_index_to_original
             )
+            actions[-1].preorder_depths = get_depths(root)
             ic(actions[-1])
 
         if len(root.children) == 1:
@@ -193,11 +247,8 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             # We popped the root, there is no right-chain remaining
             actions[-1].right_chain_indices = []
             actions[-1].preorder_indices = []
+            actions[-1].preorder_depths = []
             return ic(actions[::-1]), preorder_list
-
-        # if bp:
-        #     ic(root.nonterminal, top_nt, rest, root.preorder_index, root.composite_preorder_indices)
-        #     breakpoint()
 
         cursor_to_child_idx = len(cursor.children) - 1
         child = cursor.children[cursor_to_child_idx]
@@ -226,6 +277,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             actions[-1].preorder_indices = get_preorder_indices(
                 root, include_terminals=False, preserve_indices=preorder_index_to_original
             )
+            actions[-1].preorder_depths = get_depths(root)
             ic(actions[-1])
         elif cursor_to_child_idx == 1:
             # cursor has exactly 2 children
@@ -247,6 +299,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
                 actions[-1].preorder_indices = get_preorder_indices(
                     root, include_terminals=False, preserve_indices=preorder_index_to_original
                 )
+                actions[-1].preorder_depths = get_depths(root)
                 ic(actions[-1])
             while not collapse and ">" in child.nonterminal:
                 ic("child is composite, decomposing child")
@@ -263,6 +316,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
                 actions[-1].preorder_indices = get_preorder_indices(
                     root, include_terminals=False, preserve_indices=preorder_index_to_original
                 )
+                actions[-1].preorder_depths = get_depths(root)
                 ic(actions[-1])
 
             # action: swap cursor out for a node which has children=[cursor, child]
@@ -297,6 +351,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             actions[-1].preorder_indices = get_preorder_indices(
                 root, include_terminals=False, preserve_indices=preorder_index_to_original
             )
+            actions[-1].preorder_depths = get_depths(root)
             ic(actions[-1])
         else:
             # this should never happen
