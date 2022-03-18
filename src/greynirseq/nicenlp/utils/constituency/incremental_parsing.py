@@ -18,6 +18,9 @@ class ParseLabel:
     def is_null(self):
         return self.label == NULL_LABEL
 
+    def is_eos(self):
+        return self.label == EOS_LABEL
+
     @property
     def label_flags(self):
         return NonterminalNode.get_label_flags(self.label)
@@ -144,6 +147,27 @@ def get_depths(root):
     return [
         d for node in root.preorder_list(include_terminals=False, preserve_indices=True) for d in __depth_as_iter(node)
     ]
+
+
+def get_banned_attachments(node):
+    assert node.nonterminal
+    cursor = node.clone().collapse_unary()
+    mark_depth(cursor, overwrite=True, collapse=False)
+    ret = []
+    banned_labels = {}
+    while cursor.nonterminal:
+        unary_len = cursor.nonterminal.count(">") + 1
+        labels = cursor.nonterminal.split(">")
+        for d in range(cursor.__depth, cursor.__depth + unary_len + 1):
+            banned_labels[d] = labels
+        if unary_len >= 3:
+            ret.extend(range(cursor.__depth, cursor.__depth + unary_len + 1))
+        # traverse right chain
+        if cursor.children:
+            cursor = cursor.children[-1]
+        else:
+            break
+    return ret, banned_labels
 
 
 def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_index_to_original=True, eos=None):

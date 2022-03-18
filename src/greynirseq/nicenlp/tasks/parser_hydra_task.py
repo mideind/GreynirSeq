@@ -44,7 +44,9 @@ from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
     ROOT_LABEL,
     ParseAction,
     get_incremental_parse_actions,
+    get_banned_attachments,
     get_preorder_index_of_right_chain,
+    get_depths,
 )
 from greynirseq.nicenlp.utils.label_schema.label_schema import label_schema_as_dictionary, parse_label_schema
 
@@ -266,6 +268,7 @@ class GreynirParsingDataset(BaseWrapperDataset):
         preorder_mask = torch.ones(len(preorder_list), dtype=torch.bool)
         chain_mask = torch.zeros(len(preorder_list), dtype=torch.bool)
         right_chain_indices = get_preorder_index_of_right_chain(tree, include_terminals=False, preserve_indices=True)
+        preorder_depths = torch.tensor(get_depths(tree), dtype=torch.long)
         chain_mask[right_chain_indices] = 1
         nwords = torch.tensor(len(tree.leaves))
         ret = {
@@ -273,6 +276,7 @@ class GreynirParsingDataset(BaseWrapperDataset):
             "preorder_spans": preorder_spans,
             "preorder_flags": padded_flags,
             "preorder_mask": preorder_mask,
+            "preorder_depths": preorder_depths,
             "chain_mask": chain_mask,
             "nwords": nwords,
         }
@@ -539,26 +543,76 @@ class ParserHydraTask(FairseqTask):
     def root_label_index(self):
         return self.label_dictionary.index(ROOT_LABEL)
 
-    def logits_to_actions(self, state: Any) -> ParseAction:
-        parents = [self.label_dictionary.symbols[i] for i in state.parent_logits[-1].argmax(-1)]
-        preterms = [self.label_dictionary.symbols[i] for i in state.preterm_logits[-1].argmax(-1)]
-        depths = state.attention[-1].argmax(-1)
+    def logits_to_actions(self, state: Any, trees: Optional[List[greynir_utils.Node]]=None, finalizable: Optional[List[bool]] = None) -> ParseAction:
+        bsz = len(state.preterm_flag_logits[-1])
+        if trees:
+            assert len(trees) == bsz
+            banned_attachments = [get_banned_attachments(tree) for tree in trees]
+        illegal = [self.label_dictionary.bos(), self.label_dictionary.pad(), self.label_dictionary.unk()]
+        state.parent_flag_logits[-1][:, illegal] = float("-inf")
+        state.preterm_flag_logits[-1][:, illegal] = float("-inf")
+        state.parent_logits[-1][:, illegal] = float("-inf")
+        state.preterm_logits[-1][:, illegal] = float("-inf")
 
         threshold = 0
-        state.parent_flag_logits[-1][:, self.label_dictionary.pad()] = float("-inf")
-        state.preterm_flag_logits[-1][:, self.label_dictionary.pad()] = float("-inf")
-        for seq_idx in range(len(state.preterm_flag_logits[-1])):
-            if parents[seq_idx] == preterms[seq_idx] == NULL_LABEL:
-                # force preterminal to be non-null
+        depths = state.attention[-1].argmax(-1)
+        parents = [self.label_dictionary.symbols[i] for i in state.parent_logits[-1].argmax(-1)]
+        preterms = [self.label_dictionary.symbols[i] for i in state.preterm_logits[-1].argmax(-1)]
+
+        for seq_idx in range(bsz):
+            preterm, parent, depth = preterms[seq_idx], parents[seq_idx], depths[seq_idx].item()
+            is_finalizable = finalizable[seq_idx]
+            if parent == EOS_LABEL:
+                preterms[seq_idx] = NULL_LABEL
+                continue
+
+            if trees:
+                banned_att, depth_to_labels = banned_attachments[seq_idx]
+                tree = trees[seq_idx]
+            if is_finalizable and parent == preterm == NULL_LABEL:
+                # we can end tree here
+                parent = EOS_LABEL
+                parents[seq_idx] = parent
+                continue
+            elif parent == preterm == NULL_LABEL:
+                # force preterminal to be non-null since we cannot end tree here
+                preterm = self.label_dictionary.symbols[
+                    state.preterm_logits[-1][seq_idx].sort(descending=True).indices[1]
+                ]
+                preterms[seq_idx] = preterm
+                ic(f"Forced NULL preterminal to become {preterms[seq_idx]}")
+
+            if parent != NULL_LABEL and state.parent_flag_logits[-1][seq_idx].gt(threshold).any():
+                idxs = state.parent_flag_logits[-1][seq_idx].gt(threshold).nonzero().squeeze(-1)
+                parent = parent + "-" + "-".join(self.label_dictionary.string(idxs).split(" "))
+                parents[seq_idx] = parent
+            if preterm != NULL_LABEL and state.preterm_flag_logits[-1][seq_idx].gt(threshold).any():
+                idxs = state.preterm_flag_logits[-1][seq_idx].gt(threshold).nonzero().squeeze(-1)
+                preterm = preterm + "-" + "-".join(self.label_dictionary.string(idxs).split(" "))
+                preterms[seq_idx] = preterm
+
+            if is_finalizable and trees and (parent in depth_to_labels[depth - 1] or depth in banned_att):
+                # parser is trying to extend-or-attach a node with that is either
+                #     - the same as current node
+                #     - shares label in common with a node that is in the same unary chain
+                #     - is part of a unary chain that is already too long
+                # so we can end tree here
+                parent = EOS_LABEL
+                parents[seq_idx] = parent
+                continue
+            elif preterm == NULL_LABEL and trees and (parent in depth_to_labels[depth - 1] or depth in banned_att):
+                # parser is trying to only-extend a node with that is either
+                #     - the same as current node
+                #     - shares label in common with a node that is in the same unary chain
+                #     - is part of a unary chain that is already too long
+                # and we cannot end the tree here so we are forced to choose some preterminal
+                # to minimize error accumulation we set parent to null
+                trees[0].pretty_print()
                 preterms[seq_idx] = self.label_dictionary.symbols[
                     state.preterm_logits[-1][seq_idx].sort(descending=True).indices[1]
                 ]
-            if parents[seq_idx] != NULL_LABEL and state.parent_flag_logits[-1][seq_idx].gt(threshold).any():
-                idxs = state.parent_flag_logits[-1][seq_idx].gt(threshold).nonzero().squeeze(-1)
-                parents[seq_idx] = parents[seq_idx] + "-" + "-".join(self.label_dictionary.string(idxs).split(" "))
-            if preterms[seq_idx] != NULL_LABEL and state.preterm_flag_logits[-1][seq_idx].gt(threshold).any():
-                idxs = state.preterm_flag_logits[-1][seq_idx].gt(threshold).nonzero().squeeze(-1)
-                preterms[seq_idx] = preterms[seq_idx] + "-" + "-".join(self.label_dictionary.string(idxs).split(" "))
+                parent = NULL_LABEL
+                parents[seq_idx] = parent
 
         assert not any(NULL_LABEL in parents[idx] and NULL_LABEL in preterms[idx] for idx in range(len(parents)))
         parse_actions = [
