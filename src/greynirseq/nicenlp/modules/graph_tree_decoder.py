@@ -74,7 +74,6 @@ class TreeGraphDecoderConfig(FairseqDataclass):
     freeze_position_embeddings: bool = field(default=True)
     num_recursions: int = field(default=0)
     shared_embeddings: bool = field(default=True)
-    chain_classifiers: bool = field(default=False)
     use_word_position: bool = field(default=False)
     separate_word_position_embedding: bool = field(default=False)
     use_depth_embedding: bool = field(default=False)
@@ -193,7 +192,7 @@ class TreeGraphDecoder(nn.Module):
             inner_dim=self.embed_dim,
         )
         self.mlp_attention = SingleVectorMLPAttention(
-            2 * self.embed_dim, self.embed_dim // 4, self.cfg.dropout, use_sigmoid=cfg.mlp_attn_is_sigmoid
+            2 * self.embed_dim, self.embed_dim, self.cfg.dropout, use_sigmoid=cfg.mlp_attn_is_sigmoid
         )
 
     def embed_spans(self, spans: Tensor, end_thresholds: Optional[Tensor] = None) -> Tensor:
@@ -271,6 +270,15 @@ class TreeGraphDecoder(nn.Module):
         x = x.transpose(0, 1)
         return x
 
+    def add_or_cat(
+        self,
+        tensor,
+        other,
+    ) -> Tensor:
+        if self.cfg.add_attention_outputs:
+            return tensor + other
+        return torch.cat([tensor, other], dim=-1)
+
     def forward_step(
         self,
         encoder_out: Tensor,
@@ -339,15 +347,8 @@ class TreeGraphDecoder(nn.Module):
         attn_output_features, attn = self.mlp_attention(
             right_chain_outputs, attending_words, attn_padding_mask=attn_padding_mask
         )
-        assert attending_words.shape == attn_output_features.shape
+        clsf_features = self.add_or_cat(attending_words, attn_output_features)
 
-        if self.cfg.add_attention_outputs:
-            clsf_features = attending_words + attn_output_features
-        else:
-            clsf_features = torch.cat([attending_words, attn_output_features], dim=-1)
-
-        # pp [(v.isnan().any().item(),k) for k,v in locals().items() if hasattr(v, "isnan")]
-        # bsz x 1 x features  ->  bsz x features
         state.parent_logits.append(self.classification_heads["constit_parent"](clsf_features).squeeze(1))
         state.preterm_logits.append(self.classification_heads["constit_preterm"](clsf_features).squeeze(1))
         state.parent_flag_logits.append(self.classification_heads["constit_parent_flags"](clsf_features).squeeze(1))
@@ -830,7 +831,7 @@ def test_forward():
         "target_depths": tgt_depths,
         "target_padding_mask": tgt_padding_mask,
         "target_parents": tgt_parents,
-        "target_preterminals": tgt_preterms,
+        "target_preterms": tgt_preterms,
         "target_parent_flags": padded_tgt_parent_flags,
         "target_preterm_flags": padded_tgt_preterm_flags,
         "preorder_nts": padded_preorder_nts,

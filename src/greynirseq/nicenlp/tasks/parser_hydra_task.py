@@ -244,7 +244,7 @@ class GreynirParsingDataset(BaseWrapperDataset):
             "target_depths": depths,
             "target_parents": target_parents,
             "target_padding_mask": torch.zeros_like(target_preterms, dtype=torch.bool),
-            "target_preterminals": target_preterms,
+            "target_preterms": target_preterms,
             "target_parent_flags": target_parent_flags,
             "target_preterm_flags": target_preterm_flags,
         }
@@ -319,8 +319,6 @@ class ParserHydraTask(FairseqTask):
         cfg: ParserHydraConfig,
         data_dictionary: Dictionary,
         label_dictionary: Dictionary,
-        nterm_dict: Dictionary,
-        nterm_schema,
         is_word_initial,
     ):
         super().__init__(cfg)
@@ -329,15 +327,9 @@ class ParserHydraTask(FairseqTask):
         if not hasattr(self, "args") and hasattr(self, "cfg"):
             self.args = self.cfg
 
-        self.nterm_dictionary = nterm_dict
-        self.nterm_schema = nterm_schema
         self.label_dictionary = label_dictionary
 
         self.is_word_initial = is_word_initial
-
-        self.num_nterm_cats = len(self.nterm_schema.label_categories)
-        self.num_nterm_groups = NotImplemented
-        self.num_nterm_labels = len(self.nterm_schema.labels)
         self.num_labels = len(self.label_dictionary)
 
     @classmethod
@@ -352,17 +344,10 @@ class ParserHydraTask(FairseqTask):
 
         is_word_initial = cls.get_word_beginnings(cfg._parent.bpe, data_dict)
 
-        nterm_dict, nterm_schema = cls.load_label_dictionary(cfg, cfg.nonterm_schema)
-        logger.info("[nterm] dictionary: {} types".format(len(nterm_dict)))
-        nterm_dict.null = nterm_dict.index(nterm_schema.null)
-        nterm_dict.leaf_index = nterm_dict.index(nterm_schema.null_leaf)
-
         return ParserHydraTask(
             cfg,
             data_dict,
             label_dictionary=label_dict,
-            nterm_dict=nterm_dict,
-            nterm_schema=nterm_schema,
             is_word_initial=is_word_initial,
         )
 
@@ -481,8 +466,8 @@ class ParserHydraTask(FairseqTask):
                 _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_parents"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
-            "target_preterminals": RightPadDataset(
-                _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_preterminals"]),
+            "target_preterms": RightPadDataset(
+                _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_preterms"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_parent_flags": RightPad2dDataset(

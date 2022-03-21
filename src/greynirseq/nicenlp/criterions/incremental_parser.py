@@ -39,13 +39,13 @@ class IncrementalParserCriterion(FairseqCriterion):
     @classmethod
     def compute_loss(cls, sample, constit_output, attention_loss_weight=1.0, reduce=True, padding_idx=1):
         parent_mask = sample["target_parents"].not_equal(padding_idx)
-        preterm_mask = sample["target_preterminals"].not_equal(padding_idx)
+        preterm_mask = sample["target_preterms"].not_equal(padding_idx)
 
         # targets are ordered by step first,then batch
         #   Eg. [targets for step1, targets for step2, ..., targets for stepk]
         # NB that not all sequences in batch are of equal length
         # XXX: add class weights
-        flat_tgt_preterms = sample["target_preterminals"].T[preterm_mask.T]
+        flat_tgt_preterms = sample["target_preterms"].T[preterm_mask.T]
         preterm_loss = F.cross_entropy(
             constit_output.preterm_logits, flat_tgt_preterms, reduction="sum" if reduce else "none"
         )
