@@ -60,6 +60,7 @@ class Node:
     def __init__(self, preorder_index=None, composite_preorder_indices=None):
         self._span = None
         self._depth = None
+        self._children = None
         self._preorder_index = preorder_index
         self._composite_preorder_indices = composite_preorder_indices
 
@@ -642,6 +643,14 @@ class Node:
             ret.extend(desc)
 
         return ret, preorder_index
+
+    def wrap_terminals_with_posnt(self):
+        if self.terminal:
+            return NonterminalNode(f"POS|{self.category.upper()}", [self])
+        new_children = []
+        for child in self.children:
+            new_children.append(child.wrap_terminals_with_posnt())
+        return NonterminalNode(self.nonterminal, children=new_children)
 
     def wrap_bare_terminals(self, dummy_preterminal=NULL_LEAF_NONTERM):
         assert isinstance(self, NonterminalNode)

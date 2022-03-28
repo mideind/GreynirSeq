@@ -58,14 +58,20 @@ class ParseAction:
     def __eq__(self, other: Any):
         if not isinstance(other, ParseAction):
             return False
-        return (self.parent.label == other.parent.label) and (self.preterminal.label == other.preterminal.label)
+        return (self.parent.label == other.parent.label) and (
+            self.preterminal.label == other.preterminal.label
+            and self.nwords == other.nwords
+            and self.preorder_depths == other.preorder_depths
+            and self.preorder_indices == other.preorder_indices
+            and self.right_chain_indices == other.right_chain_indices
+        )
 
     def __repr__(self):
         return (
             f"ParseAction(parent='{self.parent.label}', preterminal='{self.preterminal.label}',"
             f" depth={self.depth}, parent_span={self.parent.span}, preterminal_span={self.preterminal.span},"
             f" nwords={self.nwords}, right_chain_indices={self.right_chain_indices},"
-            f" preorder_indices={self.preorder_indices}, preorder_depths{self.preorder_depths})"
+            f" preorder_indices={self.preorder_indices}, preorder_depths={self.preorder_depths})"
         )
 
 
@@ -234,7 +240,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             ic("root is composite, decomposing")
             top_nt, *rest = root.nonterminal.split(">", 1)
             rest = rest[0]
-            actions.append(ParseAction(top_nt, NULL_LABEL, 1, parent_span=root.span, nwords=len(root.leaves)))
+            actions.append(ParseAction(top_nt, NULL_LABEL, 1, parent_span=root.span, nwords=len(root.leaves) + 1))
             root._nonterminal = rest
             root._preorder_index += 1
             actions[-1].right_chain_indices = get_preorder_index_of_right_chain(
@@ -251,7 +257,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
             top_nt, *rest = cursor.nonterminal.split(">", 1)
             rest = rest[0]
             actions.append(
-                ParseAction(top_nt, NULL_LABEL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves))
+                ParseAction(top_nt, NULL_LABEL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves) + 1)
             )
             cursor._nonterminal = rest
             actions[-1].right_chain_indices = get_preorder_index_of_right_chain(
@@ -314,7 +320,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
                 top_nt, rest = cursor.nonterminal.split(">", 1)
                 # action: extend leg above cursor (inverse of tree contraction) with top_nt
                 actions.append(
-                    ParseAction(top_nt, NULL_LABEL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves))
+                    ParseAction(top_nt, NULL_LABEL, cursor.depth, parent_span=cursor.span, nwords=len(root.leaves) + 1)
                 )
                 cursor._nonterminal = rest
                 actions[-1].right_chain_indices = get_preorder_index_of_right_chain(
@@ -331,7 +337,7 @@ def get_incremental_parse_actions(node, collapse=True, verbose=False, preorder_i
                 top_nt, rest = child.nonterminal.split(">", 1)
                 # action: extend leg above child (inverse of tree contraction) with top_nt
                 actions.append(
-                    ParseAction(top_nt, NULL_LABEL, child.depth, parent_span=child.span, nwords=len(root.leaves))
+                    ParseAction(top_nt, NULL_LABEL, child.depth, parent_span=child.span, nwords=len(root.leaves) + 1)
                 )
                 child._nonterminal = rest
                 actions[-1].right_chain_indices = get_preorder_index_of_right_chain(
@@ -539,3 +545,50 @@ def test_incremental_parser():
         (orig.span == repar.span and orig.label == repar.label)
         for (orig, repar) in zip(sentence.labelled_spans()[0], uncollapsed_reparsed.labelled_spans()[0])
     )
+
+
+def test_parser_nwords():
+    billinn = NonterminalNode("NP1", [TerminalNode("bíllinn", "x")])
+    billinn = NonterminalNode("NP2", [billinn])
+    rann = NonterminalNode("VP1", [TerminalNode("rann", "x")])
+    rann = NonterminalNode("VP2", [rann])
+    ekki = NonterminalNode("NEG1", [TerminalNode("ekki", "x")])
+    ekki = NonterminalNode("NEG2", [ekki])
+    hratt = NonterminalNode("ADVP1", [TerminalNode("hratt", "x")])
+    hratt = NonterminalNode("ADVP2", [hratt])
+    rann_ekki_hratt = NonterminalNode("ADVP2", [rann, ekki, hratt])
+    billinn_rann_hratt = NonterminalNode("IP", [billinn, rann_ekki_hratt])
+    billinn_rann_hratt = NonterminalNode("S-MAIN", [billinn_rann_hratt])
+    sentence = NonterminalNode("S0", [billinn_rann_hratt])
+
+    tokens = [t.text for t in sentence.leaves]
+
+    collapsed_actions = get_incremental_parse_actions(sentence.clone(), collapse=True)[0]
+    # fmt: off
+    correct_collapsed_actions = [
+        ParseAction(parent='NULL', preterminal='NP2>NP1', depth=0, parent_span=None, preterminal_span=(0, 1), nwords=1, right_chain_indices=[], preorder_indices=[], preorder_depths=[]),
+        ParseAction(parent='S0>S-MAIN>IP', preterminal='VP2>VP1', depth=1, parent_span=(0, 4), preterminal_span=(1, 2), nwords=2, right_chain_indices=[1, 2], preorder_indices=[1, 2], preorder_depths=[0, 1]),
+        ParseAction(parent='ADVP2', preterminal='NEG2>NEG1', depth=2, parent_span=(1, 4), preterminal_span=(2, 3), nwords=3, right_chain_indices=[0, 1, 2, 3, 4], preorder_indices=[0, 1, 2, 1, 2, 3, 4], preorder_depths=[0, 1, 2, 3, 4, 3, 4]),
+        ParseAction(parent='NULL', preterminal='ADVP2>ADVP1', depth=2, parent_span=None, preterminal_span=(3, 4), nwords=4, right_chain_indices=[0, 1, 2, 2, 4, 5], preorder_indices=[0, 1, 2, 1, 2, 2, 3, 4, 4, 5], preorder_depths=[0, 1, 2, 3, 4, 3, 4, 5, 4, 5])
+    ]
+    # fmt: on
+    assert all(a == g for (a, g) in zip(correct_collapsed_actions, collapsed_actions))
+
+    # fmt: off
+    correct_uncollapsed_actions = [
+        ParseAction(parent='NULL', preterminal='NP1', depth=0, parent_span=None, preterminal_span=(0, 1), nwords=1, right_chain_indices=[], preorder_indices=[], preorder_depths=[]),
+        ParseAction(parent='NP2', preterminal='NULL', depth=1, parent_span=(0, 1), preterminal_span=None, nwords=2, right_chain_indices=[4], preorder_indices=[4], preorder_depths=[0]),
+        ParseAction(parent='IP', preterminal='VP1', depth=1, parent_span=(0, 3), preterminal_span=(1, 2), nwords=2, right_chain_indices=[3, 4], preorder_indices=[3, 4], preorder_depths=[0, 1]),
+        ParseAction(parent='VP2', preterminal='NULL', depth=2, parent_span=(1, 2), preterminal_span=None, nwords=3, right_chain_indices=[2, 6], preorder_indices=[2, 3, 4, 6], preorder_depths=[0, 1, 2, 1]),
+        ParseAction(parent='ADVP2', preterminal='NEG1', depth=2, parent_span=(1, 4), preterminal_span=(2, 3), nwords=3, right_chain_indices=[2, 6, 7], preorder_indices=[2, 3, 4, 6, 7], preorder_depths=[0, 1, 2, 1, 2]),
+        ParseAction(parent='NEG2', preterminal='NULL', depth=3, parent_span=(2, 3), preterminal_span=None, nwords=4, right_chain_indices=[2, 5, 8], preorder_indices=[2, 3, 4, 5, 6, 7, 8], preorder_depths=[0, 1, 2, 1, 2, 3, 2]),
+        ParseAction(parent='NULL', preterminal='ADVP2>ADVP1', depth=2, parent_span=None, preterminal_span=(3, 4), nwords=4, right_chain_indices=[2, 5, 8, 9], preorder_indices=[2, 3, 4, 5, 6, 7, 8, 9], preorder_depths=[0, 1, 2, 1, 2, 3, 2, 3]),
+        ParseAction(parent='S-MAIN', preterminal='NULL', depth=1, parent_span=(0, 4), preterminal_span=None, nwords=5, right_chain_indices=[2, 5, 10, 11], preorder_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10, 11], preorder_depths=[0, 1, 2, 1, 2, 3, 2, 3, 2, 3]),
+        ParseAction(parent='S0', preterminal='NULL', depth=1, parent_span=(0, 4), preterminal_span=None, nwords=5, right_chain_indices=[1, 2, 5, 10, 11], preorder_indices=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], preorder_depths=[0, 1, 2, 3, 2, 3, 4, 3, 4, 3, 4]),
+    ]
+    # fmt: on
+    uncollapsed_actions = get_incremental_parse_actions(sentence.clone(), collapse=False)[0]
+    assert all(a == g for (a, g) in zip(correct_uncollapsed_actions, uncollapsed_actions))
+
+
+test_parser_nwords()

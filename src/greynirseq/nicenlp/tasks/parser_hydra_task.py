@@ -128,6 +128,43 @@ class GreynirTreeJSONLDataset(BaseWrapperDataset):
         return cls(line_list)
 
 
+def remove_nt(node, nt, prob):
+    def should_remove(node, nt):
+        if node.terminal:
+            return False
+        if node.nonterminal == nt and torch.rand(1).squeeze() < (prob):
+            return True
+        new_children = []
+        for child in node.children:
+            if should_remove(child, nt):
+                continue
+            new_children.append(child)
+        if not new_children:
+            return True
+        node._children = new_children
+        return False
+    should_remove(node, nt)
+
+
+class GreynirTreeAugmentationDataset(BaseWrapperDataset):
+    def __init__(self, greynirtree_dataset: Dataset):
+        super().__init__(greynirtree_dataset)
+
+    @lru_cache(maxsize=64)
+    def __getitem__(self, index: int):
+        tree = self.dataset[index].clone()
+
+        # randomly remove punctuation
+        remove_nt(tree, "POS|GRM", 0.1)
+
+        # randomly lowercase all
+        if torch.rand(1).squeeze() < 0.1:
+            for leaf in tree.leaves:
+                leaf._text = leaf.text.lower()
+
+        return tree
+
+
 class GreynirParsingDataset(BaseWrapperDataset):
     # temporary placement
     def __init__(

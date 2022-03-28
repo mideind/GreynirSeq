@@ -80,6 +80,7 @@ class IncrementalParser:
         """docstring"""
         if verbose:
             self.root.pretty_print()
+            ic(action)
         maybe_error_str = self.is_illegal_action(action, result_as_str=True)
         if maybe_error_str:
             raise ParseError(self.root, action, reason=maybe_error_str)

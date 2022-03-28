@@ -14,6 +14,9 @@ import click
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.utils.constituency.incremental_parsing import NULL_LABEL, ROOT_LABEL
 
+from icecream import ic
+from greynirseq.nicenlp.utils.constituency.incremental_parsing import get_incremental_parse_actions
+
 
 @click.group()
 def main():
@@ -27,10 +30,10 @@ def main():
 @click.option("--ignore-errors", default=False, is_flag=True)
 @click.option("--error-log", type=click.File("w"))
 @click.option("--limit", default=-1, type=int)
+@click.option("--wrap-pos", default=False, is_flag=True)
 @click.option(
-    "--label-file", type=click.File("w"), required=True, help="Label dictionary file, analogous to fairseqs dict.txt"
-)
-def export_greynir(input_file, output_file, seed, ignore_errors, error_log, limit, label_file):
+    "--label-file", type=click.File("w"), required=True, help="Label dictionary file, analogous to fairseqs dict.txt")
+def export_greynir(input_file, output_file, seed, ignore_errors, error_log, limit, label_file, wrap_pos):
     print(f"Extracting data from {input_file.name} to: {Path(output_file.name)}")
     random.seed(seed)
 
@@ -48,13 +51,14 @@ def export_greynir(input_file, output_file, seed, ignore_errors, error_log, limi
         if tree is None:
             num_skipped += 1
             continue
+        if wrap_pos:
+            tree = tree.wrap_terminals_with_posnt()
 
         # construct label dictionary
         for node in tree.preorder_list():
             label_dict.update([node.label_without_flags])
             if node.label_flags:
                 label_dict.update(node.label_flags)
-        label_dict.update([part for leaf in tree.leaves for part in leaf.terminal.split("_") if part])
 
         output_file.write(tree.to_json())
         output_file.write("\n")
