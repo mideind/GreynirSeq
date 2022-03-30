@@ -1,0 +1,2 @@
+from .nouncase import NounCaseErrorRule
+

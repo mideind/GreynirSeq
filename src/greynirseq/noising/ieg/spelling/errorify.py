@@ -5,6 +5,7 @@ import sys
 
 from tqdm import tqdm
 
+import random
 from .fixed_random import coinflip, exp_len, random, set_random_state
 from .rules import Rules
 
@@ -13,11 +14,11 @@ TARGET_USE_RATIO = 0.1
 CORRUPT_WORDS = 0
 TOTAL_WORDS = 0
 
-ERROR_RATE = 0
+ERROR_RATE = 0.5
 
 
-def should_error():
-    return coinflip(ERROR_RATE)
+def should_error(error_rate=ERROR_RATE):
+    return coinflip(error_rate)
 
 
 def errorify_word(word):
@@ -49,11 +50,11 @@ def errorify_word(word):
     return word
 
 
-def errorify_line(line):
+def errorify_line(line, word_error_rate=ERROR_RATE):
 
     errorified_words = []
     for word in line.split():
-        if should_error():
+        if should_error(word_error_rate):
             errorified_words.append(errorify_word(word))
         else:
             errorified_words.append(word)

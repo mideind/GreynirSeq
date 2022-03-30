@@ -5,6 +5,6 @@ This submodule implements various ways to add spelling issues, grammatical noise
 ## Usage
 
 ```python
-python generate_errors.py -i input_file.txt
+python generate_errors.py < input_file.txt
 ```
 

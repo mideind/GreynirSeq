@@ -1,5 +1,7 @@
-RANDOM_STATE = 0
+import random as python_random
 
+
+RANDOM_STATE = 0
 
 def random():
     """Simple LCG random number generator for reproducibility"""
@@ -28,5 +30,4 @@ def exp_len(exponent, min_len=1, max_len=5):
 
 
 def coinflip(chance):
-    scale = 100
-    return random() % scale < chance * scale
+    return python_random.random() < chance

@@ -1,36 +1,75 @@
 from distutils.log import error
+from errno import EROFS
+from re import I
+from typing import Type
 from torch.utils.data import Dataset
 from collections import namedtuple
+from ieg import g
+
 
 class ErrorDataset(Dataset):
+
     has_pos = False
-
-    ErrorSentence = namedtuple("ErrorSentence", ["token", "pos"])
-
-    def __init__(self, infile, posfile, error_handlers=[]) -> None:
+    def __init__(self, infile, posfile, args, error_handlers=[]) -> None:
         self.has_pos = posfile is not None
-        
-        with open(infile) as filehandler:
-            self.sentences = filehandler.readlines()
-        
+        self.args = args
+
+        self.sentences = infile.read().split("\n")
+
         if self.has_pos:
             with open(posfile) as posfilehandler:
                 self.postags = posfilehandler.readlines()
-        
+
         self.error_handlers = error_handlers
 
-    def __getitem__(self, index):
-       
+    def __getitem__(self, index):       
+        errored_sentence = self.sentences[index].rstrip()
+        if not errored_sentence.strip():
+            # Empty or None, do nothing
+            return errored_sentence
+
+        pos_sentence = None
+        if self.args.parse_online:
+            pos_sentence = self.pos_sentence(errored_sentence)
+
         for error_handler in self.error_handlers:
+
+            if error_handler.needs_pos and not (self.has_pos or self.args.parse_online):
+                continue
+            elif error_handler.needs_pos and self.args.parse_online:
+                if pos_sentence is None:
+                    continue
+
             if self.has_pos:
                 pos = self.postags[index]
+            elif self.args.parse_online:
+                pos = pos_sentence
             else:
                 pos = None
 
             errored_sentence = error_handler.apply(
                 {
-                    "text": self.sentences[index],
-                    "pos": pos
+                    "text": errored_sentence,
+                    "pos": pos,
+                    "args": self.args
                 }
             )
-            return errored_sentence
+
+            if not errored_sentence:
+                # Rule broke sentence
+                return self.sentences[index].rstrip()
+
+        return errored_sentence
+
+    def pos_sentence(self, text):
+        """ Parse text with greynir. Supports multiple sentences in
+            input string, joins pos for each sentences before returning.
+        """
+        parsed = g.parse(text)
+        pos_data = []
+        for sentence in parsed["sentences"]:
+            if sentence.terminals == None:
+                return None
+            pos_data += sentence.terminals
+        
+        return pos_data  # " ".join([p if p else "x" for p in pos_data])
