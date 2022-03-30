@@ -43,10 +43,10 @@ from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
     NULL_LABEL,
     ROOT_LABEL,
     ParseAction,
-    get_incremental_parse_actions,
     get_banned_attachments,
-    get_preorder_index_of_right_chain,
     get_depths,
+    get_incremental_parse_actions,
+    get_preorder_index_of_right_chain,
 )
 from greynirseq.nicenlp.utils.label_schema.label_schema import label_schema_as_dictionary, parse_label_schema
 
@@ -143,6 +143,7 @@ def remove_nt(node, nt, prob):
             return True
         node._children = new_children
         return False
+
     should_remove(node, nt)
 
 
@@ -339,7 +340,9 @@ class ParserHydraConfig(FairseqDataclass):
     data: Optional[Any] = field(default=None, metadata={"help": "Data directory, it should also contain dict.txt file"})
     nonterm_schema: Optional[str] = field(default=None, metadata={"help": "Hierarchical label-schema for nonterminals"})
     term_schema: Optional[str] = field(default=None, metadata={"help": "Hierarchical label-schema for terminals"})
-    case_punct_noise: Optional[float] = field(default=0.0, metadata={"help": "Stochastically remove punctuation and casing in training data"})
+    case_punct_noise: Optional[float] = field(
+        default=0.0, metadata={"help": "Stochastically remove punctuation and casing in training data"}
+    )
     label_file: Optional[str] = field(
         default=None, metadata={"help": "Label dictionary file, analogous to fairseqs dict.txt"}
     )
@@ -354,11 +357,7 @@ class ParserHydraTask(FairseqTask):
     cfg: ParserHydraConfig
 
     def __init__(
-        self,
-        cfg: ParserHydraConfig,
-        data_dictionary: Dictionary,
-        label_dictionary: Dictionary,
-        is_word_initial,
+        self, cfg: ParserHydraConfig, data_dictionary: Dictionary, label_dictionary: Dictionary, is_word_initial
     ):
         super().__init__(cfg)
         self.dictionary = data_dictionary
@@ -383,12 +382,7 @@ class ParserHydraTask(FairseqTask):
 
         is_word_initial = cls.get_word_beginnings(cfg._parent.bpe, data_dict)
 
-        return ParserHydraTask(
-            cfg,
-            data_dict,
-            label_dictionary=label_dict,
-            is_word_initial=is_word_initial,
-        )
+        return ParserHydraTask(cfg, data_dict, label_dictionary=label_dict, is_word_initial=is_word_initial)
 
     @classmethod
     def load_label_dictionary(cls, cfg: ParserHydraConfig, filename: str, **kwargs):
@@ -569,7 +563,9 @@ class ParserHydraTask(FairseqTask):
     def root_label_index(self):
         return self.label_dictionary.index(ROOT_LABEL)
 
-    def logits_to_actions(self, state: Any, trees: Optional[List[greynir_utils.Node]]=None, finalizable: Optional[List[bool]] = None) -> ParseAction:
+    def logits_to_actions(
+        self, state: Any, trees: Optional[List[greynir_utils.Node]] = None, finalizable: Optional[List[bool]] = None
+    ) -> ParseAction:
         bsz = len(state.preterm_flag_logits[-1])
         if trees:
             assert len(trees) == bsz
@@ -594,7 +590,6 @@ class ParserHydraTask(FairseqTask):
 
             if trees:
                 banned_att, depth_to_labels = banned_attachments[seq_idx]
-                tree = trees[seq_idx]
             if is_finalizable and parent == preterm == NULL_LABEL:
                 # we can end tree here
                 parent = EOS_LABEL
@@ -634,12 +629,18 @@ class ParserHydraTask(FairseqTask):
                 # and we cannot end the tree here so we are forced to choose some preterminal
                 # to minimize error accumulation we set parent to null
                 trees[seq_idx].pretty_print()
-                # breakpoint()
                 preterms[seq_idx] = self.label_dictionary.symbols[
                     state.preterm_logits[-1][seq_idx].sort(descending=True).indices[1]
                 ]
-                msg = f"parent in {depth_to_labels[depth - 1]}" if parent in depth_to_labels[depth - 1] else f"depth in {banned_att[depth]}"
-                ic(f"Parser is only-extending: {parent} {preterm} {depth}, {msg}, setting parent to NULL and preterm to {preterms[seq_idx]}")
+                msg = (
+                    f"parent in {depth_to_labels[depth - 1]}"
+                    if parent in depth_to_labels[depth - 1]
+                    else f"depth in {banned_att[depth]}"
+                )
+                ic(
+                    f"Parser is only-extending: {parent} {preterm} {depth}, {msg}, "
+                    f"setting parent to NULL and preterm to {preterms[seq_idx]}"
+                )
                 parent = NULL_LABEL
                 parents[seq_idx] = parent
 

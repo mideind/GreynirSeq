@@ -14,9 +14,6 @@ import click
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.utils.constituency.incremental_parsing import NULL_LABEL, ROOT_LABEL
 
-from icecream import ic
-from greynirseq.nicenlp.utils.constituency.incremental_parsing import get_incremental_parse_actions
-
 
 @click.group()
 def main():
@@ -32,7 +29,8 @@ def main():
 @click.option("--limit", default=-1, type=int)
 @click.option("--wrap-pos", default=False, is_flag=True)
 @click.option(
-    "--label-file", type=click.File("w"), required=True, help="Label dictionary file, analogous to fairseqs dict.txt")
+    "--label-file", type=click.File("w"), required=True, help="Label dictionary file, analogous to fairseqs dict.txt"
+)
 def export_greynir(input_file, output_file, seed, ignore_errors, error_log, limit, label_file, wrap_pos):
     print(f"Extracting data from {input_file.name} to: {Path(output_file.name)}")
     random.seed(seed)
@@ -70,7 +68,9 @@ def export_greynir(input_file, output_file, seed, ignore_errors, error_log, limi
 
 @main.command()
 @click.argument("input_file", type=click.File("r"))
-def parse_greynir(input_file,):
+def parse_greynir(
+    input_file,
+):
     for line in input_file:
         tree = greynir_utils.Node.from_json(line)
         tree.pretty_print()

@@ -561,8 +561,6 @@ def test_parser_nwords():
     billinn_rann_hratt = NonterminalNode("S-MAIN", [billinn_rann_hratt])
     sentence = NonterminalNode("S0", [billinn_rann_hratt])
 
-    tokens = [t.text for t in sentence.leaves]
-
     collapsed_actions = get_incremental_parse_actions(sentence.clone(), collapse=True)[0]
     # fmt: off
     correct_collapsed_actions = [

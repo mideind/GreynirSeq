@@ -31,7 +31,7 @@ class GraphTreeParserConfig(FairseqDataclass):
 @register_model("graph_tree_parser", dataclass=GraphTreeParserConfig)
 class GraphTreeParserModel(RobertaModel):
     """Graph-tree constituency parser model, builds on a pre-trained base model such as BERT
-    and adds a few transformer-layers for graph-representations and decoding. """
+    and adds a few transformer-layers for graph-representations and decoding."""
 
     def __init__(self, cfg: GraphTreeParserConfig, encoder, decoder, task):
         super().__init__(cfg, encoder)
@@ -131,14 +131,14 @@ class GraphTreeParserModel(RobertaModel):
         preorder_depths: Tensor,
         **kwargs,
     ):
-        """
-            preorder_nts: bsz x nodes
-            preorder_mask: nsteps x bsz x nodes
-            chain_mask: nsteps x bsz x num_nodes
-            preorder_spans: bsz x num_nodes x 2
-            nwords_per_step: bsz x nsteps
-            preorder_flags: bsz x nodes x flags
-            word_mask_w_bos: bsz x ntokens
+        """Arguments:
+        preorder_nts: bsz x nodes
+        preorder_mask: nsteps x bsz x nodes
+        chain_mask: nsteps x bsz x num_nodes
+        preorder_spans: bsz x num_nodes x 2
+        nwords_per_step: bsz x nsteps
+        preorder_flags: bsz x nodes x flags
+        word_mask_w_bos: bsz x ntokens
         """
         encoder_out, _extra = self.encoder(src_tokens, features_only=True, return_all_hiddens=False, **kwargs)
         _, _, enc_embed_dim = encoder_out.shape

@@ -86,11 +86,7 @@ class SimpleParserModel(RobertaModel):
 
         _num_embeddings, embed_dim = sentence_encoder.embed_tokens.weight.shape
         self.task = task
-        self.task_head = ChartParserHead(
-            embed_dim,
-            self.task.num_nterm_cats,
-            self.args.pooler_dropout,
-        )
+        self.task_head = ChartParserHead(embed_dim, self.task.num_nterm_cats, self.args.pooler_dropout)
 
     @staticmethod
     def add_args(parser):
@@ -125,11 +121,7 @@ class SimpleParserModel(RobertaModel):
         mask = kwargs["word_mask_w_bos"]
         words_w_bos = x.masked_select(mask.unsqueeze(-1).bool()).reshape(-1, nchannels)
         nwords_w_bos = kwargs["word_mask_w_bos"].sum(-1)
-        words_w_bos_padded = pad_sequence(
-            words_w_bos.split((nwords_w_bos).tolist()),
-            padding_value=0,
-            batch_first=True,
-        )
+        words_w_bos_padded = pad_sequence(words_w_bos.split((nwords_w_bos).tolist()), padding_value=0, batch_first=True)
         span_features = self.task_head(words_w_bos_padded)
         return span_features
 
@@ -146,12 +138,7 @@ class SimpleParserModel(RobertaModel):
 
     @classmethod
     def from_pretrained(
-        cls,
-        model_name_or_path,
-        checkpoint_file="model.pt",
-        data_name_or_path=".",
-        bpe="gpt2",
-        **kwargs,
+        cls, model_name_or_path, checkpoint_file="model.pt", data_name_or_path=".", bpe="gpt2", **kwargs
     ):
         from fairseq import hub_utils
 

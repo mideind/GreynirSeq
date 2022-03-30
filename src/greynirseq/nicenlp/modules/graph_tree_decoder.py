@@ -237,7 +237,7 @@ class TreeGraphDecoder(nn.Module):
         return span_embs
 
     def compute_word_position_embeddings(self, nwords) -> Tensor:
-        bsz, = nwords.shape
+        bsz = nwords.shape[0]
         start = self.padding_idx + 1
         positions = torch.arange(start, start + nwords.max()).to(nwords.device)
         embedder = self.embed_word_positions if self.embed_word_positions is not None else self.embed_positions
@@ -270,11 +270,7 @@ class TreeGraphDecoder(nn.Module):
         x = x.transpose(0, 1)
         return x
 
-    def add_or_cat(
-        self,
-        tensor,
-        other,
-    ) -> Tensor:
+    def add_or_cat(self, tensor, other) -> Tensor:
         if self.cfg.add_attention_outputs:
             return tensor + other
         return torch.cat([tensor, other], dim=-1)
@@ -292,13 +288,13 @@ class TreeGraphDecoder(nn.Module):
         state: ConstituencyParserOutput,
         **kwargs,
     ) -> ConstituencyParserOutput:
-        """
-            preorder_nts: bsz x nodes
-            preorder_mask: bsz x nsteps x nodes
-            chain_mask: bsz x nsteps x nodes
-            preorder_spans: bsz x nodes x 2
-            nwords: bsz x nsteps
-            preorder_flags: bsz x nodes x flags
+        """Arguments:
+        preorder_nts: bsz x nodes
+        preorder_mask: bsz x nsteps x nodes
+        chain_mask: bsz x nsteps x nodes
+        preorder_spans: bsz x nodes x 2
+        nwords: bsz x nsteps
+        preorder_flags: bsz x nodes x flags
         """
         if self.input_projection is not None:
             encoder_out = self.input_projection(encoder_out)
@@ -368,13 +364,13 @@ class TreeGraphDecoder(nn.Module):
         preorder_depths: Tensor,
         **kwargs,
     ) -> ConstituencyParserOutput:
-        """
-            preorder_nts: bsz x nodes
-            preorder_mask: bsz x nsteps x nodes
-            chain_mask: bsz x nsteps x nodes
-            preorder_spans: bsz x nodes x 2
-            nwords_per_step: bsz x nsteps
-            preorder_flags: bsz x nodes x flags
+        """Arguments:
+        preorder_nts: bsz x nodes
+        preorder_mask: bsz x nsteps x nodes
+        chain_mask: bsz x nsteps x nodes
+        preorder_spans: bsz x nodes x 2
+        nwords_per_step: bsz x nsteps
+        preorder_flags: bsz x nodes x flags
         """
 
         # simple container for incremental outputs
@@ -440,7 +436,7 @@ class ScaffoldHead(nn.Module):
 
 class SingleVectorMLPAttention(nn.Module):
     """This is an implementation of the attention module described in the paper
-       See for more details: https://arxiv.org/abs/2010.14568 """
+    See for more details: https://arxiv.org/abs/2010.14568"""
 
     def __init__(self, input_dim, inner_dim, dropout: float, use_sigmoid: bool = False):
         super().__init__()
@@ -462,7 +458,7 @@ class SingleVectorMLPAttention(nn.Module):
            newest_word:       v has shape (Batch,    1, Features)
            right_chain_nodes: x has shape (Batch, Time, Features)
         Returns a version of x where the features of a single v (respectively for each batch dimension)
-        have been concatenated to all vectors in the time dimension """
+        have been concatenated to all vectors in the time dimension"""
         _, right_chain_len, _ = right_chain_nodes.shape
         # B x 1 x C  ->  B x RCHAIN x C
         tiled_newest_word = torch.tile(newest_word, dims=(1, right_chain_len, 1))

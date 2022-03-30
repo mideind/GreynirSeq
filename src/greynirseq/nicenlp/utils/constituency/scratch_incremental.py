@@ -258,7 +258,6 @@ def test_parser():
     # breakpoint()
 
 
-test_parser()
 
 
 def test_incremental_vector():
