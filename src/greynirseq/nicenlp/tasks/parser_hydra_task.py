@@ -147,18 +147,19 @@ def remove_nt(node, nt, prob):
 
 
 class GreynirTreeAugmentationDataset(BaseWrapperDataset):
-    def __init__(self, greynirtree_dataset: Dataset):
+    def __init__(self, greynirtree_dataset: Dataset, noise_prob):
         super().__init__(greynirtree_dataset)
+        self.noise_prob = noise_prob
 
     @lru_cache(maxsize=64)
     def __getitem__(self, index: int):
         tree = self.dataset[index].clone()
 
         # randomly remove punctuation
-        remove_nt(tree, "POS|GRM", 0.1)
+        remove_nt(tree, "POS|GRM", self.noise_prob)
 
         # randomly lowercase all
-        if torch.rand(1).squeeze() < 0.1:
+        if torch.rand(1).squeeze() < self.noise_prob:
             for leaf in tree.leaves:
                 leaf._text = leaf.text.lower()
 
@@ -338,6 +339,7 @@ class ParserHydraConfig(FairseqDataclass):
     data: Optional[Any] = field(default=None, metadata={"help": "Data directory, it should also contain dict.txt file"})
     nonterm_schema: Optional[str] = field(default=None, metadata={"help": "Hierarchical label-schema for nonterminals"})
     term_schema: Optional[str] = field(default=None, metadata={"help": "Hierarchical label-schema for terminals"})
+    case_punct_noise: Optional[float] = field(default=0.0, metadata={"help": "Stochastically remove punctuation and casing in training data"})
     label_file: Optional[str] = field(
         default=None, metadata={"help": "Label dictionary file, analogous to fairseqs dict.txt"}
     )
@@ -439,6 +441,8 @@ class ParserHydraTask(FairseqTask):
         greynirtrees_dataset = GreynirTreeJSONLDataset.from_path(Path(self.cfg.data) / f"{split}.jsonl")
 
         bpe = encoders.build_bpe(self.cfg._bpe)
+        if "train" in split and self.cfg.case_punct_noise > 0.0:
+            greynirtrees_dataset = GreynirTreeAugmentationDataset(greynirtrees_dataset, self.cfg.case_punct_noise)
         greynirparsing_dataset = GreynirParsingDataset(
             greynirtrees_dataset,
             label_dictionary=self.label_dictionary,
@@ -602,7 +606,7 @@ class ParserHydraTask(FairseqTask):
                     state.preterm_logits[-1][seq_idx].sort(descending=True).indices[1]
                 ]
                 preterms[seq_idx] = preterm
-                ic(f"Forced NULL preterminal to become {preterms[seq_idx]}")
+                ic(f"Parent and preterm are NULL, depth={depth}, forcing preterminal to become {preterms[seq_idx]}")
 
             if parent != NULL_LABEL and state.parent_flag_logits[-1][seq_idx].gt(threshold).any():
                 idxs = state.parent_flag_logits[-1][seq_idx].gt(threshold).nonzero().squeeze(-1)
@@ -629,10 +633,13 @@ class ParserHydraTask(FairseqTask):
                 #     - is part of a unary chain that is already too long
                 # and we cannot end the tree here so we are forced to choose some preterminal
                 # to minimize error accumulation we set parent to null
-                trees[0].pretty_print()
+                trees[seq_idx].pretty_print()
+                # breakpoint()
                 preterms[seq_idx] = self.label_dictionary.symbols[
                     state.preterm_logits[-1][seq_idx].sort(descending=True).indices[1]
                 ]
+                msg = f"parent in {depth_to_labels[depth - 1]}" if parent in depth_to_labels[depth - 1] else f"depth in {banned_att[depth]}"
+                ic(f"Parser is only-extending: {parent} {preterm} {depth}, {msg}, setting parent to NULL and preterm to {preterms[seq_idx]}")
                 parent = NULL_LABEL
                 parents[seq_idx] = parent
 
