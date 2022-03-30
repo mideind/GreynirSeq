@@ -1,0 +1,74 @@
+ð->d
+ð->đ :: 0.1
+ð<->dh :: 0.1
+
+ö->o,ø,au  :: 0.5
+Ö->O,Ø  :: 0.5
+
+i<->y
+I<->Y
+í<->ý
+Í<->Ý
+
+ng<->nk :: 0.5
+nd->nt
+
+þ->t,th :: 0.5
+Þ->T,Th :: 0.5
+th->þ :: 0.1
+Th->T
+þ->p :: 0.5
+Þ->P :: 0.5
+
+æ->ae,a,œ
+
+ll->gl,dl :: 0.5
+rr->r
+ll->l
+nn->n
+mm->m
+kk->k
+tt->t
+pp->p
+ss->s
+
+x<->ks :: 0.1
+x<->gs :: 0.1
+x<->ggs :: 0.1
+
+ld<->lt :: 0.5
+
+# Todo: fleira úr fyrstu málfræðiritgerðinni
+ᶏ<->ö,æ :: 0.1
+
+w->v
+ce<->se :: 0.1
+ci<->si :: 0.1
+c<->k :: 0.1
+pt<->ft :: 0.5
+fl<->bl,bbl :: 0.5
+dl<->ll :: 0.5
+dn<->nn,rn,rdn :: 0.5
+rðn->rn :: 0.5
+
+# ng/nk
+ang->áng
+ank->ánk
+ung->úng
+unk->únk
+öng->aung
+ing->íng
+ink->ínk
+eng->eing
+yng->ýng
+
+ýja->ýa
+ýju->ýu
+ýi->ýji
+æju->æu
+gj->j
+ygi->yji
+ögi->augi
+
+lgd->gld
+sins->arins
