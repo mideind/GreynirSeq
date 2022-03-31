@@ -22,7 +22,7 @@ class ErrorDataset(Dataset):
 
         self.error_handlers = error_handlers
 
-    def __getitem__(self, index):       
+    def __getitem__(self, index):
         errored_sentence = self.sentences[index].rstrip()
         if not errored_sentence.strip():
             # Empty or None, do nothing
@@ -30,7 +30,8 @@ class ErrorDataset(Dataset):
 
         pos_sentence = None
         if self.args.parse_online:
-            pos_sentence = self.pos_sentence(errored_sentence)
+            pos_sentence = self.pos_sentence(errored_sentence)["pos"]
+            sentence_tree = self.pos_sentence(errored_sentence)["tree"]
 
         for error_handler in self.error_handlers:
 
@@ -51,6 +52,7 @@ class ErrorDataset(Dataset):
                 {
                     "text": errored_sentence,
                     "pos": pos,
+                    "tree": sentence_tree,
                     "args": self.args
                 }
             )
@@ -71,5 +73,5 @@ class ErrorDataset(Dataset):
             if sentence.terminals == None:
                 return None
             pos_data += sentence.terminals
-        
-        return pos_data  # " ".join([p if p else "x" for p in pos_data])
+            parse_tree = sentence.tree
+        return { "pos" : pos_data, "tree" : parse_tree} # " ".join([p if p else "x" for p in pos_data])

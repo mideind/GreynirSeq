@@ -303,7 +303,7 @@ def looong():
     global Rules
 
     def longify(w):
-        reps = exp_len(0.3, 2, 10)
+        reps = exp_len(0.3, 2, 3)
         # Letter to repeat
         i = random() % len(w)
         return w[:i] + w[i] * reps + w[i + 1 :]

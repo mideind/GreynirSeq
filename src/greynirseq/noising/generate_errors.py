@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from ieg.errorrules.errors import DativeSicknessErrorRule, NoiseErrorRule, SwapErrorRule, MoodErrorRule
+from ieg.errorrules.errors import DativitisErrorRule, NoiseErrorRule, SwapErrorRule, MoodErrorRule
 from ieg.errorrules import NounCaseErrorRule 
 from ieg.dataset import ErrorDataset
 
@@ -18,11 +18,11 @@ def main():
     args = parser.parse_args()
 
     error_handlers = [
-        DativeSicknessErrorRule,
+        DativitisErrorRule,
         NounCaseErrorRule,
-        #NoiseErrorRule,
-        #SwapErrorRule,
-        #MoodErrorRule
+        SwapErrorRule,
+        MoodErrorRule,
+        NoiseErrorRule
     ]
 
     error_data = ErrorDataset(
