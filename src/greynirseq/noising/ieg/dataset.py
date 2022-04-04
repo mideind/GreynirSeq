@@ -61,7 +61,7 @@ class ErrorDataset(Dataset):
         parsed = g.parse(text)
         pos_data = []
         for sentence in parsed["sentences"]:
-            if sentence.terminals == None:
+            if sentence.terminals is None:
                 return None
             pos_data += sentence.terminals
             parse_tree = sentence.tree

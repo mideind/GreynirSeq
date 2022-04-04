@@ -1,6 +1,6 @@
 import random
 
-from ieg import b, g
+from ieg import b
 from ieg.spelling.errorify import errorify_line
 
 
@@ -27,7 +27,9 @@ class ErrorRule:
 
 
 class DativitisErrorRule(ErrorRule):
-    """Error rule class for applying the dative to nominative or accusative subjects, mig vantar -> mér vantar) - the so called "þágufallshneigð"."""
+    """Error rule class for applying the dative to nominative or accusative
+    subjects, mig vantar -> mér vantar) - the so called "þágufallshneigð".
+    """
 
     @staticmethod
     def _apply(data):
@@ -51,7 +53,7 @@ class DativitisErrorRule(ErrorRule):
 
                     tok_list[start:end] = [suggest]
                 return " ".join(tok_list)
-        except:
+        except Exception:
             # Sentence does not parse
             return data["text"]
 
@@ -81,7 +83,9 @@ class DativitisErrorRule(ErrorRule):
 
 
 class NoiseErrorRule(ErrorRule):
-    """Error rule class that scrambles the spelling of words according to predefined rules. Also applies word substitution from a list of common errors (to be abstracted out)."""
+    """Error rule class that scrambles the spelling of words according to predefined rules.
+    Also applies word substitution from a list of common errors (to be abstracted out).
+    """
 
     @staticmethod
     def _apply(data):
@@ -90,7 +94,9 @@ class NoiseErrorRule(ErrorRule):
 
 
 class SwapErrorRule(ErrorRule):
-    """Error rule class that randomly swaps adjacent words in a sentence, avoiding the first word and last tokens."""
+    """Error rule class that randomly swaps adjacent words in a sentence, avoiding the first
+    word and last tokens.
+    """
 
     @staticmethod
     def _apply(data):
@@ -130,5 +136,5 @@ class MoodErrorRule(ErrorRule):
     def change_mood(cls, tok, pos):
         try:
             return b.lookup_variants(tok, "so", ("FH"))[0].bmynd
-        except:
+        except Exception:
             return tok

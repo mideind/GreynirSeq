@@ -1,5 +1,3 @@
-import random
-
 from ieg import b
 
 from .errors import ErrorRule
@@ -13,8 +11,6 @@ class NounCaseErrorRule(ErrorRule):
     @classmethod
     def _apply(cls, data):
         text, pos = data["text"], data["pos"]
-        nps = data["tree"].all_matches("NP")
-        np = random.choice(list(nps))
         changed_text = []
         for tok, t_pos in zip(text.split(), pos):
             if t_pos.category == "no":

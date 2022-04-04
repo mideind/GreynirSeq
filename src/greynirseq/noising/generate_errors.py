@@ -4,7 +4,6 @@ import sys
 from ieg.dataset import ErrorDataset
 from ieg.errorrules import NounCaseErrorRule
 from ieg.errorrules.errors import DativitisErrorRule, MoodErrorRule, NoiseErrorRule, SwapErrorRule
-
 from tokenizer import correct_spaces
 
 
@@ -40,6 +39,7 @@ def main():
             print(error_sentence)
         else:
             print(correct_spaces(error_sentence))
+
 
 if __name__ == "__main__":
     main()
