@@ -1,17 +1,17 @@
-ð->d :: 0.01
-ð->đ :: 0.01
-ð<->dh :: 0.005
+ð->d :: 0.001
+ð->đ :: 0.0001
+ð<->dh :: 0.0001
 
-ö->o,ø,au  :: 0.05
+ö->o,ø,au  :: 0.005
 Ö->O,Ø  :: 0.005
 
-i<->y :: 0.1
-I<->Y :: 0.1
-í<->ý :: 0.1
+i<->y :: 0.7
+I<->Y :: 0.5
+í<->ý :: 0.5
 Í<->Ý :: 0.1
 
 ng<->nk :: 0.5
-nd->nt
+nd->nt :: 0.5
 
 þ->t,th :: 0.5
 Þ->T,Th :: 0.5
@@ -20,33 +20,33 @@ Th->T
 þ->p :: 0.5
 Þ->P :: 0.5
 
-æ->ae,a,œ
+æ->ae,a,œ :: 0.0001
 
-ll->gl,dl :: 0.5
+ll->gl,dl :: 0.05
 rr->r :: 0.5
 ll->l :: 0.5
-nn->n :: 0.5
+nn->n
 mm->m :: 0.5
 kk->k :: 0.5
 tt->t :: 0.5
 pp->p :: 0.5
 ss->s :: 0.5
 
-x<->ks :: 0.01
-x<->gs :: 0.01
-x<->ggs :: 0.01
+x<->ks :: 0.005
+x<->gs :: 0.005
+x<->ggs :: 0.005
 
 ld<->lt :: 0.01
 
 # Todo: fleira úr fyrstu málfræðiritgerðinni
-ᶏ<->ö,æ :: 0.0001
+#ᶏ<->ö,æ :: 0.00001
 
 w->v
 ce<->se :: 0.1
 ci<->si :: 0.1
 c<->k :: 0.1
-pt<->ft :: 0.5
-fl<->bl,bbl :: 0.5
+pt<->ft :: 0.05
+fl<->bl,bbl :: 0.05
 dl<->ll :: 0.5
 dn<->nn,rn,rdn :: 0.5
 rðn->rn :: 0.5
@@ -57,7 +57,7 @@ ank->ánk
 ung->úng
 unk->únk
 öng->aung
-ing->íng
+ing->íng,íngj
 ink->ínk
 eng->eing
 yng->ýng
@@ -73,3 +73,4 @@ ygi->yji
 
 lgd->gld
 sins->arins
+arsson->arson

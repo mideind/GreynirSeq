@@ -34,6 +34,7 @@ class DativitisErrorRule(ErrorRule):
     @staticmethod
     def _apply(data):
         try:
+            text = data["text"]
             s_tree = data["tree"]
             tok_list = s_tree.text.split()
             if ip := s_tree.all_matches("IP >> { ('langa'|'vanta'|'dreyma') }"):

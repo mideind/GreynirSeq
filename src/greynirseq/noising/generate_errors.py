@@ -1,4 +1,5 @@
 import argparse
+from distutils.log import error
 import sys
 
 from ieg.dataset import ErrorDataset
