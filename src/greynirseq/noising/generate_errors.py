@@ -5,6 +5,8 @@ from ieg.dataset import ErrorDataset
 from ieg.errorrules import NounCaseErrorRule
 from ieg.errorrules.errors import DativitisErrorRule, MoodErrorRule, NoiseErrorRule, SwapErrorRule
 
+from tokenizer import correct_spaces
+
 
 def main():
 
@@ -26,6 +28,7 @@ def main():
         "-parse", "--parse-online", help="Parse sentence with Greynir if pos not provided", type=bool, default=True
     )
     parser.add_argument("-seed", "--seed", default=1, type=int)
+    parser.add_argument("-no-detok", "--dont-detokenize", default=False, type=bool)
     args = parser.parse_args()
 
     error_handlers = [DativitisErrorRule, NounCaseErrorRule, SwapErrorRule, MoodErrorRule, NoiseErrorRule]
@@ -33,8 +36,10 @@ def main():
     error_data = ErrorDataset(args.infile, args.posfile, args, error_handlers=error_handlers)
 
     for error_sentence in error_data:
-        print(error_sentence)
-
+        if args.dont_detokenize:
+            print(error_sentence)
+        else:
+            print(correct_spaces(error_sentence))
 
 if __name__ == "__main__":
     main()

@@ -1,9 +1,3 @@
-from collections import namedtuple
-from distutils.log import error
-from errno import EROFS
-from re import I
-from typing import Type
-
 from ieg import g
 from torch.utils.data import Dataset
 
@@ -71,4 +65,4 @@ class ErrorDataset(Dataset):
                 return None
             pos_data += sentence.terminals
             parse_tree = sentence.tree
-        return {"pos": pos_data, "tree": parse_tree}  # " ".join([p if p else "x" for p in pos_data])
+        return {"pos": pos_data, "tree": parse_tree}
