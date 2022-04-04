@@ -9,16 +9,16 @@ filters.py is a module to which defines filters and transformations which can be
 clean up monolingual and bilingual data.
 
 Example usage from command line:
-python src/greynirseq/utils/preprocessing/filters.py -i <INPUT> \\
-    --languages en \\
-    --functions normalize_spaces \\
-        merge_spaces \\
-        replace_control_format \\
-        replace_dashes \\
-        remove_leading_bullet \\
-        null_sentence \\
-        whitelist_symbol \\
-        deduplicate \\
+python src/greynirseq/utils/preprocessing/filters.py -i <INPUT> \
+    --languages en \
+    --functions normalize_spaces \
+        merge_spaces \
+        replace_control_format \
+        replace_dashes \
+        remove_leading_bullet \
+        null_sentence \
+        whitelist_symbol \
+        deduplicate \
     --summary -q > <OUTPUT>
 
 The above command will read the input file which is monolingual English, normalize spaces, merge spaces, etc.
@@ -50,6 +50,8 @@ from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tupl
 
 import editdistance
 import tokenizer
+import tqdm
+from langid.langid import LanguageIdentifier, model
 
 from greynirseq.utils.preprocessing.symbols import (
     BANNED_SYMBOLS,
@@ -62,16 +64,10 @@ from greynirseq.utils.preprocessing.symbols import (
     SYMBOL_WHITELIST,
 )
 
-# from langid.langid import LanguageIdentifier, model
-# import pycld2 as cld2
-
 _SCRIPT_DIR = os.path.dirname(os.path.realpath("__file__"))
 
-# LANGID_IDENTIFIER = LanguageIdentifier.from_modelstring(model, norm_probs=True)
-# LANGID_IDENTIFIER.set_languages(["en", "is"])
-# LANGID_IDENTIFIER = None
-# if LANGID_IDENTIFIER is None:
-#     LANGID_IDENTIFIER = LanguageIdentifier.from_modelstring(model, norm_probs=True)
+LANGID_IDENTIFIER = LanguageIdentifier.from_modelstring(model, norm_probs=True)
+LANGID_IDENTIFIER.set_languages(["en", "is"])
 
 MAX_SUBTOKENS_PER_SENTENCE = 256
 MAX_CHARS_PER_SENTENCE = 500
@@ -89,25 +85,6 @@ def safe_div(a, b):
 def encode(text: str):
     """BPE encodes a string."""
     return text
-
-
-# def probably_correct_language2(text, lang_code, lower_bound=0.8):
-#     global LANGID_IDENTIFIER
-#     pred_lang_code, prob = LANGID_IDENTIFIER.classify(text.lower())
-#     res = pred_lang_code == lang_code and prob >= lower_bound
-#     if not res:
-#         msg = "{0:<8.7f}  {1}/{2}  {3}".format(prob, pred_lang_code, lang_code, text)
-#         print(msg)
-#     return res
-
-# def probably_correct_language(text, lang_code, lower_bound=0.8):
-#     isReliable, bytesFound, *rest = list(cld2.detect(text.lower()))
-#     langName, langCode, prob, _ = rest[0][0]
-#     if isReliable and langCode == langCode and prob > 80:
-#         return True
-#     # msg = "{0:<8.7f}  {1}/{2}  {3}".format(prob, langCode, lang_code, text)
-#     # print(msg)
-#     return False
 
 
 class Deduplifier:
@@ -132,7 +109,10 @@ class Deduplifier:
         return "\t".join([cls.preprocess_sentence(s) for s in ex.values()])
 
     @classmethod
-    def is_unique_example(cls, ex):
+    def is_unique_example(cls, ex, keep_empty=True):
+        """Returns True if the example is unique. If keep_empty=True then empty lines are considered unique"""
+        if keep_empty and all(s == "" for s in ex.values()):
+            return True
         key = hash(cls.preprocess_example(ex))
         if key in cls._set:
             return False
@@ -576,12 +556,22 @@ def wrong_quotes(ex: Dict[str, str]):
     return True
 
 
-# @Filters.register
-# def language(ex):
-#     ice, eng = ex["is"], ex["en"]
-#     correct = probably_correct_language(ice, "is", lower_bound=0.995)
-#     correct = correct and probably_correct_language(eng, "en", lower_bound=0.995)
-#     return correct
+def probably_english(text, lower_bound=0.800):
+    pred_lang_code, prob = LANGID_IDENTIFIER.classify(text.lower())
+    is_english = pred_lang_code == "en"
+    if is_english and prob >= lower_bound:
+        return True
+    return False
+
+
+@Filters.register
+def remove_english(ex):
+    for key, value in ex.items():
+        if key == "en":
+            continue
+        if probably_english(value):
+            return False
+    return True
 
 
 class Gather:
@@ -678,6 +668,7 @@ class Pipeline:
         # TODO: add support for view_function
         self.start_time = time.time()
         self.counter.clear()
+        p_bar = tqdm.tqdm()
         for ex in it_examples:
             self.counter["total"] = self.counter.get("total", 0) + 1
             is_transformed = False
@@ -697,7 +688,9 @@ class Pipeline:
                         self.counter[f_name] = self.counter.get(f_name, 0) + 1
                         is_filtered_out = True
             yield ex, is_transformed, is_filtered_out
+            p_bar.update()
         self.end_time = time.time()
+        p_bar.close()
 
     def function_summary(self, total_filtered: int, total_transformed: int):
         return {
