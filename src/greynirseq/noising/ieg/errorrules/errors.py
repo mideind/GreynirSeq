@@ -34,52 +34,30 @@ class DativitisErrorRule(ErrorRule):
     @staticmethod
     def _apply(data):
         try:
+            text = data["text"]
             s_tree = data["tree"]
-            tok_list = s_tree.text.split()
-            if ip := s_tree.all_matches("IP >> { ('langa'|'vanta'|'dreyma') }"):
-                for i in ip:
-                    np = i.first_match("NP")
-                    vp = i.first_match("VP")
-                    suggest = np.dative_np
-                    if vp is None or np is None:
-                        continue
-                    so = vp.first_match("so_subj")
-                    if so is None:
-                        continue
-                    variants = set(np.all_variants) - {"þf", np.cat} 
-                    variants.add("þgf")
+            tok_list = text.split()
+            for clause in s_tree:
+                if ip := clause.all_matches("IP >> { ('langa'|'vanta'|'dreyma') }"):
+                    for i in ip:
+                        np = i.first_match("NP")
+                        vp = i.first_match("VP")
+                        suggest = np.dative_np
+                        if vp is None or np is None:
+                            continue
+                        so = vp.first_match("so_subj")
+                        if so is None:
+                            continue
+                        variants = set(np.all_variants) - {"þf", np.cat} 
+                        variants.add("þgf")
 
-                    start, end = np.span[0],np.span[1]+1
-                    
-                    tok_list[start:end] = [suggest]
-                return " ".join(tok_list)
+                        start, end = np.span[0],np.span[1] + 1
+                        tok_list[start:end] = [suggest]
+            return " ".join(tok_list)
         except:
             # Sentence does not parse
             return data["text"]
 
-    @classmethod
-    def acc_to_dative(data):
-        s_tree = data["tree"]
-        tok_list = s_tree.text.split()
-        print(s_tree)
-        if ip := s_tree.all_matches("IP >> { ('langa'|'vanta'|'dreyma') }"):
-            for i in ip:
-                np = i.first_match("NP")
-                vp = i.first_match("VP")
-                suggest = np.dative_np
-                print(suggest)
-                if vp is None or np is None:
-                    continue
-                so = vp.first_match("so_subj")
-                if so is None:
-                    continue
-                variants = set(np.all_variants) - {"þf", np.cat} 
-                variants.add("þgf")
-
-                start, end = np.span[0],np.span[1]+1
-                
-                tok_list[start:end] = [suggest]
-            print(" ".join(tok_list))
 
 class NoiseErrorRule(ErrorRule):
     """Error rule class that scrambles the spelling of words according to predefined rules. Also applies word substitution from a list of common errors (to be abstracted out).

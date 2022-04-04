@@ -1,4 +1,5 @@
 import argparse
+from distutils.log import error
 import sys
 
 from ieg.errorrules.errors import DativitisErrorRule, NoiseErrorRule, SwapErrorRule, MoodErrorRule
@@ -20,8 +21,8 @@ def main():
     error_handlers = [
         DativitisErrorRule,
         NounCaseErrorRule,
-        SwapErrorRule,
         MoodErrorRule,
+        SwapErrorRule,
         NoiseErrorRule
     ]
 
