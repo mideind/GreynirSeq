@@ -1,7 +1,7 @@
 import random as python_random
 
-
 RANDOM_STATE = 0
+
 
 def random():
     """Simple LCG random number generator for reproducibility"""

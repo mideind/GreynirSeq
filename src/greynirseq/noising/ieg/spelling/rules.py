@@ -1,6 +1,6 @@
+import pathlib
 import re
 from dataclasses import dataclass
-import pathlib
 from typing import Any, Callable
 
 from .fixed_random import coinflip, exp_len, random
@@ -71,9 +71,7 @@ def parse_simple_rule(rule):
 
     if RATIO_SEPARATOR in arrow_splits[1]:
         ratio_splits = arrow_splits[1].split(RATIO_SEPARATOR)
-        assert (
-            len(ratio_splits) == 2
-        ), f"Found more than one ratio separator in this line: {rule}"
+        assert len(ratio_splits) == 2, f"Found more than one ratio separator in this line: {rule}"
         right = ratio_splits[0].strip()
         ratio = float(ratio_splits[1].strip())
     else:
@@ -189,9 +187,7 @@ def parse_regex_rule(rule):
 
     if RATIO_SEPARATOR in arrow_splits[1]:
         ratio_splits = arrow_splits[1].split(RATIO_SEPARATOR)
-        assert (
-            len(ratio_splits) == 2
-        ), f"Found more than one ratio separator in this line: {rule}"
+        assert len(ratio_splits) == 2, f"Found more than one ratio separator in this line: {rule}"
         right = ratio_splits[0].strip()
         ratio = float(ratio_splits[1].strip())
     else:
@@ -266,9 +262,7 @@ def accent_flip():
 
         return more_regex.sub(maybe_flip, w)
 
-    Rules.append(
-        Rule(lambda x: more_regex.search(x), flip_more_accents, "flip_more_accents")
-    )
+    Rules.append(Rule(lambda x: more_regex.search(x), flip_more_accents, "flip_more_accents"))
 
     less_regex = re.compile("[áéíóúýÁÉÍÓÚÝ]")
 
@@ -294,9 +288,7 @@ def accent_flip():
 
         return less_regex.sub(maybe_flip, w)
 
-    Rules.append(
-        Rule(lambda x: less_regex.search(x), flip_less_accents, "flip_less_accents")
-    )
+    Rules.append(Rule(lambda x: less_regex.search(x), flip_less_accents, "flip_less_accents"))
 
 
 def looong():

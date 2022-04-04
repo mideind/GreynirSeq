@@ -1,7 +1,8 @@
 import random
-from .errors import ErrorRule
 
 from ieg import b
+
+from .errors import ErrorRule
 
 
 class NounCaseErrorRule(ErrorRule):
@@ -16,9 +17,7 @@ class NounCaseErrorRule(ErrorRule):
         changed_text = []
         for tok, t_pos in zip(tok_list, pos):
             if type(t_pos) == str:
-                print("posstr")
                 if pos[0] == "n":
-                    print("no")
                     changed_text.append(cls.change_noun_case(tok, t_pos))
             elif t_pos.category == "no":
                     changed_text.append(cls.change_noun_case(tok, t_pos))
@@ -28,15 +27,11 @@ class NounCaseErrorRule(ErrorRule):
             print(tok_list[-1])
             # no category for the punctuation token
             changed_text.append(tok_list[-1])
-        print(" ".join(changed_text))
         return " ".join(changed_text)
 
     @classmethod
     def change_noun_case(cls, tok, pos):
         case_set = set(["nf", "þf", "þgf", "ef"])
-        if type(pos) == str:
-            case = 
-        print(pos.variants)
         case = case_set.intersection(pos.variants)
         other_cases = case_set - case
         rand_case = other_cases.pop()
