@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 import argparse
+import random
 import sys
 
 from tqdm import tqdm
 
-import random
 from .fixed_random import coinflip, exp_len, random, set_random_state
 from .rules import Rules
 

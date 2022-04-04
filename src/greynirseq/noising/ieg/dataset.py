@@ -1,15 +1,17 @@
+from collections import namedtuple
 from distutils.log import error
 from errno import EROFS
 from re import I
 from typing import Type
-from torch.utils.data import Dataset
-from collections import namedtuple
+
 from ieg import g
+from torch.utils.data import Dataset
 
 
 class ErrorDataset(Dataset):
 
     has_pos = False
+
     def __init__(self, infile, posfile, args, error_handlers=[]) -> None:
         self.has_pos = posfile is not None
         self.args = args
@@ -49,12 +51,7 @@ class ErrorDataset(Dataset):
                 pos = None
 
             errored_sentence = error_handler.apply(
-                {
-                    "text": errored_sentence,
-                    "pos": pos,
-                    "tree": sentence_tree,
-                    "args": self.args
-                }
+                {"text": errored_sentence, "pos": pos, "tree": sentence_tree, "args": self.args}
             )
 
             if not errored_sentence:
@@ -64,8 +61,8 @@ class ErrorDataset(Dataset):
         return errored_sentence
 
     def pos_sentence(self, text):
-        """ Parse text with greynir. Supports multiple sentences in
-            input string, joins pos for each sentences before returning.
+        """Parse text with greynir. Supports multiple sentences in
+        input string, joins pos for each sentences before returning.
         """
         parsed = g.parse(text)
         pos_data = []
@@ -74,4 +71,4 @@ class ErrorDataset(Dataset):
                 return None
             pos_data += sentence.terminals
             parse_tree = sentence.tree
-        return { "pos" : pos_data, "tree" : parse_tree} # " ".join([p if p else "x" for p in pos_data])
+        return {"pos": pos_data, "tree": parse_tree}  # " ".join([p if p else "x" for p in pos_data])

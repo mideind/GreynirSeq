@@ -1,12 +1,13 @@
 import random
-from .errors import ErrorRule
 
 from ieg import b
 
+from .errors import ErrorRule
+
 
 class NounCaseErrorRule(ErrorRule):
-    """Error rule class that inflects a noun to another case at random.
-    """
+    """Error rule class that inflects a noun to another case at random."""
+
     needs_pos = True
 
     @classmethod
@@ -28,7 +29,7 @@ class NounCaseErrorRule(ErrorRule):
         case = case_set.intersection(pos.variants)
         other_cases = case_set - case
         rand_case = other_cases.pop()
-        
+
         bin_no_result = b.lookup_variants(tok, cat="no", to_inflection=rand_case)
 
         if len(bin_no_result) > 0:
