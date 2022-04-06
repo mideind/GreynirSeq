@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 
 class ErrorDataset(Dataset):
 
-    has_pos = False
+    has_pos: bool = False
 
     def __init__(self, infile, posfile, args, error_handlers=[]) -> None:
         self.has_pos = posfile is not None
@@ -18,13 +18,13 @@ class ErrorDataset(Dataset):
 
         self.error_handlers = error_handlers
 
-    def __getitem__(self, index):
-        errored_sentence = self.sentences[index].rstrip()
+    def __getitem__(self, index) -> dict:
+        errored_sentence: str = self.sentences[index].rstrip()
         if not errored_sentence.strip():
             # Empty or None, do nothing
             return errored_sentence
 
-        pos_sentence = None
+        pos_sentence: str = None
         sentence_tree = None
         if self.args.parse_online:
             if self.pos_sentence(errored_sentence):
@@ -55,7 +55,7 @@ class ErrorDataset(Dataset):
 
         return errored_sentence
 
-    def pos_sentence(self, text):
+    def pos_sentence(self, text) -> dict:
         """Parse text with greynir. Supports multiple sentences in
         input string, joins pos for each sentences before returning.
         """

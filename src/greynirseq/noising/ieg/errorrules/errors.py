@@ -10,17 +10,17 @@ class ErrorRule:
     needs_pos = False
 
     @classmethod
-    def random_apply(cls, data):
+    def random_apply(cls, data) -> bool:
         if random.random() < data["args"].rule_chance_error_rate:
             return True
         return False
 
     @staticmethod
-    def _apply(data):
+    def _apply(data) -> str:
         return data["text"]
 
     @classmethod
-    def apply(cls, data):
+    def apply(cls, data) -> str:
         if cls.random_apply(data):
             return cls._apply(data)
         return data["text"]
@@ -32,7 +32,7 @@ class DativitisErrorRule(ErrorRule):
     """
 
     @staticmethod
-    def _apply(data):
+    def _apply(data) -> str:
         try:
             s_tree = data["tree"]
             tok_list = s_tree.text.split()
@@ -58,7 +58,7 @@ class DativitisErrorRule(ErrorRule):
             return data["text"]
 
     @classmethod
-    def acc_to_dative(cls, data):
+    def acc_to_dative(cls, data) -> str:
         s_tree = data["tree"]
         tok_list = s_tree.text.split()
         print(s_tree)
@@ -88,7 +88,7 @@ class NoiseErrorRule(ErrorRule):
     """
 
     @staticmethod
-    def _apply(data):
+    def _apply(data) -> str:
         text = errorify_line(data["text"], word_error_rate=data["args"].word_spelling_error_rate)
         return text
 
@@ -99,7 +99,7 @@ class SwapErrorRule(ErrorRule):
     """
 
     @staticmethod
-    def _apply(data):
+    def _apply(data) -> str:
         text = data["text"]
         sent_tokens = text.split()
         # Don't want to swap at the first position and -3 is the last item before the period
@@ -109,7 +109,7 @@ class SwapErrorRule(ErrorRule):
         return " ".join(sent_tokens)
 
     @classmethod
-    def random_apply(cls, data):
+    def random_apply(cls, data) -> bool:
         text = data["text"]
         if len(text.split()) <= 3:
             return False
@@ -122,7 +122,7 @@ class MoodErrorRule(ErrorRule):
     needs_pos = True
 
     @classmethod
-    def _apply(cls, data):
+    def _apply(cls, data) -> str:
         text, pos = data["text"], data["pos"]
         changed_text = []
         for tok, pos in zip(text.split(), pos):
@@ -133,7 +133,7 @@ class MoodErrorRule(ErrorRule):
         return " ".join(changed_text)
 
     @classmethod
-    def change_mood(cls, tok, pos):
+    def change_mood(cls, tok, pos) -> str:
         try:
             return b.lookup_variants(tok, "so", ("FH"))[0].bmynd
         except Exception:

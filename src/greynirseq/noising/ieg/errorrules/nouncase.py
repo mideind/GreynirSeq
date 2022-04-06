@@ -9,7 +9,7 @@ class NounCaseErrorRule(ErrorRule):
     needs_pos = True
 
     @classmethod
-    def _apply(cls, data):
+    def _apply(cls, data) -> str:
         text, pos = data["text"], data["pos"]
         tok_list = text.split()
         changed_text = []
@@ -28,7 +28,7 @@ class NounCaseErrorRule(ErrorRule):
         return " ".join(changed_text)
 
     @classmethod
-    def change_noun_case(cls, tok, pos):
+    def change_noun_case(cls, tok, pos) -> str:
         case_set = set(["nf", "þf", "þgf", "ef"])
         case = case_set.intersection(pos.variants)
         other_cases = case_set - case

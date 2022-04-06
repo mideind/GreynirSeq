@@ -7,7 +7,7 @@ from ieg.errorrules.errors import DativitisErrorRule, MoodErrorRule, NoiseErrorR
 from tokenizer import correct_spaces
 
 
-def main():
+def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("infile", nargs="?", type=argparse.FileType("r"), default=sys.stdin)
