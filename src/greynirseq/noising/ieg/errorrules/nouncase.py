@@ -4,8 +4,8 @@ from .errors import ErrorRule
 
 
 class NounCaseErrorRule(ErrorRule):
-    """Error rule class that inflects nouns in a sentence to another case at random.
-    """
+    """Error rule class that inflects nouns in a sentence to another case at random."""
+
     needs_pos = True
 
     @classmethod
@@ -18,7 +18,7 @@ class NounCaseErrorRule(ErrorRule):
                 if pos[0] == "n":
                     changed_text.append(cls.change_noun_case(tok, t_pos))
             elif t_pos.category == "no":
-                    changed_text.append(cls.change_noun_case(tok, t_pos))
+                changed_text.append(cls.change_noun_case(tok, t_pos))
             else:
                 changed_text.append(tok)
         if len(tok_list) > len(pos):

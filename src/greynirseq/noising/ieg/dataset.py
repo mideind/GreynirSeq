@@ -20,7 +20,6 @@ class ErrorDataset(Dataset):
 
     def __getitem__(self, index):
         errored_sentence = self.sentences[index].rstrip()
-        original_sentence = self.sentences[index].rstrip()
         if not errored_sentence.strip():
             # Empty or None, do nothing
             return errored_sentence
@@ -46,7 +45,7 @@ class ErrorDataset(Dataset):
                 pos = pos_sentence
             else:
                 pos = None
- 
+
             errored_sentence = error_handler.apply(
                 {"text": errored_sentence, "pos": pos, "tree": sentence_tree, "args": self.args}
             )
