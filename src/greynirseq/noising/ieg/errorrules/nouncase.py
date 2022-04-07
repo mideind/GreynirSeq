@@ -22,7 +22,6 @@ class NounCaseErrorRule(ErrorRule):
             else:
                 changed_text.append(tok)
         if len(tok_list) > len(pos):
-            print(tok_list[-1])
             # no category for the punctuation token
             changed_text.append(tok_list[-1])
         return " ".join(changed_text)
