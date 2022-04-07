@@ -44,7 +44,6 @@ import json
 import os
 import re
 import sys
-import time
 from io import StringIO
 from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
@@ -108,7 +107,7 @@ class Deduplifier:
         return "\t".join([cls.preprocess_sentence(s) for s in ex.values()])
 
     @classmethod
-    def is_unique_example(cls, ex, keep_empty=True):
+    def is_unique_example(cls, ex):
         """Returns True if the example is unique. If keep_empty=True then empty lines are considered unique"""
         key = hash(cls.preprocess_example(ex))
         if key in cls._set:
@@ -885,9 +884,9 @@ Input defaults to stdin if no input file is supplied.",
 
     in_file = tqdm.tqdm(args.in_file, unit=unit, desc="Running pipeline")
     if args.jsonl:
-        run_pipeline_with_jsonl(p, in_file, args.out_file, args.quiet)
+        run_pipeline_with_jsonl(p, in_file, args.out_file, args.quiet)  # type: ignore
     else:
-        examples = lines_to_examples(in_file, args.langsl)
+        examples = lines_to_examples(in_file, args.langsl)  # type: ignore
         for upd_ex, transformed, filtered in p.run(examples):
             if filtered:
                 continue
