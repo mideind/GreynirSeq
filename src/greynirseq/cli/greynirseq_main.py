@@ -7,10 +7,13 @@ import sys
 from itertools import chain
 from typing import Any, Dict, Generator, Iterable, List
 
+import numpy as np
+import onnxruntime as ort
 import torch
 import tqdm
 from fairseq.hub_utils import GeneratorHubInterface
 from fairseq.models.transformer import TransformerModel
+from transformers.models import mbart
 
 from greynirseq.nicenlp.models import MBART_PRETRAINED_MODELS, TF_PRETRAINED_MODELS
 from greynirseq.nicenlp.models.bart import GreynirBARTModel
@@ -179,6 +182,57 @@ class TranslateTransformer(GreynirSeqIO):
         return [t[0] for t in translations]
 
 
+class TranslateONNX(GreynirSeqIO):
+    def __init__(
+        self,
+        device: str,
+        batch_size: int,
+        show_progress: bool,
+        max_input_words_split: int,
+        model_args: Dict[str, Any],
+    ) -> None:
+        self.model_args = model_args
+        self.model_path = self.model_args["model_name_or_path"] + "/" + self.model_args["checkpoint_file"]
+        super().__init__(device, batch_size, show_progress, max_input_words_split)
+        self.tokenizer: mbart.MBartTokenizerFast = mbart.MBartTokenizerFast.from_pretrained(
+            self.model_args.get("bpe", "mideind/tokenizer-mbart-25-enis")
+        )
+        self.decoder_start_token_id = self.tokenizer.convert_tokens_to_ids(self.model_args["target_lang"])
+
+    def build_model(self) -> GeneratorHubInterface:
+        # Load the ONNX model - CPU unless onnxruntime-gpu is installed instead of onnxruntime
+        so = ort.SessionOptions()
+        so.add_session_config_entry("session.load_model_format", "ONNX")
+        # controls the number of threads in a pool to use to run ops in the model
+        so.intra_op_num_threads = self.model_args.get("intra_op_num_threads", 1)
+        # to control the number of threads used to parallelize the execution of the graph (across nodes).
+        so.inter_op_num_threads = self.model_args.get("inter_op_num_threads", 1)
+        # The ONNX runtime logs a lot of warnings that we don't care about.
+        so.log_severity_level = 3
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL  # Default
+        so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL  # Default
+        providers = ["CPUExecutionProvider"]
+        model = ort.InferenceSession(self.model_path, sess_options=so, providers=providers)
+        return model
+
+    def infer(self, batch) -> List[str]:
+        num_beams = 1
+        max_length = 1024
+
+        inputs = self.tokenizer(batch, padding=True, truncation=True, max_length=1024, return_tensors="np")
+        outputs = self.model.run(  # type: ignore
+            output_names=["output_ids"],
+            input_feed={
+                "input_ids": inputs["input_ids"],
+                "attention_mask": inputs["attention_mask"],
+                "num_beams": np.array(num_beams),
+                "max_length": np.array(max_length),
+                "decoder_start_token_id": np.array(self.decoder_start_token_id),
+            },
+        )
+        return list(self.tokenizer.batch_decode(outputs[0], skip_special_tokens=True))
+
+
 def main():
     DEFAULT_MODEL = "mbart25-cont-ees"
     parser = argparse.ArgumentParser()
@@ -283,6 +337,12 @@ Overwrites 'model_name_or_path' in --additional-arguments.",
             if "bpe" not in model_args:
                 model_args["bpe"] = "sentencepiece"
             handler: GreynirSeqIO = TranslateBART(
+                args.device, args.bsz, args.progress, args.max_input_words_split, model_args
+            )
+        elif (
+            model_args.get("model_type", None) == "onnx"
+        ):
+            handler: GreynirSeqIO = TranslateONNX(
                 args.device, args.bsz, args.progress, args.max_input_words_split, model_args
             )
         else:
