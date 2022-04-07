@@ -68,7 +68,6 @@ _SCRIPT_DIR = os.path.dirname(os.path.realpath("__file__"))
 
 LANGID_IDENTIFIER = LanguageIdentifier.from_modelstring(model, norm_probs=True)
 LANGID_IDENTIFIER.set_languages(["en", "is"])
-
 MAX_SUBTOKENS_PER_SENTENCE = 256
 MAX_CHARS_PER_SENTENCE = 500
 BANNED_SYMBOLS_PAT = "[" + re.escape(BANNED_SYMBOLS) + "]"
@@ -111,8 +110,6 @@ class Deduplifier:
     @classmethod
     def is_unique_example(cls, ex, keep_empty=True):
         """Returns True if the example is unique. If keep_empty=True then empty lines are considered unique"""
-        if keep_empty and all(s == "" for s in ex.values()):
-            return True
         key = hash(cls.preprocess_example(ex))
         if key in cls._set:
             return False
@@ -646,6 +643,18 @@ class MinFrequency(Gather):
         return True
 
 
+class bcolors:
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKCYAN = "\033[96m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+
+
 class Pipeline:
     """A Pipeline holds a list of functions (transformations or filters) to be applied to a sequence of examples.
 
@@ -657,18 +666,15 @@ class Pipeline:
         is_view = [True if f_name == view_function else False for f_name in functions]
         self.functions = list(zip(functions, is_filter, is_transform, is_view))
         self.counter: Dict[str, int] = dict()
-        self.start_time = time.time()
-        self.end_time = time.time()
 
-    def run(self, it_examples: Iterable[Dict[str, str]]) -> Iterable[Tuple[Dict[str, str], bool, bool]]:
+    def run(
+        self, it_examples: Iterable[Dict[str, str]], quiet: bool = True
+    ) -> Iterable[Tuple[Dict[str, str], bool, bool]]:
         """Run the functions defined in the Pipeline on the provided examples.
 
         Returns: An iterable of the (possibly) updated examples along with flags indicating if the example
         is transformed and whether it is filtered out."""
         # TODO: add support for view_function
-        self.start_time = time.time()
-        self.counter.clear()
-        p_bar = tqdm.tqdm()
         for ex in it_examples:
             self.counter["total"] = self.counter.get("total", 0) + 1
             is_transformed = False
@@ -677,27 +683,29 @@ class Pipeline:
                 if is_transform:
                     upd_ex = Transformations.apply(f_name, ex)
                     if upd_ex != ex:
-                        # We count EACH filter application - even though one is enough to filter out an example.
-                        # This will cause strange relative numbers in the report.
                         self.counter[f_name] = self.counter.get(f_name, 0) + 1
                         is_transformed = True
                         # We might make multiple transformations, so we need to update the example
                         ex = upd_ex
                 if is_filter:
                     if not Filters.apply(f_name, ex):
+                        # We count EACH filter application - even though one is enough to filter out an example.
+                        # This will cause strange relative numbers in the report.
                         self.counter[f_name] = self.counter.get(f_name, 0) + 1
                         is_filtered_out = True
-            yield ex, is_transformed, is_filtered_out
-            p_bar.update()
-        self.end_time = time.time()
-        p_bar.close()
+                        if not quiet:
+                            print(f"({bcolors.OKCYAN}{f_name}{bcolors.ENDC})" + "\t".join(ex.values()), file=sys.stderr)
 
-    def function_summary(self, total_filtered: int, total_transformed: int):
+            self.counter["total_filtered"] = self.counter.get("total_filtered", 0) + int(is_filtered_out)
+            self.counter["total_transformed"] = self.counter.get("total_transformed", 0) + int(is_transformed)
+            yield ex, is_transformed, is_filtered_out
+
+    def function_summary(self):
+        """Return a dict with filtering summary statistics."""
         return {
             "total": self.counter["total"],
-            "time": self.end_time - self.start_time,
-            "filtered": total_filtered,
-            "transformed": total_transformed,
+            "filtered": self.counter["total_filtered"],
+            "transformed": self.counter["total_transformed"],
             "functions": {
                 f_name: {
                     "total": self.counter[f_name],
@@ -705,7 +713,10 @@ class Pipeline:
                     "is_filter": is_filter,
                     "is_transform": is_transform,
                     "rel_percent": 100
-                    * safe_div(self.counter[f_name], total_filtered if is_filter else total_transformed),
+                    * safe_div(
+                        self.counter[f_name],
+                        self.counter["total_filtered"] if is_filter else self.counter["total_transformed"],
+                    ),
                 }
                 for f_name, is_filter, is_transform, is_view in self.functions
             },
@@ -713,7 +724,7 @@ class Pipeline:
 
 
 def print_function_summary(f_summary, indent=4, out_file=sys.stderr):
-    """Summarize the counters for the pipeline."""
+    """Print the filtering summary statistics for the pipeline."""
     print(
         "Examples remaining:  {rem:>8d} / {total:<8d}  {pct:5.2f}%  in {elaps:>5.1f} seconds".format(
             rem=f_summary["total"] - f_summary["filtered"],
@@ -745,6 +756,7 @@ def print_function_summary(f_summary, indent=4, out_file=sys.stderr):
 
 
 def lines_to_examples(lines: StringIO, langs: List[str]) -> Iterator[Dict[str, str]]:
+    """Read tsv input and yield examples."""
     num_langs = len(langs)
     for line in lines:
         line = line.strip("\n")
@@ -755,8 +767,30 @@ def lines_to_examples(lines: StringIO, langs: List[str]) -> Iterator[Dict[str, s
         yield ex
 
 
-def valid_view_function(string):
+def run_pipeline_with_jsonl(pipeline: Pipeline, in_file: StringIO, out_file: StringIO, quiet: bool):
+    """Run the pipeline on JSONL file and write the transformed results out."""
+    for json_str in in_file:
+        json_str = json_str.rstrip("\n")
+        document_json = json.loads(json_str)
+        lang = document_json["lang"]
+        new_document_value = []
+        for paragraph in document_json["document"]:
+            new_paragraph_value = []
+            for sent in paragraph:
+                for ex_upd, is_transformed, is_filtered_out in pipeline.run([{lang: sent}], quiet=quiet):
+                    if not is_filtered_out:
+                        new_paragraph_value.append(ex_upd[lang])
+            # We do not want to add empty paragraphs
+            if len(new_paragraph_value) != 0:
+                new_document_value.append(new_paragraph_value)
+        # If the whole document is filtered out, we do not want to add it to the output
+        if len(new_document_value) != 0:
+            document_json["document"] = new_document_value
+            out_file.write(json.dumps(document_json, ensure_ascii=False) + "\n")
 
+
+def valid_view_function(string):
+    """Check if the view function is valid."""
     fn_names = [fn for fn in Filters._filters] + [fn for fn in Transformations._transforms]
     if string in fn_names:
         return string
@@ -766,8 +800,9 @@ def valid_view_function(string):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        "Filters and transformation pipelines for monolingual and parallel corpora (tab delimiter)."
-        "Input defaults to stdin if no input file is supplied."
+        prog="filters.py",
+        description="Filters and transformation pipelines for monolingual and parallel corpora. \
+Input defaults to stdin if no input file is supplied.",
     )
 
     parser.add_argument(
@@ -777,7 +812,7 @@ if __name__ == "__main__":
         type=argparse.FileType("r"),
         default=sys.stdin,
         required=False,
-        help="Sample file to run filter through, defaults to stdin",
+        help="File (tsv or jsonl with --jsonl flag) to run filter through, defaults to stdin.",
     )
     parser.add_argument(
         "-f",
@@ -818,6 +853,13 @@ if __name__ == "__main__":
         help="Print a summary of function application.",
     )
     parser.add_argument(
+        "--jsonl",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Is the input file in JSONL format? We will then parse each line as a JSON object and write it as well.",
+    )
+    parser.add_argument(
         "--hook",
         dest="view_function",
         type=valid_view_function,
@@ -837,88 +879,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     p = Pipeline(args.functions, args.view_function)
-    examples = lines_to_examples(args.in_file, args.langs)
-    total_transformed = 0
-    total_filtered = 0
-    for upd_ex, transformed, filtered in p.run(examples):
-        if filtered:
-            total_filtered += 1
-            if not args.quiet:
-                print("\t".join(upd_ex.values()), file=sys.stderr)
-            continue
-        if transformed:
-            total_transformed += 1
-        print("\t".join(upd_ex.values()), file=args.out_file)
-    if args.summary:
-        print_function_summary(p.function_summary(total_filtered, total_transformed))
+    unit = " lines"
+    if args.jsonl:
+        unit = " documents"
 
-    _fns = [
-        # filters
-        null_sentence,
-        alphanumeric,
-        banned_symbol,
-        whitelist_symbol,
-        digit_mismatch,
-        deduplicate,
-        # case_mismatch,
-        max_word_length,
-        min_word_count,
-        # transformations
-        fix_improper_line_split,
-        # remove_leading_bullet,
-        replace_control_format,
-        replace_dashes,
-        merge_spaces,
-        # fix_ice_quotes,
-        # filters
-        # bullet_mismatch,
-        # only_even_quotes,
-        ocr_wrong_symbol,
-        # colon_mismatch,
-        # missing_letter,
-        # corrupt_symbol,
-        quote_inside_word,
-        abs_min_string_edit,
-        rel_min_string_edit,
-        # abs_min_subtoken_edit,
-        # rel_min_subtoken_edit,
-        strict_sentence_length_ratio,
-        # subtoken_count_ratio,
-        ocr_word_boundary_avg_length,
-        # dot_pattern,
-        # wrong_quotes,
-        #
-        # language,
-        # MinFrequency.gather,
-        # MinFrequency,
-        # MostCommon50k,
-    ]
-    # Minimal
-    _fns = [
-        # filters
-        null_sentence,
-        alphanumeric,
-        whitelist_symbol,
-        digit_mismatch,
-        deduplicate,
-        case_mismatch,
-        max_word_length,
-        min_word_count,
-        # transformations
-        fix_improper_line_split,
-        # remove_leading_bullet,
-        replace_control_format,
-        replace_dashes,
-        merge_spaces,
-        fix_ice_quotes,
-        wrong_quotes,
-        # filters
-        bullet_mismatch,
-        only_even_quotes,
-        ocr_wrong_symbol,
-        colon_mismatch,
-        missing_letter,
-        corrupt_symbol,
-        quote_inside_word,
-        ocr_word_boundary_avg_length,
-    ]
+    in_file = tqdm.tqdm(args.in_file, unit=unit, desc="Running pipeline")
+    if args.jsonl:
+        run_pipeline_with_jsonl(p, in_file, args.out_file, args.quiet)
+    else:
+        examples = lines_to_examples(in_file, args.langsl)
+        for upd_ex, transformed, filtered in p.run(examples):
+            if filtered:
+                continue
+            print("\t".join(upd_ex.values()), file=args.out_file)
+    if args.summary:
+        print_function_summary(p.function_summary())
