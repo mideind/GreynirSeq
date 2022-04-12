@@ -1,5 +1,7 @@
 import random
 
+from torch import randint
+
 from ieg import b
 from ieg.spelling.errorify import errorify_line
 
@@ -57,30 +59,6 @@ class DativitisErrorRule(ErrorRule):
             # Sentence does not parse
             return data["text"]
 
-    @classmethod
-    def acc_to_dative(cls, data):
-        s_tree = data["tree"]
-        tok_list = s_tree.text.split()
-        print(s_tree)
-        if ip := s_tree.all_matches("IP >> { ('langa'|'vanta'|'dreyma') }"):
-            for i in ip:
-                np = i.first_match("NP")
-                vp = i.first_match("VP")
-                suggest = np.dative_np
-                print(suggest)
-                if vp is None or np is None:
-                    continue
-                so = vp.first_match("so_subj")
-                if so is None:
-                    continue
-                variants = set(np.all_variants) - {"þf", np.cat}
-                variants.add("þgf")
-
-                start, end = np.span[0], np.span[1] + 1
-
-                tok_list[start:end] = [suggest]
-            print(" ".join(tok_list))
-
 
 class NoiseErrorRule(ErrorRule):
     """Error rule class that scrambles the spelling of words according to predefined rules.
@@ -123,18 +101,36 @@ class MoodErrorRule(ErrorRule):
 
     @classmethod
     def _apply(cls, data):
-        text, pos = data["text"], data["pos"]
+        text, pos, tree = data["text"], data["pos"], data["tree"]
         changed_text = []
-        for tok, pos in zip(text.split(), pos):
-            if pos.category == "so" and "vh" in pos.variants:
-                changed_text.append(cls.change_mood(tok, pos))
+        for p in pos:
+            if p.category == "so" and "vh" in p.variants:
+                changed_text.append(cls.change_mood(p.text))
             else:
-                changed_text.append(tok)
+                changed_text.append(p.text)
         return " ".join(changed_text)
 
     @classmethod
-    def change_mood(cls, tok, pos):
+    def change_mood(cls, tok):
         try:
             return b.lookup_variants(tok, "so", ("FH"))[0].bmynd
-        except Exception:
+        except:
             return tok
+
+
+class DuplicateWordsRule(ErrorRule):
+    """Error rule class for duplicating a random word in a sentence so that it appears twice in succession"""
+    @staticmethod
+    def _apply(data):
+        try:
+            sent_tokens = [p.text for p in data["pos"]]
+            rand_int = random.randint(0, len(sent_tokens))
+            if not any(sent_tokens[rand_int]).isdigit():
+                sent_tokens[rand_int] = sent_tokens[rand_int] + " " + sent_tokens[rand_int]
+            return " ".join(sent_tokens)
+        except:
+            return data["text"]
+
+
+#class DropLettersRule(ErrorRule):
+#    """Error rule class for dropping letters from random words in a sentence."""

@@ -290,6 +290,19 @@ def accent_flip():
 
     Rules.append(Rule(lambda x: less_regex.search(x), flip_less_accents, "flip_less_accents"))
 
+def drop_letters():
+    global Rules
+
+    def drop_letter(w):
+        # Letter to drop
+        i = random() % len(w)
+        # Don't change numbers
+        if w[i].isdigit():
+            return w
+        else:
+            return w[0 : i : ] + w[i + 1 : :]
+
+    Rules.append(Rule(lambda x: True, drop_letter, "drop_letter"))
 
 def looong():
     global Rules
@@ -297,9 +310,13 @@ def looong():
     def longify(w):
         reps = exp_len(0.3, 2, 3)
         # Letter to repeat
-        i = random() % len(w)
-        return w[:i] + w[i] * reps + w[i + 1 :]
-
+        if len(w) > 0:
+            i = random() % len(w)
+            # Don't change numbers
+            if not w[i].isdigit():
+                return w[:i] + w[i] * reps + w[i + 1 :]
+        return w
+        
     Rules.append(Rule(lambda x: True, longify, "longify"))
 
 
@@ -308,7 +325,9 @@ def initialize_rules():
     word_substitution_rules()
     regex_rules()
     accent_flip()
+    drop_letters()
     looong()
+
 
 
 initialize_rules()

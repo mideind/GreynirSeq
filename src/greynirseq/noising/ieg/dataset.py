@@ -1,7 +1,6 @@
 from ieg import g
 from torch.utils.data import Dataset
 
-
 class ErrorDataset(Dataset):
 
     has_pos = False
@@ -32,7 +31,6 @@ class ErrorDataset(Dataset):
                 sentence_tree = self.pos_sentence(errored_sentence)["tree"]
 
         for error_handler in self.error_handlers:
-
             if error_handler.needs_pos and not (self.has_pos or self.args.parse_online):
                 continue
             elif error_handler.needs_pos and self.args.parse_online:
@@ -52,7 +50,6 @@ class ErrorDataset(Dataset):
             if not errored_sentence:
                 # Rule broke sentence
                 return self.sentences[index].rstrip()
-
         return errored_sentence
 
     def pos_sentence(self, text):

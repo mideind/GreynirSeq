@@ -3,7 +3,7 @@ import sys
 
 from ieg.dataset import ErrorDataset
 from ieg.errorrules import NounCaseErrorRule
-from ieg.errorrules.errors import DativitisErrorRule, MoodErrorRule, NoiseErrorRule, SwapErrorRule
+from ieg.errorrules.errors import DativitisErrorRule, MoodErrorRule, NoiseErrorRule, SwapErrorRule, DuplicateWordsRule
 from tokenizer import correct_spaces
 
 
@@ -30,7 +30,7 @@ def main():
     parser.add_argument("-no-detok", "--dont-detokenize", default=False, type=bool)
     args = parser.parse_args()
 
-    error_handlers = [DativitisErrorRule, NounCaseErrorRule, SwapErrorRule, MoodErrorRule, NoiseErrorRule]
+    error_handlers = [DativitisErrorRule, MoodErrorRule, NounCaseErrorRule, SwapErrorRule, DuplicateWordsRule, NoiseErrorRule ]
 
     error_data = ErrorDataset(args.infile, args.posfile, args, error_handlers=error_handlers)
 
