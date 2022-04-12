@@ -25,7 +25,7 @@ class NounCaseErrorRule(ErrorRule):
         return " ".join(changed_text)
 
     @classmethod
-    def change_noun_case(cls, tok, pos):
+    def change_noun_case(cls, tok, pos) -> str:
         case_set = set(["nf", "þf", "þgf", "ef"])
         case = case_set.intersection(pos.variants)
         other_cases = case_set - case
