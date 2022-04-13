@@ -108,7 +108,7 @@ class Deduplifier:
 
     @classmethod
     def is_unique_example(cls, ex):
-        """Returns True if the example is unique. If keep_empty=True then empty lines are considered unique"""
+        """Returns True if the example is unique."""
         key = hash(cls.preprocess_example(ex))
         if key in cls._set:
             return False
@@ -725,11 +725,10 @@ class Pipeline:
 def print_function_summary(f_summary, indent=4, out_file=sys.stderr):
     """Print the filtering summary statistics for the pipeline."""
     print(
-        "Examples remaining:  {rem:>8d} / {total:<8d}  {pct:5.2f}%  in {elaps:>5.1f} seconds".format(
+        "Examples remaining:  {rem:>8d} / {total:<8d}  {pct:5.2f}%".format(
             rem=f_summary["total"] - f_summary["filtered"],
             total=f_summary["total"],
             pct=100 * safe_div(f_summary["total"] - f_summary["filtered"], f_summary["total"]),
-            elaps=f_summary["time"],
         ),
         file=out_file,
     )
