@@ -544,6 +544,7 @@ def min_word_count(ex: Dict[str, str], minimum_word_count=3):
 
 @Filters.register
 def wrong_quotes(ex: Dict[str, str]):
+    """Return True if examples do not contain wrong quotes."""
     ALLOWED_QUOTES = set("'\"," + "".join(ICE_QUOTE.ALL))
     DISALLOWED_QUOTES = set(QUOTE_LIKE).difference(ALLOWED_QUOTES)
     for text in ex.values():
@@ -553,6 +554,7 @@ def wrong_quotes(ex: Dict[str, str]):
 
 
 def probably_english(text, lower_bound=0.800):
+    """Return True if text (other than English) is likely to be English."""
     pred_lang_code, prob = LANGID_IDENTIFIER.classify(text.lower())
     is_english = pred_lang_code == "en"
     if is_english and prob >= lower_bound:
@@ -562,6 +564,7 @@ def probably_english(text, lower_bound=0.800):
 
 @Filters.register
 def remove_english(ex):
+    """Return True if examples are (probably) not English."""
     for key, value in ex.items():
         if key == "en":
             continue
