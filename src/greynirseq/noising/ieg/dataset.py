@@ -63,7 +63,6 @@ class ErrorDataset(Dataset):
                 pos = pos_sentence
             else:
                 pos = None
-
             errored_sentence = error_handler.apply(
                 {"text": errored_sentence, "pos": pos, "tree": sentence_tree, "args": self.args}
             )

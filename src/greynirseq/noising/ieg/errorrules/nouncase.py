@@ -7,21 +7,29 @@ from .errors import ErrorRule
 
 class NounCaseErrorRule(ErrorRule):
     """Error rule class that inflects nouns in a sentence to another case at random.
-       TODO: not inflect every noun but just one in a sentence
+       TODO: not inflect every noun, just one in a sentence.
     """
     needs_pos = True
 
     @classmethod
     def _apply(cls, data):
-        pos = data["pos"]
+
+        text, pos = data["text"], data["pos"]
+        text_list = text.split()
+
+        if not super().tok_and_pos_match(cls, text_list, pos):
+            return text
         changed_text = []
-        for p in pos:
+
+        if len(text_list) != len(pos):
+            return text
+        for idx, p in enumerate(pos):
             # not changing capitalized words (or at sentence start)
-            if p.category == "no" and not p.text[0].isupper():
-                res = cls.change_noun_case(p.text, p)
+            if p.category == "no" and not text_list[idx][0].isupper():
+                res = cls.change_noun_case(text_list[idx], p)
                 changed_text.append(res)
             else:
-                changed_text.append(p.text)
+                changed_text.append(text_list[idx])
         return " ".join(changed_text)
 
     @classmethod
@@ -33,7 +41,7 @@ class NounCaseErrorRule(ErrorRule):
         bin_no_result = b.lookup_variants(tok, cat="no", to_inflection=rand_case)
 
         if len(bin_no_result) > 0:
-            # the lookup method adds hyphens to unfound compounds; we're removing those (except for in hyphenated words)
+            # the lookup method adds hyphens to unrecognized compounds; we're removing those (except for in truly hyphenated words)
             if not "-" in tok:
                 return bin_no_result[0].bmynd.replace("-", "")
         return tok

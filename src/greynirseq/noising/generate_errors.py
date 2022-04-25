@@ -4,7 +4,7 @@ import sys
 import torch
 from ieg.dataset import ErrorDataset, worker_init_fn
 from ieg.errorrules import NounCaseErrorRule
-from ieg.errorrules.errors import DativitisErrorRule, MoodErrorRule, NoiseErrorRule, SwapErrorRule, DuplicateWordsRule
+from ieg.errorrules.errors import DativitisErrorRule, MoodErrorRule, NoiseErrorRule, SwapErrorRule, DuplicateWordsRule, SplitWordsRule
 from tokenizer import correct_spaces
 
 
@@ -33,7 +33,7 @@ def main() -> None:
     parser.add_argument("-b", "--batch-size", default=1, type=int)
     args = parser.parse_args()
 
-    error_handlers = [DativitisErrorRule, MoodErrorRule, NounCaseErrorRule, SwapErrorRule, DuplicateWordsRule, NoiseErrorRule ]
+    error_handlers = [DativitisErrorRule, MoodErrorRule, NounCaseErrorRule, SwapErrorRule, DuplicateWordsRule, SplitWordsRule, NoiseErrorRule ]
 
     error_dataset = ErrorDataset(args.infile, args.posfile, args, error_handlers=error_handlers)
 
