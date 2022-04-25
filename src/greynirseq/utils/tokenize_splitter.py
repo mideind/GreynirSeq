@@ -2,6 +2,9 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+from typing import List
+
+import spacy
 import tokenizer
 from reynir import bintokenizer
 from reynir.binparser import BIN_Token
@@ -56,3 +59,33 @@ def split_text(text):
             pg_data.append(sentence)
         data.append(pg_data)
     return data
+
+
+class SentenceSegmenter:
+    """Sentence segmenter for English and Icelandic."""
+
+    def __init__(self, lang: str):
+        self.lang = lang
+        if lang == "en":
+            # Try to make the sentence segmenter faster
+            cls = spacy.util.get_lang_class(lang)  # 1. Get Language class, e.g. English
+            nlp = cls()  # 2. Initialize it
+            nlp.add_pipe("sentencizer")
+            self.spacy = nlp
+
+    def segment_text(self, text: str) -> List[str]:
+        """Segments text into sentences."""
+        if self.lang == "en":
+            return self._en_segmenter(text)
+        elif self.lang == "is":
+            return self._is_segmenter(text)
+        else:
+            raise NotImplementedError()
+
+    def _is_segmenter(self, text: str) -> List[str]:
+        """Sentence segmenter for Icelandic."""
+        return [sentence.lstrip(" ") for sentence in tokenizer.split_into_sentences(text, original=True)]
+
+    def _en_segmenter(self, text: str) -> List[str]:
+        """Sentence segmenter for English."""
+        return [sent.text for sent in self.spacy(text).sents]
