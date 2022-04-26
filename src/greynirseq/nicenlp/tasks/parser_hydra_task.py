@@ -5,14 +5,12 @@
 import logging
 import os
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, List, Optional
 
 import numpy as np
 import torch
 from fairseq.data import (
-    BaseWrapperDataset,
     Dictionary,
     IdDataset,
     ListDataset,
@@ -27,9 +25,6 @@ from fairseq.dataclass import FairseqDataclass
 from fairseq.tasks import FairseqTask, register_task
 from icecream import ic
 from omegaconf import II
-from torch import Tensor
-from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import Dataset
 
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 from greynirseq.nicenlp.data.datasets import (
@@ -38,301 +33,23 @@ from greynirseq.nicenlp.data.datasets import (
     RightPad2dDataset,
     WordEndMaskDataset,
 )
+from greynirseq.nicenlp.data.lambda_dataset import LambdaDataset
+from greynirseq.nicenlp.data.parsing_datsets import (
+    GreynirParsingDataset,
+    GreynirTreeAugmentationDataset,
+    GreynirTreeJSONLDataset,
+)
+from greynirseq.nicenlp.data.text_encoder_dataset import TextEncodingDataset
 from greynirseq.nicenlp.utils.constituency.incremental_parsing import (
     EOS_LABEL,
     NULL_LABEL,
     ROOT_LABEL,
     ParseAction,
     get_banned_attachments,
-    get_depths,
-    get_incremental_parse_actions,
-    get_preorder_index_of_right_chain,
 )
 from greynirseq.nicenlp.utils.label_schema.label_schema import label_schema_as_dictionary, parse_label_schema
 
 logger = logging.getLogger(__name__)
-
-
-class TextEncodingDataset(BaseWrapperDataset):
-    # temporary placement
-    def __init__(
-        self,
-        dataset: Dataset,
-        dictionary: Dictionary,
-        bpe: Any,
-        prepend_token: Optional[int] = None,
-        add_prefix_space=True,
-    ):
-        super().__init__(dataset)
-        self.dictionary = dictionary
-        self.bpe = bpe
-        self._sizes = None
-        self.prepend_tensor = None
-        if prepend_token is not None:
-            self.prepend_tensor = torch.tensor([prepend_token])
-        self.add_prefix_space = add_prefix_space
-
-    def __getitem__(self, index: int):
-        text = self.dataset[index]
-        if self.add_prefix_space and not text[0] == " ":
-            text = " " + text
-        hf_ids_string = self.bpe.encode(text)
-        output_ids = self.dictionary.encode_line(hf_ids_string)
-        if self.prepend_tensor is not None:
-            output_ids = torch.cat([self.prepend_tensor, output_ids])
-        return output_ids
-
-    def get_sizes(self):
-        sizes = torch.zeros(len(self.dataset))
-        for idx in range(len(self.dataset)):
-            sizes[idx] = len(self[idx])
-        return sizes
-
-    @property
-    def sizes(self):
-        if self._sizes is not None:
-            return self._sizes
-        sizes = torch.zeros(len(self.dataset), dtype=torch.long)
-        for idx in range(len(self.dataset)):
-            sizes[idx] = len(self[idx])
-        self._sizes = sizes
-        return self._sizes
-
-
-class _LambdaDataset(BaseWrapperDataset):
-    # temporary placement
-    def __init__(self, dataset: Dataset, lambda_fn):
-        super().__init__(dataset)
-        self.lambda_fn = lambda_fn
-
-    def __getitem__(self, index: int):
-        return self.lambda_fn(self.dataset[index])
-
-
-class GreynirTreeJSONLDataset(BaseWrapperDataset):
-    # temporary placement
-    def __init__(self, dataset: Dataset):
-        super().__init__(dataset)
-
-    @lru_cache(maxsize=64)
-    def __getitem__(self, index: int):
-        tree = greynir_utils.Node.from_json(self.dataset[index])
-        tree = tree.split_multiword_tokens()
-        tree.wrap_bare_terminals()
-        return tree
-
-    @classmethod
-    def from_path(cls, path):
-        with open(str(path), "r") as in_fh:
-            line_list = in_fh.readlines()
-        return cls(line_list)
-
-
-def remove_nt(node, nt, prob):
-    def should_remove(node, nt):
-        if node.terminal:
-            return False
-        if node.nonterminal == nt and torch.rand(1).squeeze() < (prob):
-            return True
-        new_children = []
-        for child in node.children:
-            if should_remove(child, nt):
-                continue
-            new_children.append(child)
-        if not new_children:
-            return True
-        node._children = new_children
-        return False
-
-    should_remove(node, nt)
-
-
-class GreynirTreeAugmentationDataset(BaseWrapperDataset):
-    def __init__(self, greynirtree_dataset: Dataset, noise_prob):
-        super().__init__(greynirtree_dataset)
-        self.noise_prob = noise_prob
-
-    @lru_cache(maxsize=64)
-    def __getitem__(self, index: int):
-        tree = self.dataset[index].clone()
-
-        # randomly remove punctuation
-        remove_nt(tree, "POS|GRM", self.noise_prob)
-
-        # randomly lowercase all
-        if torch.rand(1).squeeze() < self.noise_prob:
-            for leaf in tree.leaves:
-                leaf._text = leaf.text.lower()
-
-        return tree
-
-
-class GreynirParsingDataset(BaseWrapperDataset):
-    # temporary placement
-    def __init__(
-        self,
-        greynirtree_dataset: Dataset,
-        label_dictionary: Dictionary,
-        source_dictionary: Dictionary,
-        bpe: Any,
-        prepend_token: Optional[int] = None,
-    ):
-        super().__init__(greynirtree_dataset)
-        self.label_dictionary = label_dictionary
-        self.source_dictionary = source_dictionary
-        self.bpe = bpe
-        self.padding_idx = label_dictionary.pad()
-        self.prepend_tensor = None
-        if prepend_token is not None:
-            self.prepend_tensor = torch.tensor([prepend_token])
-        self._sizes = None
-
-    @lru_cache(maxsize=64)
-    def __getitem__(self, index: int):
-        tree = self.dataset[index]
-        action_seq, preorder_list = get_incremental_parse_actions(tree, collapse=False, eos=EOS_LABEL)
-
-        ret = {
-            "inputs": GreynirParsingDataset._encode_inputs(
-                preorder_list, action_seq, self.label_dictionary, self.padding_idx
-            ),
-            "targets": GreynirParsingDataset._encode_targets(action_seq, self.label_dictionary, self.padding_idx),
-        }
-        ret["inputs"]["_src_tokens"] = GreynirParsingDataset._encode_text(
-            tree.text, self.source_dictionary, self.bpe, self.prepend_tensor
-        )
-        return ret
-
-    @staticmethod
-    def _encode_text(text: str, source_dictionary: Dictionary, bpe: Any, prepend_tensor: Optional[Tensor] = None):
-        hf_ids_string = bpe.encode(text)
-        output_ids = source_dictionary.encode_line(hf_ids_string)
-        if prepend_tensor is not None:
-            output_ids = torch.cat([prepend_tensor, output_ids])
-        return output_ids
-
-    @staticmethod
-    def _encode_inputs(
-        preorder_list: List[greynir_utils.Node],
-        action_seq: List[ParseAction],
-        label_dictionary: Dictionary,
-        padding_idx: int,
-    ):
-        preorder_nts = torch.tensor(
-            [label_dictionary.index(node.label_without_flags) for node in preorder_list], dtype=torch.long
-        )
-        preorder_spans = torch.tensor([node.span for node in preorder_list], dtype=torch.long)
-        padded_flags = pad_sequence(
-            [
-                torch.tensor([label_dictionary.index(f) for f in node.label_flags], dtype=torch.long)
-                if node.label_flags
-                else torch.tensor([padding_idx], dtype=torch.long)
-                for node in preorder_list
-            ],
-            batch_first=True,
-            padding_value=padding_idx,
-        )
-        preorder_mask = torch.zeros(len(action_seq), len(preorder_list), dtype=torch.bool)
-        chain_mask = torch.zeros_like(preorder_mask)
-        preorder_depths = torch.zeros(len(action_seq), len(preorder_list), dtype=torch.long)
-        for step, action in enumerate(action_seq):
-            preorder_mask[step, action.preorder_indices] = 1
-            chain_mask[step, action.right_chain_indices] = 1
-            preorder_depths[step, action.preorder_indices] = torch.tensor(action.preorder_depths, dtype=torch.long)
-        nwords_per_step = torch.tensor([node.nwords for node in action_seq], dtype=torch.long)
-        return {
-            "preorder_nts": preorder_nts,
-            "preorder_spans": preorder_spans,
-            "preorder_depths": preorder_depths,
-            "preorder_flags": padded_flags,
-            "preorder_mask": preorder_mask,
-            "chain_mask": chain_mask,
-            "nwords_per_step": nwords_per_step,
-        }
-
-    @staticmethod
-    def _encode_targets(action_seq: List[ParseAction], label_dictionary: Dictionary, padding_idx: int):
-        depths = torch.tensor([node.depth for node in action_seq], dtype=torch.long)
-        target_parents = torch.tensor(
-            [label_dictionary.index(action.parent.label_without_flags) for action in action_seq], dtype=torch.long
-        )
-        target_preterms = torch.tensor(
-            [label_dictionary.index(action.preterminal.label_without_flags) for action in action_seq], dtype=torch.long
-        )
-        target_parent_flags = pad_sequence(
-            [
-                torch.tensor([label_dictionary.index(f) for f in action.parent.label_flags], dtype=torch.long)
-                if action.parent.label_flags
-                else torch.tensor([padding_idx], dtype=torch.long)
-                for action in action_seq
-            ],
-            batch_first=True,
-            padding_value=padding_idx,
-        )
-        target_preterm_flags = pad_sequence(
-            [
-                torch.tensor([label_dictionary.index(f) for f in action.preterminal.label_flags], dtype=torch.long)
-                if action.preterminal.label_flags
-                else torch.tensor([padding_idx], dtype=torch.long)
-                for action in action_seq
-            ],
-            batch_first=True,
-            padding_value=padding_idx,
-        )
-        return {
-            "target_depths": depths,
-            "target_parents": target_parents,
-            "target_padding_mask": torch.zeros_like(target_preterms, dtype=torch.bool),
-            "target_preterms": target_preterms,
-            "target_parent_flags": target_parent_flags,
-            "target_preterm_flags": target_preterm_flags,
-        }
-
-    def prepare_tree_for_inference(self, tree: Any, collated=False):
-        preorder_list = tree.preorder_list()
-        preorder_nts = torch.tensor(
-            [self.label_dictionary.index(node.label_without_flags) for node in preorder_list], dtype=torch.long
-        )
-        preorder_spans = torch.tensor([node.span for node in preorder_list], dtype=torch.long)
-        padded_flags = pad_sequence(
-            [
-                torch.tensor([self.label_dictionary.index(f) for f in node.label_flags], dtype=torch.long)
-                if node.label_flags
-                else torch.tensor([self.padding_idx], dtype=torch.long)
-                for node in preorder_list
-            ],
-            batch_first=True,
-            padding_value=self.padding_idx,
-        )
-        preorder_mask = torch.ones(len(preorder_list), dtype=torch.bool)
-        chain_mask = torch.zeros(len(preorder_list), dtype=torch.bool)
-        right_chain_indices = get_preorder_index_of_right_chain(tree, include_terminals=False, preserve_indices=True)
-        preorder_depths = torch.tensor(get_depths(tree), dtype=torch.long)
-        chain_mask[right_chain_indices] = 1
-        nwords = torch.tensor(len(tree.leaves))
-        ret = {
-            "preorder_nts": preorder_nts,
-            "preorder_spans": preorder_spans,
-            "preorder_flags": padded_flags,
-            "preorder_mask": preorder_mask,
-            "preorder_depths": preorder_depths,
-            "chain_mask": chain_mask,
-            "nwords": nwords,
-        }
-        if collated:
-            for key in ret:
-                ret[key] = ret[key].unsqueeze(0)
-        return ret
-
-    @property
-    def sizes(self):
-        if self._sizes is not None:
-            return self._sizes
-        sizes = torch.zeros(len(self.dataset), dtype=torch.long)
-        for idx in range(len(self.dataset)):
-            sizes[idx] = len(self[idx]["inputs"]["preorder_nts"])
-        self._sizes = sizes
-        return self._sizes
 
 
 @dataclass
@@ -371,7 +88,7 @@ class ParserHydraTask(FairseqTask):
         self.num_labels = len(self.label_dictionary)
 
     @classmethod
-    def setup_task(cls, cfg: ParserHydraConfig, **kwargs):
+    def setup_task(cls, cfg: ParserHydraConfig, **_kwargs):
         data_dict = cls.load_dictionary(cls, os.path.join(cfg.data, "dict.txt"))
         logger.info("[input] dictionary: {} types".format(len(data_dict)))
         label_dict = cls.load_dictionary(cls, cfg.label_file)
@@ -385,7 +102,7 @@ class ParserHydraTask(FairseqTask):
         return ParserHydraTask(cfg, data_dict, label_dictionary=label_dict, is_word_initial=is_word_initial)
 
     @classmethod
-    def load_label_dictionary(cls, cfg: ParserHydraConfig, filename: str, **kwargs):
+    def load_label_dictionary(cls, cfg: ParserHydraConfig, filename: str, **_kwargs):
         """Load the dictionary from the filename
         Args:
             filename (str): the filename
@@ -430,7 +147,7 @@ class ParserHydraTask(FairseqTask):
             return is_word_initial
         return None
 
-    def load_dataset(self, split: str, combine: bool = False, **kwargs):
+    def load_dataset(self, split: str, combine: bool = False, **_kwargs):
         """Load a given dataset split (e.g., train, valid, test)."""
         greynirtrees_dataset = GreynirTreeJSONLDataset.from_path(Path(self.cfg.data) / f"{split}.jsonl")
 
@@ -446,7 +163,7 @@ class ParserHydraTask(FairseqTask):
         )
 
         src_tokens = TextEncodingDataset(
-            _LambdaDataset(greynirtrees_dataset, lambda_fn=lambda x: x.text),
+            LambdaDataset(greynirtrees_dataset, lambda_fn=lambda x: x.text),
             self.source_dictionary,
             bpe=bpe,
             prepend_token=self.source_dictionary.bos(),
@@ -464,53 +181,53 @@ class ParserHydraTask(FairseqTask):
                 "src_tokens": RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad()),
                 "word_mask": RightPadDataset(word_mask, pad_idx=0),
                 "preorder_nts": RightPadDataset(
-                    _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_nts"]),
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_nts"]),
                     pad_idx=self.label_dictionary.pad(),
                 ),
                 "preorder_depths": RightPad2dDataset(
-                    _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_depths"]),
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_depths"]),
                     pad_idx=0,
                 ),
                 "preorder_mask": RightPad2dDataset(
-                    _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_mask"]), pad_idx=0
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_mask"]), pad_idx=0
                 ),
                 "chain_mask": RightPad2dDataset(
-                    _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["chain_mask"]), pad_idx=0
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["chain_mask"]), pad_idx=0
                 ),
                 "preorder_spans": RightPad2dDataset(
-                    _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_spans"]), pad_idx=0
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_spans"]), pad_idx=0
                 ),
                 "preorder_flags": RightPad2dDataset(
-                    _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_flags"]),
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_flags"]),
                     pad_idx=self.label_dictionary.pad(),
                 ),
                 "nwords_per_step": RightPadDataset(
-                    _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["nwords_per_step"]),
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["nwords_per_step"]),
                     pad_idx=0,
                 ),
             },
             "target_depths": RightPadDataset(
-                _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_depths"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_depths"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_padding_mask": RightPadDataset(
-                _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_padding_mask"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_padding_mask"]),
                 pad_idx=1,
             ),
             "target_parents": RightPadDataset(
-                _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_parents"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_parents"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_preterms": RightPadDataset(
-                _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_preterms"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_preterms"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_parent_flags": RightPad2dDataset(
-                _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_parent_flags"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_parent_flags"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_preterm_flags": RightPad2dDataset(
-                _LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_preterm_flags"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_preterm_flags"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "nsentences": NumSamplesDataset(),
