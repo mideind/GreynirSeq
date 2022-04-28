@@ -4,7 +4,15 @@ import sys
 import torch
 from ieg.dataset import ErrorDataset, worker_init_fn
 from ieg.errorrules import NounCaseErrorRule
-from ieg.errorrules.errors import DativitisErrorRule, MoodErrorRule, NoiseErrorRule, SwapErrorRule, DuplicateWordsRule, SplitWordsRule
+from ieg.errorrules.errors import (
+    DativitisErrorRule,
+    DeleteSpaceErrorRule,
+    DuplicateWordsRule,
+    MoodErrorRule,
+    NoiseErrorRule,
+    SplitWordsRule,
+    SwapErrorRule,
+)
 from tokenizer import correct_spaces
 
 
@@ -28,12 +36,21 @@ def main() -> None:
         "-parse", "--parse-online", help="Parse sentence with Greynir if pos not provided", type=bool, default=True
     )
     parser.add_argument("-seed", "--seed", default=1, type=int)
-    parser.add_argument("-no-detok", "--dont-detokenize", default=False, type=bool)
+    parser.add_argument("-no-detok", "--dont-detokenize", action="store_true")
     parser.add_argument("-n", "--nproc", default=1, type=int)
     parser.add_argument("-b", "--batch-size", default=1, type=int)
     args = parser.parse_args()
 
-    error_handlers = [DativitisErrorRule, MoodErrorRule, NounCaseErrorRule, SwapErrorRule, DuplicateWordsRule, SplitWordsRule, NoiseErrorRule ]
+    error_handlers = [
+        DativitisErrorRule,
+        MoodErrorRule,
+        NounCaseErrorRule,
+        SwapErrorRule,
+        DuplicateWordsRule,
+        SplitWordsRule,
+        NoiseErrorRule,
+        DeleteSpaceErrorRule,
+    ]
 
     error_dataset = ErrorDataset(args.infile, args.posfile, args, error_handlers=error_handlers)
 

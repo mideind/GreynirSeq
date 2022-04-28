@@ -1,5 +1,6 @@
 import pathlib
 import re
+import string
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -290,19 +291,51 @@ def accent_flip():
 
     Rules.append(Rule(lambda x: less_regex.search(x), flip_less_accents, "flip_less_accents"))
 
-def drop_letters():
+
+def char_noise():
     global Rules
 
-    def drop_letter(w):
-        # Letter to drop
-        i = random() % len(w)
-        # Don't change numbers
-        if w[i].isdigit():
-            return w
-        else:
-            return w[0 : i : ] + w[i + 1 : :]
+    noise_chars = string.ascii_lowercase + string.digits + "þæöð´'°.,'"
 
-    Rules.append(Rule(lambda x: True, drop_letter, "drop_letter"))
+    def add_random_char(w):
+        if coinflip(1 - FLIP_CHANCE):
+            # Index to change
+            i = random() % len(w)
+            # Don't change numbers
+            if not w[i].isdigit():
+                rand_char_int = random() % len(noise_chars)
+                return w[0:i:] + noise_chars[rand_char_int] + w[i::]
+        return w
+
+    Rules.append(Rule(lambda x: True, add_random_char, "add_random_char"))
+
+    def replace_random_char(w):
+        if coinflip(1 - FLIP_CHANCE):
+            # Index to change
+            i = random() % len(w)
+            # Don't change numbers
+            if not w[i].isdigit():
+                rand_char_int = random() % len(noise_chars)
+                return w[0:i:] + noise_chars[rand_char_int] + w[i + 1 : :]
+        return w
+
+    Rules.append(Rule(lambda x: True, replace_random_char, "replace_random_char"))
+
+    def drop_char(w):
+        if coinflip(1 - FLIP_CHANCE):
+            # don't drop from single letter words
+            if len(w) > 1:
+                # Letter to drop
+                i = random() % len(w)
+                # Don't change numbers
+                if w[i].isdigit():
+                    return w
+                else:
+                    return w[0:i:] + w[i + 1 : :]
+        return w
+
+    Rules.append(Rule(lambda x: True, drop_char, "drop_char"))
+
 
 def looong():
     global Rules
@@ -316,7 +349,7 @@ def looong():
             if not w[i].isdigit():
                 return w[:i] + w[i] * reps + w[i + 1 :]
         return w
-        
+
     Rules.append(Rule(lambda x: True, longify, "longify"))
 
 
@@ -325,9 +358,8 @@ def initialize_rules():
     word_substitution_rules()
     regex_rules()
     accent_flip()
-    drop_letters()
     looong()
-
+    char_noise()
 
 
 initialize_rules()

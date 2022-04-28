@@ -1,7 +1,5 @@
 import random
 
-from torch import randint
-
 from ieg import b
 from ieg.spelling.errorify import errorify_line
 
@@ -52,8 +50,8 @@ class DativitisErrorRule(ErrorRule):
         try:
             s_tree = data["tree"]
             tok_list = sentence.split()
-            
-            if kh_ip := s_tree.all_matches("IP >> { ('hlakka') }"): # TODO: kvíða
+
+            if kh_ip := s_tree.all_matches("IP >> { ('hlakka') }"):  # TODO: kvíða
                 sentence = cls.nom_to_acc_or_dat(tok_list, kh_ip)
             if lvd_ip := s_tree.all_matches("IP >> { ('langa'|'vanta'|'dreyma') }"):
                 sentence = cls.acc_to_dat(tok_list, lvd_ip)
@@ -87,7 +85,7 @@ class DativitisErrorRule(ErrorRule):
             if vp is None or np is None:
                 continue
             for v in vp.all_matches("so"):
-                if v.lemma == "hlakka":# or v.lemma == "kvíði":
+                if v.lemma == "hlakka":  # or v.lemma == "kvíði":
                     verb = v
 
             if verb is None:
@@ -121,8 +119,7 @@ class NoiseErrorRule(ErrorRule):
 
 
 class SwapErrorRule(ErrorRule):
-    """Error rule class that randomly swaps adjacent words in a sentence, avoiding the first and last tokens.
-    """
+    """Error rule class that randomly swaps adjacent words in a sentence, avoiding the first and last tokens."""
 
     @staticmethod
     def _apply(data) -> str:
@@ -165,12 +162,13 @@ class MoodErrorRule(ErrorRule):
     def change_mood(cls, tok) -> str:
         try:
             return b.lookup_variants(tok, "so", ("FH"))[0].bmynd
-        except:
+        except Exception:
             return tok
 
 
 class DuplicateWordsRule(ErrorRule):
     """Error rule class for duplicating a random word in a sentence so that it appears twice in succession"""
+
     needs_pos = True
 
     @staticmethod
@@ -185,23 +183,47 @@ class DuplicateWordsRule(ErrorRule):
         return " ".join(text_list)
 
 
-
 class SplitWordsRule(ErrorRule):
-    """Error rule class for adding spaces to words. For now only adds spaces to compounds not found in BÍN, such as "rauð doppótta", "botn hreinsið" and "fjalla hryggir"."""
+    """Error rule class for adding spaces to words. For now only adds spaces to
+    compounds not found in BÍN, such as "rauð doppótta", "botn hreinsið" and "fjalla hryggir"."""
+
     needs_pos = True
 
     @staticmethod
     def _apply(data) -> str:
-        text = data["text"]
         sent_tokens = data["text"].split()
         for idx, tok in enumerate(sent_tokens):
             _, m = b.lookup(tok)
             if len(m) > 0:
                 w_class = m[0][2]
                 bin_id = m[0][1]
-                # restricted to certain word classes to avoid introducing corrections instead of errors in some phrases (utanað->utan að)
-                if bin_id == 0 and w_class in [ "no", "lo", "so" ]:
+                # restricted to certain word classes to avoid introducing corrections
+                # instead of errors in some phrases (utanað->utan að)
+                if bin_id == 0 and w_class in ["no", "lo", "so"]:
                     sent_tokens[idx] = m[0].bmynd.replace("-", " ").upper()
             return " ".join(sent_tokens)
 
         return data["text"]
+
+
+class DeleteSpaceErrorRule(ErrorRule):
+    """Error rule class that randomly removes the space between words. Best if applied last."""
+
+    @staticmethod
+    def _apply(data) -> str:
+        text = data["text"]
+        sent_tokens = text.split()
+
+        first = random.randint(0, len(sent_tokens) - 2)
+        second = first + 1
+        sent_tokens[first] = sent_tokens[first] + sent_tokens[second]
+        sent_tokens.pop(second)
+
+        return " ".join(sent_tokens)
+
+    @classmethod
+    def random_apply(cls, data) -> bool:
+        text = data["text"]
+        if len(text.split()) <= 2:
+            return False
+        return super().random_apply(data)
