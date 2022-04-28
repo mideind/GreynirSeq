@@ -1,4 +1,4 @@
-from ieg import b
+from ieg import bin_islenska
 from .errors import ErrorRule
 
 

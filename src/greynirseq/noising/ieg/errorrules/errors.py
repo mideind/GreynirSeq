@@ -1,6 +1,6 @@
 import random
 
-from ieg import b
+from ieg import bin_islenska
 from ieg.spelling.errorify import errorify_line
 
 
@@ -22,7 +22,7 @@ class ErrorRule:
     @classmethod
     def get_wordform(cls, word, lemma, cat, variants) -> str:
         """Get correct wordform from BinPackage, given a set of variants"""
-        wordforms = b.lookup_variants(word, cat, tuple(variants), lemma=lemma)
+        wordforms = bin_islenska.lookup_variants(word, cat, tuple(variants), lemma=lemma)
         if not wordforms:
             return ""
         # Can be many possible word forms; we want the first one in most cases
@@ -161,7 +161,7 @@ class MoodErrorRule(ErrorRule):
     @classmethod
     def change_mood(cls, tok) -> str:
         try:
-            return b.lookup_variants(tok, "so", ("FH"))[0].bmynd
+            return bin_islenska.lookup_variants(tok, "so", ("FH"))[0].bmynd
         except Exception:
             return tok
 
@@ -193,7 +193,7 @@ class SplitWordsRule(ErrorRule):
     def _apply(data) -> str:
         sent_tokens = data["text"].split()
         for idx, tok in enumerate(sent_tokens):
-            _, m = b.lookup(tok)
+            _, m = bin_islenska.lookup(tok)
             if len(m) > 0:
                 w_class = m[0][2]
                 bin_id = m[0][1]

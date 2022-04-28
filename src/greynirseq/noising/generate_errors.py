@@ -20,9 +20,9 @@ def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("infile", nargs="?", type=argparse.FileType("r"), default=sys.stdin)
-    parser.add_argument("-pos", "--posfile", help="File with POS tags", required=False)
+    parser.add_argument("--posfile", help="File with POS tags", required=False)
     parser.add_argument(
-        "-wer",
+        "-w",
         "--word-spelling-error-rate",
         type=float,
         default=0.3,
@@ -30,18 +30,18 @@ def main() -> None:
         required=False,
     )
     parser.add_argument(
-        "-rer", "--rule-chance-error-rate", help="Chance for each rule to be applied", default=0.9, type=float
+        "-r", "--rule-chance-error-rate", help="Chance for each rule to be applied", default=0.9, type=float
     )
     parser.add_argument(
-        "-parse", "--parse-online", help="Parse sentence with Greynir if pos not provided", type=bool, default=True
+        "-p", "--parse-online", help="Parse sentence with Greynir if pos not provided", type=bool, default=True
     )
-    parser.add_argument("-seed", "--seed", default=1, type=int)
-    parser.add_argument("-no-detok", "--dont-detokenize", action="store_true")
+    parser.add_argument("--seed", default=1, type=int)
+    parser.add_argument("-t", "--dont-detokenize", action="store_true")
     parser.add_argument("-n", "--nproc", default=1, type=int)
     parser.add_argument("-b", "--batch-size", default=1, type=int)
     args = parser.parse_args()
 
-    error_handlers = [
+    error_generators = [
         DativitisErrorRule,
         MoodErrorRule,
         NounCaseErrorRule,
@@ -52,7 +52,7 @@ def main() -> None:
         DeleteSpaceErrorRule,
     ]
 
-    error_dataset = ErrorDataset(args.infile, args.posfile, args, error_handlers=error_handlers)
+    error_dataset = ErrorDataset(args.infile, args.posfile, args, error_generators=error_generators)
 
     error_loader = torch.utils.data.DataLoader(
         error_dataset,

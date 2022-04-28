@@ -1,7 +1,7 @@
 import math
 
 import torch
-from ieg import g
+from ieg import greynir
 from torch.utils.data import Dataset
 
 
@@ -24,7 +24,7 @@ class ErrorDataset(Dataset):
     start = 0
     end = None
 
-    def __init__(self, infile, posfile, args, error_handlers=[]) -> None:
+    def __init__(self, infile, posfile, args, error_generators=[]) -> None:
         self.has_pos = posfile is not None
         self.args = args
 
@@ -35,7 +35,7 @@ class ErrorDataset(Dataset):
             with open(posfile) as posfilehandler:
                 self.postags = posfilehandler.readlines()
 
-        self.error_handlers = error_handlers
+        self.error_generators = error_generators
 
     def __getitem__(self, index) -> str:
         errored_sentence: str = self.sentences[index].rstrip()
@@ -50,10 +50,10 @@ class ErrorDataset(Dataset):
                 pos_sentence = self.pos_sentence(errored_sentence)["pos"]
                 sentence_tree = self.pos_sentence(errored_sentence)["tree"]
 
-        for error_handler in self.error_handlers:
-            if error_handler.needs_pos and not (self.has_pos or self.args.parse_online):
+        for error_generator in self.error_generators:
+            if error_generator.needs_pos and not (self.has_pos or self.args.parse_online):
                 continue
-            elif error_handler.needs_pos and self.args.parse_online:
+            elif error_generator.needs_pos and self.args.parse_online:
                 if pos_sentence is None:
                     continue
 
@@ -63,7 +63,7 @@ class ErrorDataset(Dataset):
                 pos = pos_sentence
             else:
                 pos = None
-            errored_sentence = error_handler.apply(
+            errored_sentence = error_generator.apply(
                 {"text": errored_sentence, "pos": pos, "tree": sentence_tree, "args": self.args}
             )
             if not errored_sentence:
@@ -82,7 +82,7 @@ class ErrorDataset(Dataset):
         """Parse text with greynir. Supports multiple sentences in
         input string, joins pos for each sentences before returning.
         """
-        parsed = g.parse(text)
+        parsed = greynir.parse(text)
         pos_data = []
         parse_tree = []
         for sentence in parsed["sentences"]:
