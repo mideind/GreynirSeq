@@ -8,7 +8,7 @@ def random():
     global RANDOM_STATE
 
     # Parameters picked at random from wikipedia, probably not robust
-    m = 2 ** 32
+    m = 2**32
     a = 1664525
     c = 1013904223
 
