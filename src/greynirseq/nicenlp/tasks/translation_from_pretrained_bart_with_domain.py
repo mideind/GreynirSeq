@@ -12,31 +12,51 @@
 
 from typing import List
 
+import numpy
 import torch
 from fairseq import utils
-from fairseq.data import BaseWrapperDataset, Dictionary
+from fairseq.data import BaseWrapperDataset, Dictionary, data_utils
 from fairseq.data.language_pair_dataset import collate
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
 from fairseq.tasks.translation_from_pretrained_bart import TranslationFromPretrainedBARTTask
 from torch.utils.data import Dataset
 
+_EES_DEFAULT_DOMAIN = "ees_ótiltekið"
+
 
 class DomainPrefixingDataset(BaseWrapperDataset):
     """Prefix each source segment of a LangPairDataset with a domain specifer token"""
 
     def __init__(
-        self, langpair_dataset: Dataset, domain_per_example: List[str], src_dict: Dictionary, domain_dict: Dictionary
+        self,
+        langpair_dataset: Dataset,
+        domain_per_example: List[str],
+        src_dict: Dictionary,
+        domain_dict: Dictionary,
+        seed: int = 1,
     ):
-        super().__init__(langpair_dataset)
         self.domain_per_example = domain_per_example
         self.domain_dict = domain_dict
         self.src_dict = src_dict
         self.eos = self.dataset.eos
+        self.seed = seed
+        self.epoch = 0
 
     def __getitem__(self, index: int):
         pair_dict = self.dataset[index]
-        domain_index = self.src_dict.index(f"<{self.domain_per_example[index]}>")
+        domains = self.domain_per_example[index].split(" ")
+        sampled_index = 0
+        if len(domains) > 1:
+            normal_domain_weight = 1.0
+            default_domain_weight = 0.1
+            weights = numpy.array(
+                [default_domain_weight if d == _EES_DEFAULT_DOMAIN else normal_domain_weight for d in domains]
+            )
+            with data_utils.numpy_seed(self.seed, self.epoch, index):
+                sampled_index = numpy.random.choice(range(len(domains)), p=weights / sum(weights))
+        domain = domains[sampled_index]
+        domain_index = self.src_dict.index(f"<{domain}>")
         vec = pair_dict["source"].new_ones(1) * domain_index
         pair_dict["source"] = torch.cat([vec, pair_dict["source"]])
         return pair_dict
@@ -179,8 +199,8 @@ class TranslationFromPretrainedBARTTaskWithDomain(TranslationFromPretrainedBARTT
             upsample_primary=self.args.upsample_primary,
             left_pad_source=self.args.left_pad_source,
             left_pad_target=self.args.left_pad_target,
-            max_source_positions=getattr(self.args, "max_source_positions", 1024),
-            max_target_positions=getattr(self.args, "max_target_positions", 1024),
+            max_source_positions=getattr(self.args, "max_source_positions", 512),
+            max_target_positions=getattr(self.args, "max_target_positions", 512),
             load_alignments=self.args.load_alignments,
             prepend_bos=getattr(self.args, "prepend_bos", False),
             append_source_id=True,
@@ -190,4 +210,5 @@ class TranslationFromPretrainedBARTTaskWithDomain(TranslationFromPretrainedBARTT
             domain_per_example=domain_per_example,
             src_dict=self.src_dict,
             domain_dict=self.domain_dict,
+            seed=self.args.seed,
         )
