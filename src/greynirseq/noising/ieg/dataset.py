@@ -20,6 +20,8 @@ def worker_init_fn(worker_id):
 
 class ErrorDataset(Dataset):
 
+    error_generators = list()
+    sentences = list()
     has_pos: bool = False
     start = 0
     end = None
@@ -43,24 +45,25 @@ class ErrorDataset(Dataset):
             # Empty or None, do nothing
             return errored_sentence
 
-        pos_sentence: str = None
+        parsed_sentence: str = None
         sentence_tree = None
         if self.args.parse_online:
-            if self.pos_sentence(errored_sentence):
-                pos_sentence = self.pos_sentence(errored_sentence)["pos"]
-                sentence_tree = self.pos_sentence(errored_sentence)["tree"]
+            parse_result = self.parse_sentence(errored_sentence)
+            if parse_result:
+                parsed_sentence = parse_result["pos"]
+                sentence_tree = parse_result["tree"]
 
         for error_generator in self.error_generators:
             if error_generator.needs_pos and not (self.has_pos or self.args.parse_online):
                 continue
             elif error_generator.needs_pos and self.args.parse_online:
-                if pos_sentence is None:
+                if parsed_sentence is None:
                     continue
 
             if self.has_pos:
                 pos = self.postags[index]
             elif self.args.parse_online:
-                pos = pos_sentence
+                pos = parsed_sentence
             else:
                 pos = None
             errored_sentence = error_generator.apply(
@@ -78,7 +81,7 @@ class ErrorDataset(Dataset):
     def __len__(self) -> int:
         return self.end - self.start
 
-    def pos_sentence(self, text) -> dict:
+    def parse_sentence(self, text) -> dict:
         """Parse text with greynir. Supports multiple sentences in
         input string, joins pos for each sentences before returning.
         """

@@ -3,13 +3,13 @@ import sys
 
 import torch
 from ieg.dataset import ErrorDataset, worker_init_fn
-from ieg.errorrules import NounCaseErrorRule
-from ieg.errorrules.errors import (
+from ieg.errorrules import (
     DativitisErrorRule,
     DeleteSpaceErrorRule,
     DuplicateWordsRule,
     MoodErrorRule,
     NoiseErrorRule,
+    NounCaseErrorRule,
     SplitWordsRule,
     SwapErrorRule,
 )

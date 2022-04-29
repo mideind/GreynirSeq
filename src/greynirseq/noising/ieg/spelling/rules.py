@@ -304,7 +304,7 @@ def char_noise():
             # Don't change numbers
             if not w[i].isdigit():
                 rand_char_int = random() % len(noise_chars)
-                return w[0:i:] + noise_chars[rand_char_int] + w[i::]
+                return w[0:i:] + noise_chars[rand_char_int] + w[i:]
         return w
 
     Rules.append(Rule(lambda x: True, add_random_char, "add_random_char"))
@@ -316,7 +316,7 @@ def char_noise():
             # Don't change numbers
             if not w[i].isdigit():
                 rand_char_int = random() % len(noise_chars)
-                return w[0:i:] + noise_chars[rand_char_int] + w[i + 1 : :]
+                return w[0:i:] + noise_chars[rand_char_int] + w[i + 1 :]
         return w
 
     Rules.append(Rule(lambda x: True, replace_random_char, "replace_random_char"))
@@ -331,7 +331,7 @@ def char_noise():
                 if w[i].isdigit():
                     return w
                 else:
-                    return w[0:i:] + w[i + 1 : :]
+                    return w[0:i:] + w[i + 1 :]
         return w
 
     Rules.append(Rule(lambda x: True, drop_char, "drop_char"))

@@ -1,4 +1,5 @@
 from ieg import bin_islenska
+
 from .errors import ErrorRule
 
 
@@ -36,7 +37,7 @@ class NounCaseErrorRule(ErrorRule):
         case = case_set.intersection(pos.variants)
         other_cases = case_set - case
         rand_case = other_cases.pop()
-        bin_no_result = b.lookup_variants(tok, cat="no", to_inflection=rand_case)
+        bin_no_result = bin_islenska.lookup_variants(tok, cat="no", to_inflection=rand_case)
 
         if len(bin_no_result) > 0:
             # the lookup method adds hyphens to unrecognized compounds; we're
