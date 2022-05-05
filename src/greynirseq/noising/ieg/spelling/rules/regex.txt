@@ -1,0 +1,6 @@
+^kn->n
+^hn->n
+^hl->l
+^hv->kv
+^hr->r :: 0.5
+^kv->hv

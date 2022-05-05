@@ -1,0 +1,92 @@
+ð->d :: 0.001
+ð->đ :: 0.0001
+ð<->dh :: 0.0001
+
+ö->o,ø,au  :: 0.005
+Ö->O,Ø  :: 0.005
+
+i<->y :: 0.7
+I<->Y :: 0.5
+í<->ý :: 0.5
+Í<->Ý :: 0.1
+
+ng<->nk :: 0.5
+nd->nt :: 0.5
+
+þ->t,th :: 0.5
+Þ->T,Th :: 0.5
+th->þ :: 0.5
+Th->T :: 0.5
+þ->p :: 0.5
+Þ->P :: 0.5
+
+æ->ae,a,œ :: 0.0001
+
+ll->gl,dl :: 0.05
+rr->r
+ll->l
+nn->n
+mm->m
+kk->k
+tt->t
+pp->p
+ss->s
+
+x<->ks :: 0.005
+x<->gs :: 0.005
+x<->ggs :: 0.005
+
+ld<->lt :: 0.01
+
+# Todo: fleira úr fyrstu málfræðiritgerðinni
+#ᶏ<->ö,æ :: 0.00001
+
+w->v
+ce<->se :: 0.1
+ci<->si :: 0.1
+c<->k :: 0.01
+pt<->ft :: 0.05
+fl<->bl,bbl :: 0.05
+dl<->ll :: 0.5
+dn<->nn,rn,rdn :: 0.5
+rðn->rn :: 0.5
+
+# ng/nk
+ang->áng
+ank->ánk
+ung->úng
+unk->únk
+öng->aung
+ing->íng,íngj
+ink->ínk
+eng->eing
+yng->ýng
+
+ýja->ýa
+ýju->ýu
+ýi->ýji
+æju->æu
+gj->j
+ngi->ngji
+ygi->yji
+ögi->augi
+
+lgd->gld
+sins->arins
+sson->son
+
+e<->r :: 0.0001
+
+# keyboard slipups
+ó->'o :: 0.05
+í->'i :: 0.05
+é->'e :: 0.05
+á->'a :: 0.05
+ú->'u :: 0.05
+ý->'y :: 0.05
+Ó->'O :: 0.05
+Í->'I :: 0.05
+É->'E :: 0.05
+Á->'A :: 0.05
+Ú->'U :: 0.05
+Ý->'Y :: 0.05
