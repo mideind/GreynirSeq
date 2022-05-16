@@ -1,4 +1,4 @@
-from greynirseq.utils.jsonl_utils import LineSemantics, read_documents
+from greynirseq.utils.jsonl_utils import LineSemantics, MonolingualJSONDocument, read_documents
 
 
 def assert_document_counts(documents, expected_doc_count, expected_para_count, expected_sent_count, line_semantics):
@@ -197,3 +197,17 @@ def test_read_documents_bug_fix_1():
     assert len(LineSemantics) == len(
         three_doc_one_para_one_sent + one_doc_one_para_three_sent + one_doc_three_para_one_sent
     )
+
+
+def test_json_to_text():
+    test = [["test"], ["test2", "test3"]]
+    doc = MonolingualJSONDocument.create_document(test, lang="en")
+    # Default is to add a newline after each sentence, each paragraph and each document
+    assert doc.to_text() == "test\n\ntest2\ntest3\n\n\n"
+
+
+def test_text_to_json_to_text():
+    test = "test\n\ntest2\ntest3\n\n\n"
+    docs = list(read_documents([test], line_sematics=LineSemantics.sent_para_doc, lang="en"))
+    assert len(docs) == 1
+    assert docs[0].to_text() == test
