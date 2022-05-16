@@ -1,8 +1,7 @@
 """Development terminal client for greynirseq, work in progress."""
 import json
 import logging
-from dataclasses import asdict
-from typing import List, Optional, TextIO
+from typing import List, Optional, TextIO, Tuple
 
 import click
 from tqdm import tqdm
@@ -53,7 +52,7 @@ def to_jsonl(
     lang: str,
     title: Optional[str],
 ):
-    """Convert a text file to monolingual JSONL document.
+    """Convert a text file to monolingual JSON documents (JSONL) file.
     The text file can have structure which is preserved by specifying --line_semantics."""
     for document in read_documents(
         tqdm(input_file, desc="Reading lines"),
@@ -62,13 +61,65 @@ def to_jsonl(
         lang=lang,
         title=title,
     ):
-        output_file.write(json.dumps(asdict(document), ensure_ascii=False) + "\n")
+        output_file.write(document.to_json_str())  # json_str ends with newline.
 
 
 @cli.command()
-@click.argument("input_file", type=str)
-def jsonl_stats(input_file):
-    """Return statistics about a Monolingual JSONL file.
+@click.argument("input_file", type=click.File("r"))
+@click.argument("output_file", type=click.File("w"))
+@click.option(
+    "--sentence_postfix",
+    default="\n",
+    required=False,
+    help="A string to add after each sentence.",
+)
+@click.option(
+    "--paragraph_postfix",
+    default="\n",
+    required=False,
+    help="A string to add after each paragraph.",
+)
+@click.option(
+    "--document_postfix",
+    default="\n",
+    required=False,
+    help="A string to add after each document.",
+)
+def to_text(
+    input_file: TextIO,
+    output_file: TextIO,
+    sentence_postfix: str,
+    paragraph_postfix: str,
+    document_postfix: str,
+):
+    """Convert monolingual JSON documents (JSONL) file to a text file.
+
+    Postfixes at the sentence, paragraph and document level can be specified.
+    The default behaviour is to add a newline after each sentence, paragraph and the document.
+    document = [[sent1], [sent2, sent3]] becomes:
+        sent1 # newline after sentences
+            # newline after each paragraph
+        sent2
+        sent3
+            # newline after each paragraph
+            # newline after document
+    This text file can be read by to_json using LineSemantics.sent_para_doc,
+    to return the same document (excluding metadata)."""
+    for line in tqdm(input_file, desc="Reading lines"):
+        document = MonolingualJSONDocument.from_json_str(line)
+        output_file.write(
+            document.to_text(
+                sentence_postfix=sentence_postfix,
+                paragraph_postfix=paragraph_postfix,
+                document_postfix=document_postfix,
+            )
+        )
+
+
+@cli.command()
+@click.argument("input_files", type=str, nargs=-1)
+def jsonl_stats(input_files: Tuple[str]):
+    """Return statistics about Monolingual JSONL files, supports multiple files.
     Statistics include:
     - Number of documents.
     - Number of paragrahs.
@@ -76,18 +127,26 @@ def jsonl_stats(input_file):
     - Number of words (whitespace separated tokens).
     - Number of unicode characters.
     """
-    stats = {"total_documents": 0, "total_sentences": 0, "total_words": 0, "total_paragraphs": 0, "total_chars": 0}
-    with open(input_file, "r") as f:
-        for line in tqdm(f, desc="Reading JSONL file"):
-            mono_doc = MonolingualJSONDocument(**json.loads(line))
-            stats["total_documents"] += 1
-            stats["total_paragraphs"] += len(mono_doc.document)
-            for paragraph in mono_doc.document:
-                stats["total_sentences"] += len(paragraph)
-                for sentence in paragraph:
-                    stats["total_words"] += len(sentence.split())
-                    stats["total_chars"] += len(sentence)
-    print(json.dumps(stats, indent=4))
+    for input_file in input_files:
+        print(input_file)
+        with open(input_file, "r") as f:
+            stats = {
+                "total_documents": 0,
+                "total_paragraphs": 0,
+                "total_sentences": 0,
+                "total_words": 0,
+                "total_chars": 0,
+            }
+            for line in tqdm(f, desc="Reading JSONL file"):
+                mono_doc = MonolingualJSONDocument(**json.loads(line))
+                stats["total_documents"] += 1
+                stats["total_paragraphs"] += len(mono_doc.document)
+                for paragraph in mono_doc.document:
+                    stats["total_sentences"] += len(paragraph)
+                    for sentence in paragraph:
+                        stats["total_words"] += len(sentence.split())
+                        stats["total_chars"] += len(sentence)
+        print(json.dumps(stats, indent=4))
 
 
 if __name__ == "__main__":

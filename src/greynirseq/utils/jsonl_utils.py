@@ -1,5 +1,6 @@
+import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Iterable, List, Optional, Tuple
 
@@ -29,32 +30,62 @@ class MonolingualJSONDocument:
             mono_doc.add_paragraph(paragraph)
         return mono_doc
 
+    @staticmethod
+    def from_json_str(json_str: str):
+        """Create a new monolingual JSON document from a JSON string."""
+        return MonolingualJSONDocument(**json.loads(json_str.rstrip()))
+
+    def to_json_str(self):
+        """Convert the document to a JSON string with a newline at the end."""
+        return json.dumps(asdict(self), ensure_ascii=False) + "\n"
+
+    def to_text(self, sentence_postfix="\n", paragraph_postfix="\n", document_postfix="\n"):
+        """Convert the document to a string to be written as a text file (.txt).
+
+        The element specific postfixes will be added after each element.
+        The default behaviour is to add a newline after each sentence, paragraph and the document.
+        document = [[sent1], [sent2, sent3]] becomes:
+            sent1 # newline after sentences
+                # newline after each paragraph
+            sent2
+            sent3
+                # newline after each paragraph
+                # newline after document
+        This format can then be read by LineSemantics.sent_para_doc to return the same document (excluding metadata)."""
+        text = ""
+        for paragraph in self.document:
+            for sentence in paragraph:
+                text += sentence + sentence_postfix
+            text += paragraph_postfix
+        text += document_postfix
+        return text
+
     def is_empty(self):
         """Check if the document is empty."""
         return len(self.document[0]) == 0
 
-    def add_sentence(self, sentence: str) -> bool:
-        """Add a sentence to the document to the last paragraph. Does not add empty sentences"""
-        if len(sentence) > 0:
+    def add_sentence(self, sentence: str, allow_empty=False) -> bool:
+        """Add a sentence to the document to the last paragraph. Does not add empty sentences unless allowed"""
+        if len(sentence) > 0 or allow_empty:
             self.document[-1].append(sentence)
             return True
         return False
 
-    def add_paragraph(self, paragraph: List[str]) -> bool:
+    def add_paragraph(self, paragraph: List[str], allow_empty=False) -> bool:
         """Add a paragraph to the end of the document. Does not add empty paragraphs"""
-        if len(paragraph) > 0:
+        if len(paragraph) > 0 or allow_empty:
             # Figure out the paragraph index
             if self.is_empty():
                 added = False
                 for sentence in paragraph:
-                    added = self.add_sentence(sentence) or added
+                    added = self.add_sentence(sentence, allow_empty=allow_empty) or added
                 return added
             # Otherwise we want to add a new paragraph to the document
             else:
                 self.document.append([])
                 added = False
                 for sentence in paragraph:
-                    added = self.add_sentence(sentence) or added
+                    added = self.add_sentence(sentence, allow_empty=allow_empty) or added
                 # If all the sentences we tried to add were empty, we want to delete the last paragraph
                 if not added:
                     self.document.pop()
