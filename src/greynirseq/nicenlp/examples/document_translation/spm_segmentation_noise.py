@@ -1,16 +1,12 @@
-from typing import Optional, List, Union
-
-from fairseq.tasks import register_task
-from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
+from typing import List, Union
 
 import torch
-from torch import Tensor
-from fairseq import utils
-from fairseq.data import LanguagePairDataset, BaseWrapperDataset, FairseqDataset
+from fairseq.data import BaseWrapperDataset
 from fairseq.data.encoders.sentencepiece_bpe import SentencepieceBPE
+from torch import Tensor
 
-from .noiser import Noiser
 from .noised_sequence import NoisedSequence
+from .noiser import Noiser
 
 
 class SpmNoiser(Noiser):
@@ -23,37 +19,26 @@ class SpmNoiser(Noiser):
         return spm_reencode_w_segmentation_noise(sequence, self.dictionary, self.spm)
 
 
-def spm_reencode_w_segmentation_noise(
-    sequence: List[Union[str, int, Tensor]], dictionary, spm
-):
+def spm_reencode_w_segmentation_noise(sequence: List[Union[str, int, Tensor]], dictionary, spm):
     # TODO: convert to tensor here?
     encoded_sample = []
     noise_allowed_mask = torch.tensor([], dtype=bool)
 
     for i in sequence:
         if isinstance(i, str):
-            original_str = i  # self.spm.decode(self.src_dict.string(i))
+            original_str = i
             re_spm = spm.encode(original_str)
-            re_embed = dictionary.encode_line(re_spm)
-            if re_embed[-1] == dictionary.eos():
-                # SPM will insert eos at the end of each substring but we only want it at the end of the whole sequence
-                re_embed = re_embed[:-1]
+            re_embed = dictionary.encode_line(re_spm, append_eos=False, add_if_not_exist=False).long()
             encoded_sample.extend(re_embed)
-            noise_allowed_mask = torch.cat(
-                (noise_allowed_mask, torch.tensor([True] * len(re_embed)))
-            )
+            noise_allowed_mask = torch.cat((noise_allowed_mask, torch.tensor([True] * len(re_embed))))
         elif isinstance(i, int):
             encoded_sample.append(i)
             noise_allowed_mask = torch.cat((noise_allowed_mask, torch.tensor([False])))
         else:
             assert False, f"Unknown type {type(i)}"
 
-    encoded_sample.append(dictionary.eos())
-    noise_allowed_mask = torch.cat((noise_allowed_mask, torch.tensor([False])))
-
     # TODO: <unk> handling
-    # return torch.tensor(encoded_sample), noise_allowed_mask
-    return NoisedSequence(torch.tensor(encoded_sample), noise_allowed_mask)
+    return NoisedSequence(torch.tensor(encoded_sample).long(), noise_allowed_mask)
 
 
 class SentencepieceSegmentationNoiseDataset(BaseWrapperDataset):
