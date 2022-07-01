@@ -1,20 +1,29 @@
 from typing import Optional
 
-import torch
-from fairseq.data import BaseWrapperDataset
-from torch import Tensor
+from fairseq.tasks import register_task
+from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
 
+import torch
+from torch import Tensor
+from fairseq import utils
+from fairseq.data import LanguagePairDataset, BaseWrapperDataset, FairseqDataset
+from fairseq.data.encoders.sentencepiece_bpe import SentencepieceBPE
+
+from icecream import ic
 from .noiser import Noiser
 
 
 class FragmentNoiser(Noiser):
     def __init__(self, prob, *, min_val, max_val):
+        ic(min_val, max_val)
         """docstring"""
         self.prob = prob
         self.min_val = min_val
         self.max_val = max_val
 
-    def apply(self, encoded_sequence: Tensor, noise_allowed_mask: Optional[Tensor] = None):
+    def apply(
+        self, encoded_sequence: Tensor, noise_allowed_mask: Optional[Tensor] = None
+    ):
         return fragment_noise(
             encoded_sequence,
             self.prob,
@@ -41,16 +50,24 @@ def fragment_noise(
 
     # Replace fragments with random ones
     substitution_mask = torch.rand(len(encoded_sequence)).lt(prob)
-    random_fragments = torch.randint(low=min_val, high=max_val, size=(len(encoded_sequence),))
+    random_fragments = torch.randint(
+        low=min_val, high=max_val, size=(len(encoded_sequence),)
+    )
     # b /data/scratch/haukur/document_translation/fairseq_user_dir/fragment_noise.py:55
     # print(substitution_mask, noise_allowed_mask)
     # breakpoint()
-    encoded_sequence[substitution_mask * noise_allowed_mask] = random_fragments[substitution_mask * noise_allowed_mask]
+    encoded_sequence[substitution_mask * noise_allowed_mask] = random_fragments[
+        substitution_mask * noise_allowed_mask
+    ]
 
     # Remove some fragments entirely.
-    keep_mask = torch.rand(len(encoded_sequence)) < 1 - prob  # Keep fragments at these indexes, remove others
+    keep_mask = (
+        torch.rand(len(encoded_sequence)) < 1 - prob
+    )  # Keep fragments at these indexes, remove others
     encoded_sequence = encoded_sequence[keep_mask + noise_allowed_mask.logical_not()]
-    noise_allowed_mask = noise_allowed_mask[keep_mask + noise_allowed_mask.logical_not()]
+    noise_allowed_mask = noise_allowed_mask[
+        keep_mask + noise_allowed_mask.logical_not()
+    ]
 
     # Insert some fragments.
     # We will select some tokens from the embedding and place a random token in front of those.
@@ -74,9 +91,10 @@ def fragment_noise(
     new_size = len(encoded_sequence) + num_inserts
 
     # Calculate the positions of the old data in the new sequence
-    # The positions are shifted by the amount of new elements inserted before them,
-    # i.e. the cumsum of the insertion mask
-    new_indexes_for_old_data = torch.arange(len(encoded_sequence)) + torch.cumsum(insert_mask, 0)
+    # The positions are shifted by the amount of new elements inserted before them, i.e. the cumsum of the insertion mask
+    new_indexes_for_old_data = torch.arange(len(encoded_sequence)) + torch.cumsum(
+        insert_mask, 0
+    )
 
     # Preallocate a correctly sized tensor to contain the new sequence
     new_enc_seq = encoded_sequence.new_zeros(new_size)
@@ -84,13 +102,16 @@ def fragment_noise(
     new_enc_seq[new_indexes_for_old_data] = encoded_sequence
 
     # Calculate positions for new data
-    # The positions are the indexes of True values in the insertion mask,
-    # shifted by the number of elements inserted before
-    new_indexes_for_inserted_data = torch.arange(len(encoded_sequence))[insert_mask] + torch.arange(num_inserts)
+    # The positions are the indexes of True values in the insertion mask, shifted by the number of elements inserted before
+    new_indexes_for_inserted_data = torch.arange(len(encoded_sequence))[
+        insert_mask
+    ] + torch.arange(num_inserts)
 
     # Generate new data
     # We assume that anything above nspecial in the dict is a legal target. Is this true for all models?
-    random_fragments = torch.randint(low=min_val, high=max_val, size=(num_inserts,))
+    random_fragments = torch.randint(
+        low=min_val, high=max_val, size=(num_inserts,)
+    )
     # random_fragments = torch.randint(low=-100, high=-10, size=(num_inserts,))
     # Copy new data
     new_enc_seq[new_indexes_for_inserted_data] = random_fragments

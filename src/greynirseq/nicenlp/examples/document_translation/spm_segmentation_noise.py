@@ -1,12 +1,16 @@
-from typing import List, Union
+from typing import Optional, List, Union
+
+from fairseq.tasks import register_task
+from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
 
 import torch
-from fairseq.data import BaseWrapperDataset
-from fairseq.data.encoders.sentencepiece_bpe import SentencepieceBPE
 from torch import Tensor
+from fairseq import utils
+from fairseq.data import LanguagePairDataset, BaseWrapperDataset, FairseqDataset
+from fairseq.data.encoders.sentencepiece_bpe import SentencepieceBPE
 
-from .noised_sequence import NoisedSequence
 from .noiser import Noiser
+from .noised_sequence import NoisedSequence
 
 
 class SpmNoiser(Noiser):
@@ -19,18 +23,22 @@ class SpmNoiser(Noiser):
         return spm_reencode_w_segmentation_noise(sequence, self.dictionary, self.spm)
 
 
-def spm_reencode_w_segmentation_noise(sequence: List[Union[str, int, Tensor]], dictionary, spm):
+def spm_reencode_w_segmentation_noise(
+    sequence: List[Union[str, int, Tensor]], dictionary, spm
+):
     # TODO: convert to tensor here?
     encoded_sample = []
     noise_allowed_mask = torch.tensor([], dtype=bool)
 
     for i in sequence:
         if isinstance(i, str):
-            original_str = i
+            original_str = i  # self.spm.decode(self.src_dict.string(i))
             re_spm = spm.encode(original_str)
             re_embed = dictionary.encode_line(re_spm, append_eos=False, add_if_not_exist=False).long()
             encoded_sample.extend(re_embed)
-            noise_allowed_mask = torch.cat((noise_allowed_mask, torch.tensor([True] * len(re_embed))))
+            noise_allowed_mask = torch.cat(
+                (noise_allowed_mask, torch.tensor([True] * len(re_embed)))
+            )
         elif isinstance(i, int):
             encoded_sample.append(i)
             noise_allowed_mask = torch.cat((noise_allowed_mask, torch.tensor([False])))
@@ -38,6 +46,7 @@ def spm_reencode_w_segmentation_noise(sequence: List[Union[str, int, Tensor]], d
             assert False, f"Unknown type {type(i)}"
 
     # TODO: <unk> handling
+    # return torch.tensor(encoded_sample), noise_allowed_mask
     return NoisedSequence(torch.tensor(encoded_sample).long(), noise_allowed_mask)
 
 

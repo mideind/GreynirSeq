@@ -1,5 +1,7 @@
 import numpy as np
 
+import time
+
 
 def batch_by_size(
     indices,
@@ -21,12 +23,14 @@ def batch_by_size(
             batch.append(index)
             ntokens += length
         elif batch:
+            # yield batch
             batches.append(batch)
             batch = [index]
             ntokens = length
         else:
             raise NotImplementedError
     if batch and not drop_last_batch:
+        # yield batch
         batches.append(batch)
     if shuffle:
         np.random.shuffle(batches)

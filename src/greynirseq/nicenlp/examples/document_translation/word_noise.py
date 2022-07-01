@@ -1,23 +1,27 @@
-from typing import List, Union
+from typing import List, Optional, Union
 
 import torch
-from fairseq.data import BaseWrapperDataset
+from fairseq import utils
+from fairseq.data import BaseWrapperDataset, FairseqDataset, LanguagePairDataset
+from fairseq.data.encoders.sentencepiece_bpe import SentencepieceBPE
+from fairseq.tasks import register_task
+from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
 from torch import Tensor
 
 from .noiser import Noiser
 
-_POS_PROB = 0.0025  # 0.0025 results in 0.5-1.0% words being shifted using categorial distribution
+
+_POS_PROB = 0.0025 # results in 0.5-1.0% words being shifted using categorial distribution
 
 
 class WordNoiser(Noiser):
-    def __init__(self, drop_prob: float, max_shuffle_distance: int, pos_prob: float = _POS_PROB):
+
+    def __init__(self, drop_prob: float, max_shuffle_distance: int, pos_prob:float = _POS_PROB):
         """docstring"""
         self.drop_prob = drop_prob
         self.pos_prob = pos_prob
         self.max_shuffle_distance = max_shuffle_distance
-        self.pos_noise_probs = torch.tensor(
-            [1 - max_shuffle_distance * self.pos_prob] + [self.pos_prob] * max_shuffle_distance, dtype=torch.float
-        )
+        self.pos_noise_probs = torch.tensor([1 - max_shuffle_distance * self.pos_prob] + [self.pos_prob] * max_shuffle_distance, dtype=torch.float)
         self.pos_noise_dist = torch.distributions.categorical.Categorical(probs=self.pos_noise_probs)
 
     def apply(self, sequence: List[Union[str, int, Tensor]]):
@@ -56,7 +60,9 @@ def calculate_dropout_keep_matrix(length, drop_prob):
     return keep_matrix
 
 
-def word_noise_v2(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noise_dist, max_shuffle_distance: int):
+def word_noise_v2(
+    sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noise_dist, max_shuffle_distance: int
+):
     noised_sample = []
     for part in sequence:
         if isinstance(part, str):
@@ -69,6 +75,7 @@ def word_noise_v2(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noi
             # Shuffle words to within-k distance
             unnoised_pos = torch.arange(len(words))
             if max_shuffle_distance > 0:
+                # pos_noise = torch.randint(0, max_shuffle_distance, (len(words),))
                 pos_noise = pos_noise_dist.sample(sample_shape=(len(words),))
                 noised_pos = unnoised_pos + pos_noise
                 perm = noised_pos.argsort()
@@ -76,6 +83,7 @@ def word_noise_v2(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noi
                 perm = unnoised_pos
 
             # Drop words with probability p,
+            # keep_matrix = self.calculate_dropout_keep_matrix(len(words))
             keep_matrix = calculate_dropout_keep_matrix(len(words), drop_prob)
             reordered_words = [words[i] for i in perm if keep_matrix[i]]
             reordered_part = " ".join(reordered_words)
@@ -87,7 +95,9 @@ def word_noise_v2(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noi
     return noised_sample
 
 
-def word_noise(sequence: List[Union[str, int, Tensor]], prob, *, max_shuffle_distance: int):
+def word_noise(
+    sequence: List[Union[str, int, Tensor]], prob, *, max_shuffle_distance: int
+):
     noised_sample = []
     for part in sequence:
         if isinstance(part, str):
@@ -107,6 +117,7 @@ def word_noise(sequence: List[Union[str, int, Tensor]], prob, *, max_shuffle_dis
                 perm = unnoised_pos
 
             # Drop words with probability p,
+            # keep_matrix = self.calculate_dropout_keep_matrix(len(words))
             keep_matrix = calculate_dropout_keep_matrix(len(words), prob)
             reordered_words = [words[i] for i in perm if keep_matrix[i]]
             reordered_part = " ".join(reordered_words)
@@ -138,8 +149,7 @@ class WordNoiseDataset(BaseWrapperDataset):
     -- word shuffling
     búa til 0..n-1 vector (arange) af lengd #fjöldi-orða-í-splitti
     leggja við hvert stak random tölu á bilinu [0-k[ (þar sem k er max-dist í umröðuninni)
-    sortera fylkið  og taka út .indexes (það er í boði í numpy -
-    sjá líka bart kóðann) sem segir umröðunina sem sorteringin gerði
+    sortera fylkið  og taka út .indexes (það er í boði í numpy - sjá líka bart kóðann) sem segir umröðunina sem sorteringin gerði
     nota umröðunina til að endurraða orðum indexa upp á nýtt
 
     -- word dropout
