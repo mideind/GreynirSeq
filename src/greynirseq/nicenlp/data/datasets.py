@@ -41,35 +41,14 @@ class DynamicLabelledSpanDataset(BaseWrapperDataset):
     """
 
     @classmethod
-    def make_both(
-        cls,
-        dataset: Dataset,
-        label_dictionary: Dictionary,
-        seed: int = 1,
-    ):
+    def make_both(cls, dataset: Dataset, label_dictionary: Dictionary, seed: int = 1):
         dataset = LRUCacheDataset(dataset)
         return (
-            DynamicLabelledSpanDataset(
-                dataset,
-                label_dictionary,
-                return_spans=True,
-                seed=seed,
-            ),
-            DynamicLabelledSpanDataset(
-                dataset,
-                label_dictionary,
-                return_spans=False,
-                seed=seed,
-            ),
+            DynamicLabelledSpanDataset(dataset, label_dictionary, return_spans=True, seed=seed),
+            DynamicLabelledSpanDataset(dataset, label_dictionary, return_spans=False, seed=seed),
         )
 
-    def __init__(
-        self,
-        dataset: Dataset,
-        label_dictionary: Dictionary,
-        return_spans: bool = None,
-        seed: int = 1,
-    ):
+    def __init__(self, dataset: Dataset, label_dictionary: Dictionary, return_spans: bool = None, seed: int = 1):
         assert isinstance(return_spans, bool), "Must provide boolean for return_spans"
         super().__init__(dataset)
         self.label_dictionary = label_dictionary
@@ -231,11 +210,7 @@ class POSDataset(BaseWrapperDataset):
 
 
 class NoBosEosDataset(BaseWrapperDataset):
-    def __init__(
-        self,
-        dataset: Dataset,
-        dictionary: Dictionary,
-    ):
+    def __init__(self, dataset: Dataset, dictionary: Dictionary):
         super().__init__(dataset)
         self.dictionary = dictionary
         self.has_bos = True if dataset[0][0] == self.dictionary.bos() else False
@@ -266,7 +241,7 @@ class WordEndMaskDataset(BaseWrapperDataset):
 
     def __getitem__(self, index):
         item = self.dataset[index]
-        mask = torch.tensor([self.is_word_initial.get(int(v), 1) for v in item])
+        mask = torch.tensor([self.is_word_initial.get(int(v), 1) for v in item], dtype=torch.bool)
         mask[: self.start_offset] = self.bos_value
         mask[-1] = self.eos_value
         return mask
@@ -331,6 +306,20 @@ class NestedDictionaryDatasetFix(NestedDictionaryDataset):
         for ds in self.defn.values():
             if hasattr(ds, "set_epoch"):
                 ds.set_epoch(epoch)
+
+    def __init__(self, defn, sizes=None):
+        super().__init__(defn, sizes=sizes)
+        self.sizes = sizes
+
+    def num_tokens(self, index):
+        """Return the number of tokens in a sample. This value is used to
+        enforce ``--max-tokens`` during batching."""
+        return self.sizes[index]
+
+    def size(self, index):
+        """Return an example's size as a float or tuple. This value is used when
+        filtering a dataset with ``--max-positions``."""
+        return self.sizes[index]
 
 
 class NestedDictionaryDatasetFix2(NestedDictionaryDatasetFix):

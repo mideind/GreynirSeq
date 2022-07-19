@@ -34,7 +34,7 @@ from greynirseq.nicenlp.data.datasets import (
     WordEndMaskDataset,
 )
 from greynirseq.nicenlp.data.lambda_dataset import LambdaDataset
-from greynirseq.nicenlp.data.parsing_datsets import (
+from greynirseq.nicenlp.data.parsing_datasets import (
     GreynirParsingDataset,
     GreynirTreeAugmentationDataset,
     GreynirTreeJSONLDataset,
@@ -181,53 +181,53 @@ class ParserHydraTask(FairseqTask):
                 "src_tokens": RightPadDataset(src_tokens, pad_idx=self.source_dictionary.pad()),
                 "word_mask": RightPadDataset(word_mask, pad_idx=0),
                 "preorder_nts": RightPadDataset(
-                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_nts"]),
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["preorder_nts"]),
                     pad_idx=self.label_dictionary.pad(),
                 ),
                 "preorder_depths": RightPad2dDataset(
-                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_depths"]),
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["preorder_depths"]),
                     pad_idx=0,
                 ),
                 "preorder_mask": RightPad2dDataset(
-                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_mask"]), pad_idx=0
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["preorder_mask"]), pad_idx=0
                 ),
                 "chain_mask": RightPad2dDataset(
-                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["chain_mask"]), pad_idx=0
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["chain_mask"]), pad_idx=0
                 ),
                 "preorder_spans": RightPad2dDataset(
-                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_spans"]), pad_idx=0
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["preorder_spans"]), pad_idx=0
                 ),
                 "preorder_flags": RightPad2dDataset(
-                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["preorder_flags"]),
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["preorder_flags"]),
                     pad_idx=self.label_dictionary.pad(),
                 ),
                 "nwords_per_step": RightPadDataset(
-                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["inputs"]["nwords_per_step"]),
+                    LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["nwords_per_step"]),
                     pad_idx=0,
                 ),
             },
             "target_depths": RightPadDataset(
-                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_depths"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["target_depths"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_padding_mask": RightPadDataset(
-                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_padding_mask"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["target_padding_mask"]),
                 pad_idx=1,
             ),
             "target_parents": RightPadDataset(
-                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_parents"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["target_parents"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_preterms": RightPadDataset(
-                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_preterms"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["target_preterms"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_parent_flags": RightPad2dDataset(
-                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_parent_flags"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["target_parent_flags"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "target_preterm_flags": RightPad2dDataset(
-                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["targets"]["target_preterm_flags"]),
+                LambdaDataset(greynirparsing_dataset, lambda_fn=lambda x: x["target_preterm_flags"]),
                 pad_idx=self.label_dictionary.pad(),
             ),
             "nsentences": NumSamplesDataset(),

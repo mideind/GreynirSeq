@@ -142,6 +142,13 @@ class GraphTreeParserModel(RobertaModel):
         """
         encoder_out, _extra = self.encoder(src_tokens, features_only=True, return_all_hiddens=False, **kwargs)
         _, _, enc_embed_dim = encoder_out.shape
+        if word_mask.sum(dim=-1).max() != nwords_per_step.max():
+            breakpoint()
+            print()
+        if word_mask.shape != encoder_out.shape[:2]:
+            print(word_mask.shape, encoder_out.shape[:2], sep="\n")
+            breakpoint()
+            print()
         words = encoder_out.masked_select(word_mask.unsqueeze(-1).bool()).reshape(-1, enc_embed_dim)
         words_padded = pad_sequence(words.split(word_mask.sum(dim=-1).tolist()), padding_value=0, batch_first=True)
         decoder_out = self.graph_decoder(
@@ -153,6 +160,7 @@ class GraphTreeParserModel(RobertaModel):
             nwords_per_step=nwords_per_step,
             preorder_flags=preorder_flags,
             preorder_depths=preorder_depths,
+            **kwargs,
         )
         return decoder_out
 

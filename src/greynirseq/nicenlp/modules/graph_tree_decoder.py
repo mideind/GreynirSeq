@@ -311,6 +311,12 @@ class TreeGraphDecoder(nn.Module):
             preorder_embs += self.embed_depth(None, positions=preorder_depths)
         preorder_embs *= preorder_mask.unsqueeze(-1)
 
+        prefix_mask = preorder_mask.new_zeros(0).reshape(bsz, 0)
+        prefix_embs = preorder_embs.new_zeros(0).reshape(bsz, 0, preorder_embs.shape[-1])
+        if "task_id" in kwargs:
+            prefix_mask = preorder_mask.new_ones(bsz).unsqueeze(-1)
+            prefix_embs = self.embed_labels(kwargs["task_id"]).tile((bsz, 1, 1))
+
         root_spans = torch.stack([nwords.new_zeros(bsz), max_span], dim=1)
         # root_spans: B x 2  ->  B x 1 x 2  ->  B x 1 x C
         root_span_emb = self.embed_spans(root_spans.unsqueeze(1), end_thresholds=max_span)
@@ -319,18 +325,28 @@ class TreeGraphDecoder(nn.Module):
         root_emb = root_emb + root_span_emb
 
         word_mask = lengths_to_padding_mask(nwords).logical_not()
+        if encoder_out[:, : nwords.max(), 0].shape != word_mask.shape:
+            print(encoder_out[:, : nwords.max(), 0].shape, word_mask.shape)
+            print(encoder_out.shape, nwords, word_mask.shape)
+            breakpoint()
         word_embs = encoder_out[:, : nwords.max(), :][word_mask]
         word_embs = pad_sequence(word_embs.split(word_mask.sum(-1).tolist()), batch_first=True, padding_value=0)
         if self.cfg.use_word_position:
             word_embs = word_embs + self.compute_word_position_embeddings(nwords)
         root_mask = preorder_mask.new_ones(bsz).unsqueeze(-1)
-        input_mask = torch.cat([word_mask, root_mask, preorder_mask], dim=1)
-        input_embs = torch.cat([word_embs, root_emb, preorder_embs], dim=1) * input_mask.unsqueeze(-1)
+        input_mask = torch.cat([prefix_mask, word_mask, root_mask, preorder_mask], dim=1)
+        input_embs = torch.cat([prefix_embs, word_embs, root_emb, preorder_embs], dim=1) * input_mask.unsqueeze(-1)
 
         # x shape: bsz x (nodes+1) x features  # we add one for root
         x = self.forward_nodes(input_embs, self_attn_padding_mask=input_mask.logical_not())
         #  * input_mask.unsqueeze(-1)
         assert not x.isnan().any()
+
+        # if we used task token, remove it
+        if prefix_mask.any():
+            x = x[:, 1:, :]
+            input_mask = input_mask[:, 1:]
+            input_embs = input_embs[:, 1:, :]
 
         # chain_nodes x features
         output_chain_mask = torch.cat([torch.zeros_like(word_mask), root_mask, chain_mask], dim=1)
@@ -389,6 +405,7 @@ class TreeGraphDecoder(nn.Module):
                 chain_mask=chain_mask[is_alive, curr_step],
                 nwords=nwords_per_step[is_alive, curr_step],
                 state=state,
+                **kwargs,
             )
 
         state.parent_logits = torch.cat(state.parent_logits, dim=0)

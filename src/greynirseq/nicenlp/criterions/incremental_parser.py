@@ -105,6 +105,9 @@ class IncrementalParserCriterion(FairseqCriterion):
                 is_alive = nwords_per_step[step] > 0
                 attn_padding = lengths_to_padding_mask(chain_mask[step, is_alive].sum(-1))
                 attn_ = attn.clone()
+                if attn_.shape != attn_padding.shape:
+                    breakpoint()
+                    print()
                 attn_[attn_padding] = NEGLIGIBLE_LOGIT_VALUE
                 step_tgt_depths = sample["target_depths"][is_alive, step]
                 # XXX: add class weights
@@ -122,6 +125,7 @@ class IncrementalParserCriterion(FairseqCriterion):
         loss = multiclass_loss + (preterm_flag_loss + parent_flag_loss)
         if attention_loss_weight > 0:
             loss += attention_loss_weight * attachment_loss
+        loss /= math.sqrt(sample["nsentences"])
 
         logging_output = {
             "loss": loss,

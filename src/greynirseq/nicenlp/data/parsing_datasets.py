@@ -1,8 +1,13 @@
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
 from functools import lru_cache
 from typing import Any, List, Optional
 
+import numpy as np
 import torch
-from fairseq.data import BaseWrapperDataset, Dictionary
+from fairseq.data import BaseWrapperDataset, Dictionary, data_utils
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
@@ -21,7 +26,7 @@ def _remove_nt(node: greynir_utils.Node, nonterm: str, prob: float):
     def should_remove(node, nonterm):
         if node.terminal:
             return False
-        if node.nonterminal == nonterm and torch.rand(1).squeeze() < (prob):
+        if node.nonterminal == nonterm and np.random.rand() < (prob):
             return True
         new_children = []
         for child in node.children:
@@ -37,38 +42,60 @@ def _remove_nt(node: greynir_utils.Node, nonterm: str, prob: float):
 
 
 class GreynirTreeJSONLDataset(BaseWrapperDataset):
-    @lru_cache(maxsize=64)
+    def __init__(self, line_list):
+        super().__init__(line_list)
+        self._sizes = None
+        # self.trees = {}
+
     def __getitem__(self, index: int):
+        # if index in self.trees:
+        #     return self.trees[index]
         tree = greynir_utils.Node.from_json(self.dataset[index])
         tree = tree.split_multiword_tokens()
         tree.wrap_bare_terminals()
+        # self.trees[index] = tree
+        # return self.trees[index]
         return tree
 
     @classmethod
-    def from_path(cls, path):
+    def from_path(cls, path, limit=None):
         with open(str(path), "r") as in_fh:
             line_list = in_fh.readlines()
+        if limit is not None and limit > 0:
+            line_list = line_list[:limit]
         return cls(line_list)
 
 
+    @property
+    def sizes(self):
+        if self._sizes is not None:
+            return self.sizes
+        self._sizes = [len(item) for item in self.dataset]
+        return self._sizes
+
+
 class GreynirTreeAugmentationDataset(BaseWrapperDataset):
-    def __init__(self, greynirtree_dataset: Dataset, noise_prob):
+    def __init__(self, greynirtree_dataset: Dataset, noise_prob, seed: int=1):
         super().__init__(greynirtree_dataset)
         self.noise_prob = noise_prob
+        self.epoch = 1
+        self.seed = seed
 
-    @lru_cache(maxsize=64)
     def __getitem__(self, index: int):
         tree = self.dataset[index].clone()
 
-        # randomly remove punctuation
-        _remove_nt(tree, "POS|GRM", self.noise_prob)
+        with data_utils.numpy_seed(self.seed, self.epoch, index):
+            # randomly remove punctuation
+            _remove_nt(tree, "POS|GRM", self.noise_prob)
 
-        # randomly lowercase all
-        if torch.rand(1).squeeze() < self.noise_prob:
-            for leaf in tree.leaves:
-                leaf._text = leaf.text.lower()
-
+            # randomly lowercase all
+            if np.random.rand() < self.noise_prob:
+                for leaf in tree.leaves:
+                    leaf._text = leaf.text.lower()
         return tree
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
 
 
 class GreynirParsingDataset(BaseWrapperDataset):
@@ -89,27 +116,49 @@ class GreynirParsingDataset(BaseWrapperDataset):
         if prepend_token is not None:
             self.prepend_tensor = torch.tensor([prepend_token])
         self._sizes = None
+        self.epoch = 1
+
+    @classmethod
+    def decompose(cls, dataset):
+        from greynirseq.nicenlp.data.lambda_dataset import LambdaDataset
+        return {
+            "src_tokens": LambdaDataset(dataset, lambda_fn=lambda x: x["src_tokens"]),
+            "preorder_nts": LambdaDataset(dataset, lambda_fn=lambda x: x["preorder_nts"]),
+            "preorder_depths": LambdaDataset(dataset, lambda_fn=lambda x: x["preorder_depths"]),
+            "preorder_mask": LambdaDataset(dataset, lambda_fn=lambda x: x["preorder_mask"]),
+            "chain_mask": LambdaDataset(dataset, lambda_fn=lambda x: x["chain_mask"]),
+            "preorder_spans": LambdaDataset(dataset, lambda_fn=lambda x: x["preorder_spans"]),
+            "preorder_flags": LambdaDataset(dataset, lambda_fn=lambda x: x["preorder_flags"]),
+            "nwords_per_step": LambdaDataset(dataset, lambda_fn=lambda x: x["nwords_per_step"]),
+            "target_depths": LambdaDataset(dataset, lambda_fn=lambda x: x["target_depths"]),
+            "target_padding_mask": LambdaDataset(dataset, lambda_fn=lambda x: x["target_padding_mask"]),
+            "target_parents": LambdaDataset(dataset, lambda_fn=lambda x: x["target_parents"]),
+            "target_preterms": LambdaDataset(dataset, lambda_fn=lambda x: x["target_preterms"]),
+            "target_parent_flags": LambdaDataset(dataset, lambda_fn=lambda x: x["target_parent_flags"]),
+            "target_preterm_flags": LambdaDataset(dataset, lambda_fn=lambda x: x["target_preterm_flags"]),
+        }
 
     @lru_cache(maxsize=64)
     def __getitem__(self, index: int):
         tree = self.dataset[index]
         action_seq, preorder_list = get_incremental_parse_actions(tree, collapse=False, eos=EOS_LABEL)
 
-        ret = {
-            "inputs": GreynirParsingDataset._encode_inputs(
-                preorder_list, action_seq, self.label_dictionary, self.padding_idx
-            ),
-            "targets": GreynirParsingDataset._encode_targets(action_seq, self.label_dictionary, self.padding_idx),
-        }
-        ret["inputs"]["_src_tokens"] = GreynirParsingDataset._encode_text(
+        ret = {}
+        ret.update(GreynirParsingDataset._encode_inputs(preorder_list, action_seq, self.label_dictionary, self.padding_idx))
+        ret.update(GreynirParsingDataset._encode_targets(action_seq, self.label_dictionary, self.padding_idx))
+
+        ret["src_tokens"] = GreynirParsingDataset._encode_text(
             tree.text, self.source_dictionary, self.bpe, self.prepend_tensor
         )
+        del tree
+        del action_seq
+        del preorder_list
 
         return ret
 
     @staticmethod
     def _encode_text(text: str, source_dictionary: Dictionary, bpe: Any, prepend_tensor: Optional[Tensor] = None):
-        hf_ids_string = bpe.encode(text)
+        hf_ids_string = bpe.encode(text if text.startswith(" ") else " " + text)
         output_ids = source_dictionary.encode_line(hf_ids_string)
         if prepend_tensor is not None:
             output_ids = torch.cat([prepend_tensor, output_ids])
@@ -234,6 +283,13 @@ class GreynirParsingDataset(BaseWrapperDataset):
             return self._sizes
         sizes = torch.zeros(len(self.dataset), dtype=torch.long)
         for idx in range(len(self.dataset)):
-            sizes[idx] = len(self[idx]["inputs"]["preorder_nts"])
+            sizes[idx] = self[idx]["nwords_per_step"][-1]
         self._sizes = sizes
         return self._sizes
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+        if hasattr(self.dataset, "set_epoch"):
+            self.dataset.set_epoch(epoch)
+
+
