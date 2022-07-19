@@ -3,6 +3,9 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+import itertools
+import random
+from collections import Counter
 from pathlib import Path
 
 import click
@@ -10,8 +13,10 @@ import nltk
 from icecream import ic
 from nltk.corpus.reader import BracketParseCorpusReader
 
+import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 import greynirseq.nicenlp.utils.constituency.icepahc_utils as icepahc_utils
 from greynirseq.nicenlp.utils.constituency import incremental_parsing
+from greynirseq.nicenlp.utils.constituency.incremental_parsing import NULL_LABEL, ROOT_LABEL
 
 
 def _nltk_version_guard():
@@ -38,164 +43,115 @@ def main():
 
 @main.command()
 @click.argument("icepahc_root_dir", type=str, callback=_validate_icepahc_root)
-@click.argument("text_file", type=click.File("w", lazy=True))
-@click.argument("nonterm_file", type=click.File("w", lazy=True))
-@click.option("--binarize-trees/--no-binarize-trees", default=True)
-@click.option("--decompose-nonterm-flags/--no-decompose-nonterm-flags", default=True)
+@click.option("--train", type=click.File("w", lazy=True), required=True)
+@click.option("--valid", type=click.File("w", lazy=True), required=True)
+@click.option("--test", type=click.File("w", lazy=True), required=True)
+@click.option("--max-seq-len", type=int, required=False, default=100, help="Max sequence length in tokens (words)")
+@click.option("--ignore-errors", default=False, is_flag=True)
 @click.option("--log-file", required=False, default=None, type=str)
-def export(icepahc_root_dir, text_file, nonterm_file, binarize_trees, decompose_nonterm_flags, log_file):
+@click.option(
+    "--label-file", type=click.File("w"), required=True, help="Label dictionary file, analogous to fairseqs dict.txt"
+)
+@click.option("--seed", type=int, default=1)
+def export(icepahc_root_dir, train, valid, test, max_seq_len, ignore_errors, log_file, label_file, seed):
+    print(f"Extracting icepahc from {icepahc_root_dir.name} to: {Path(train.name)}")
+    random.seed(seed)
     _nltk_version_guard()
 
-    import itertools
-    from collections import Counter
-    foo = BracketParseCorpusReader(str(icepahc_root_dir), "psd/.*\.psd")
+    label_dict = Counter()
+    label_dict.update([ROOT_LABEL, NULL_LABEL, greynir_utils.NULL_LEAF_NONTERM])
+
+    corpus_reader = BracketParseCorpusReader(str(icepahc_root_dir), "psd/.*\.psd")
     ctr = Counter()
     ctr_pos = Counter()
+    num_skipped = 0
+    _tree_idx = 0
+    ntrees = 0
 
-    exports = []
-    i = 0
-    all_nts = []
+    fileids = sorted(corpus_reader.fileids())
+    random.shuffle(fileids)
+    nfiles_valid = int(len(fileids) * 0.1) + 1
+    nfiles_test = int(len(fileids) * 0.1) + 1
+    nfiles_train = len(fileids) - nfiles_valid - nfiles_test
+    assert nfiles_train > 2 * (nfiles_valid + nfiles_test)
 
-    label_sep = "\t"
-    sublabel_sep = text_sep = " "
+    for file_idx, fileid in enumerate(fileids):
+        # fileid = "psd/1902.fossar.nar-fic.psd"
+        for _tree_idx, (sent, tagged_sent, tree) in enumerate(
+            zip(corpus_reader.sents(fileid), corpus_reader.tagged_sents(fileid), corpus_reader.parsed_sents(fileid))
+        ):
+            output_file = train
+            if file_idx < nfiles_valid:
+                output_file = valid
+            elif file_idx < nfiles_valid + nfiles_test:
+                output_file = test
 
-    # path = "psd/1859.hugvekjur.rel-ser.psd"
-    # for sent_idx, (sent, tagged_sent, tree) in enumerate(zip(foo.sents(path), foo.tagged_sents(path), foo.parsed_sents(path))):
-    for sent_idx, (sent, tagged_sent, tree) in enumerate(zip(foo.sents(), foo.tagged_sents(), foo.parsed_sents())):
-        if sent_idx < 108:
-            continue
-        try:
-            res, tree_id = icepahc_utils.convert_icepahc_nltk_tree_to_node_tree(tree, dummy_preterminal="LEAF")
-        except icepahc_utils.DiscardTreeException as e:
-            if log_file:
-                log_file.write(f"{e}")
-            continue
-        if res is None or res.nonterminal is None:
-            continue
+            ntrees += 1
+            try:
+                # res, tree_id = icepahc_utils.convert_icepahc_nltk_tree_to_node_tree(tree, dummy_preterminal="LEAF")
+                node_tree, tree_id = icepahc_utils.convert_icepahc_nltk_tree_to_node_tree(tree, lowercase_pos=True)
+            except icepahc_utils.DiscardTreeException as e:
+                if not ignore_errors:
+                    raise e
+                num_skipped += 1
+                # if log_file:
+                #     log_file.write(f"{e}")
+                continue
 
-        # res.pretty_print()
-        icepahc_utils.merge_split_leaves(res)
-        icepahc_utils.maybe_unwrap_nonterminals_in_tree(res)
-        # res.pretty_print()
-        res = res.collapse_unary()
+            if node_tree is None or node_tree.nonterminal is None:
+                num_skipped += 1
+                continue
+            if len(node_tree.leaves) > max_seq_len:
+                num_skipped += 1
+                continue
 
-        # try:
-        # except ValueError as e:
-        #     res.pretty_print()
-        #     breakpoint()
-        #     print()
+            # if "$" in " ".join(sent):
+            #     tree.pretty_print()
+            #     print()
+            #     node_tree.pretty_print()
+            #     breakpoint()
 
-        export_str = res.as_nltk_tree().pformat(margin=2 ** 100)
-        exports.append(export_str)
+            # construct label dictionary
+            for node in node_tree.preorder_list():
+                label_dict.update([node.label_without_flags])
+                if node.label_flags:
+                    label_dict.update(node.label_flags)
 
-        # output_text = " ".join([n.text for n in res.leaves])
-        # print(output_text)
-        # ic(res.labelled_spans(include_null=binarize_trees, simplify=False))
-        # breakpoint()
+            output_file.write(node_tree.to_json())
+            output_file.write("\n")
+    for label, freq in label_dict.most_common(2 ** 100):
+        label_file.write(f"{label} {freq}\n")
+    if ignore_errors:
+        print(f"Skipped {num_skipped}/{ntrees + 1} trees ({round(100 * num_skipped/(ntrees + 1), 3)}%)")
 
-        # output_nterms, output_terms = res.
-
-        pos_strs = [t.terminal for t in res.leaves]
-
-        # if any("SBJ" in t for t in pos_strs):
-        #     res.pretty_print()
-        #     breakpoint()
-
-        ctr_pos.update([t.terminal for t in res.leaves])
-        ctr.update(icepahc_utils.get_nonterminals(res))
-
-        # res.pretty_print()
-        # actions = incremental_parsing.get_incremental_parse_actions(res, collapse=False)
-        # ic.enable()
-        # ic(actions)
-        # breakpoint()
-
-        nterms_in_seq = []
-        nterms, _terms = res.labelled_spans(include_null=binarize_trees, simplify=False)
-        for lbled_span in nterms:
-            (start, end), lbl, depth, node, flags = lbled_span
-            items = [str(start), str(end)]
-            nterms_in_seq.append(label_sep.join([str(start), str(end), lbl]))
-            # items.extend(lbl.split("-"))
-            # nterms_in_seq.append(sublabel_sep.join(items))
-        text_output = [leaf.text for leaf in res.leaves]
-
-        # text_file.write(text_sep.join(text_output))
-        # text_file.write("\n")
-
-        # nonterm_file.write(label_sep.join(nterms_in_seq))
-        # nonterm_file.write("\n")
-
-        # tagged_words = [
-        #     (word_lemma_str, pos_str)
-        #     for (word_lemma_str, pos_str) in tagged_sent
-        #     if (pos_str not in ICEPAHC_SKIP_TAGS)
-        #     and (not skip_leaf_by_pos(pos_str))
-        #     and (not should_skip_by_word_str(word_lemma_str))
-        # ]
-        # tagged_words = [
-        #     (split_wordform_lemma(word_lemma_str, pos_str)[0], pos_str) for (word_lemma_str, pos_str) in tagged_words
-        # ]
-        # assert tagged_sent[-1][0] == tree_id
-        # ic(tagged_words)
-
-        # res.pretty_print()
-        # ic(tree_id)
-        # breakpoint()
-        # # input()
-
-    import json
-    with open("/tmp/icepahc_nt_tags.json", "w") as fh_out:
-        json.dump(dict(list(ctr.most_common(100000))), fh_out, indent=4)
-        print("Exported nt_tags to /tmp/icepahc_nt_tags.json")
-
-    with open("/tmp/icepahc_exports.psd", "w") as fh_out:
-        for export_str in exports:
-            fh_out.write(export_str)
-            fh_out.write("\n")
-        print("Exported trees to to /tmp/icepahc_exports.psd")
-
-    with open("/tmp/icepahc_pos_tags.json", "w") as fh_out:
-        json.dump(dict(list(ctr_pos.most_common(100000))), fh_out, indent=4)
-
-    # # for word_idx, (word_lemma_str, pos_str) in enumerate(foo.tagged_words()):
-    # #     if pos_str == "CPDE":
-    # #         pos_str = "CODE"
-    # #     if skip_leaf_by_pos(pos_str):
-    # #         continue
-    # #     if should_skip_by_word_str(word_lemma_str):
-    # #         continue
-    # #     wordform, lemma = split_wordform_lemma(word_lemma_str, pos_str)
-    # #     ctr.update([pos_str])
-    # from pprint import pprint
-    # mylist = [(t.split("-")[0] if "-" in t else t,c) for (t,c) in ctr.items() if "+" in t]
-    # mylist = sorted(mylist, key=lambda x: x[1])
-    # pprint(mylist)
-    # breakpoint()
-    # mylist = set([t for (t,c) in mylist])
-    # pprint(mylist)
-
-    # ic(Node.from_nltk_tree(foo.tagged_sents()[0]))
-    # breakpoint()
+        ctr_pos.update([t.terminal for t in node_tree.leaves])
+    print("Done")
 
 
 @main.command()
 @click.argument("download_dir", type=str)
 def download(download_dir):
+    import os
     import urllib.request
     import zipfile
-    icepahc_str = "icepahc-v0.9"
-    filename = Path(f"{icepahc_str}.zip")
-    path = download_dir / filename
-    print(f"Downloading icepahc to: {path}")
-    urllib.request.urlretrieve("http://github.com/downloads/antonkarl/icecorpus/icepahc-v0.9.zip", path)
-    # http://github.com/downloads/antonkarl/icecorpus/icepahc-v0.9.zip
+
+    ICEPAHC_NAME = "icepahc-v0.9"
+    ICEPAHC_URL = "http://github.com/downloads/antonkarl/icecorpus/icepahc-v0.9.zip"
+    filename = f"{ICEPAHC_NAME}.zip"
+
+    download_dir = Path(download_dir)
+    download_dir.mkdir(exist_ok=True)
+    download_path = download_dir / filename
+    print(f"Downloading icepahc to: {download_path}")
+    urllib.request.urlretrieve(ICEPAHC_URL, download_path)
     print(f"Finished downloading")
-    if not Path(path).exists():
-        print(f"Could not found icepahc at {path}")
-    print(f"Extracting: {path}")
-    with zipfile.ZipFile(path, mode="r") as zip_h:
+    if not download_path.exists():
+        print(f"Could not found icepahc at {download_path}")
+    print(f"Extracting into: {download_dir / ICEPAHC_NAME}")
+    with zipfile.ZipFile(download_path, mode="r") as zip_h:
         zip_h.extractall(download_dir)
+    print(f"Deleting zipfile: {download_path}")
+    os.remove(download_path)
     print(f"Done")
 
 

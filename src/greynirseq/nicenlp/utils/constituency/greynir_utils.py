@@ -759,7 +759,7 @@ class NonterminalNode(Node):
 
 
 class TerminalNode(Node):
-    def __init__(self, text, terminal_label, category=None, lemma=None, skip_terminal_check=False):
+    def __init__(self, text, terminal_label, category=None, lemma=None, skip_terminal_check=True):
         super(TerminalNode, self).__init__()
         self._text = text
         self._terminal = terminal_label

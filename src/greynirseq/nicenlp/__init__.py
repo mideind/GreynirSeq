@@ -20,6 +20,7 @@ from greynirseq.nicenlp.tasks import (
     multiclass_token_classification_task,
     multilabel_token_classification_task,
     multiparser_task,
+    multi_incremental_parser_hydra_task,
     parser_hydra_task,
     parser_task,
     translation_with_backtranslation,

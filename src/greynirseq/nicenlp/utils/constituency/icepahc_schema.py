@@ -111,7 +111,7 @@ ICEPAHC_NT_LABELS = {
     "FOREIGN": 8,
     "FP": 8,
     "FRAG": 756,
-    "FRAG-LFD": 1
+    "FRAG-LFD": 1,
     "FRAG-TTT": 2,
     "FS": 6,
     "FW": 3,
@@ -1311,5 +1311,5 @@ ICEPAHC_NT_LABELS = {
     "IP-SUB>VAN": 1,
     "CONJP>ADJP>NP-POS": 1,
     "CONJP>IP-MAT>IP-SMC": 1,
-    "FRAG-LFD>IP-SMC": 1
+    "FRAG-LFD>IP-SMC": 1,
 }

@@ -3,12 +3,15 @@ from icecream import ic
 
 import greynirseq.nicenlp.utils.constituency.greynir_utils as greynir_utils
 
+
 UNHANDLED = "UNHANDLED"
 ICEPAHC_SKIP_TAGS = ("CODE", "CPDE", "ID", "META")
 UNWRAP = ("REF",)  # or discard
 
+
 class DiscardTreeException(Exception):
     pass
+
 
 # what to do with this?
 #                   ____________________|___________________________
@@ -100,116 +103,118 @@ class DiscardTreeException(Exception):
 # "-#" (a hyphen followed by a numeric index) is used to coindex antecedents and their traces, as well as expletives (overt or empty) that are associated with a clause or noun phrase.
 # "=#" (an equals sign followed by a numeric index) is used to coindex gapped clauses with full clauses. See Gapping, Right-node raising.
 
-LEGAL_POS_HEADS = set((
-    # verbs
-    "BE",
-    "DO",
-    "HV",
-    "MD",
-    "RD",
-    "VB",
-    "BEPI",
-    "BEPS",
-    "BEDI",
-    "BEDS",
-    "BEI",
-    "BAG",
-    "BEN",
-    "BAN",
-    "DOPI",
-    "DOPS",
-    "DODI",
-    "DODS",
-    "DOI",
-    "DAG",
-    "DON",
-    "DAN",
-    "HVPI",
-    "HVPS",
-    "HVDI",
-    "HVDS",
-    "HVI",
-    "HAG",
-    "HVN",
-    "HAN",
-    "MDPI",
-    "MDPS",
-    "MDDI",
-    "MDDS",
-    "MDI",
-    "MAG",
-    "MDN",
-    "MAN",
-    "RDPI",
-    "RDPS",
-    "RDDI",
-    "RDDS",
-    "RDI",
-    "RAG",
-    "RDN",
-    "RAN",
-    "VBPI",
-    "VBPS",
-    "VBDI",
-    "VBDS",
-    "VBI",
-    "VAG",
-    "VBN",
-    "VAN",
-    # adverbs
-    "ADV",
-    "WADV",
-    "ADVR",
-    "ADVS",
-    # adjectives
-    "ADJ",
-    "ADJR",  # comparative
-    "ADJS",  # superlative
-    "WADJ",  # wh-adjective
-    "SUCH",
-    #
-    # conjunctions
-    "CONJ",
-    "C",
-    # determiners
-    "D",
-    "WD",  # wh-determiner
-    # nouns
-    "N",
-    "NS",
-    "NPR",
-    "NPRS",
-    "NX",
-    "ONE",
-    "ONES",
-    # particles
-    "FP",  # focus particle
-    "RP",  # adverbial particle
-    "RPX",  # adverbial particle
-    # pronouns
-    "PRO",
-    "WPRO",
-    # prepositions
-    "P",
-    # quantifiers
-    "Q",  # 'fáir'
-    "QR",  # 'færri'
-    "QS",  # 'fæstir'
-    "WQ",  # 'hver'
-    # miscellaneous
-    "LS",  # list marker
-    "FW",  # foreign word
-    #####
-    "TO",
-    "NEG",
-    "ALSO",
-    "NUM",
-    "ES",
-    "INTJ",
-    "OTHER",
-    "OTHERS",
-    # shared modifers
-))
+LEGAL_POS_HEADS = set(
+    (
+        # verbs
+        "BAG",
+        "BAN",
+        "BE",
+        "BEDI",
+        "BEDS",
+        "BEI",
+        "BEN",
+        "BEPI",
+        "BEPS",
+        "DAG",
+        "DAN",
+        "DO",
+        "DODI",
+        "DODS",
+        "DOI",
+        "DON",
+        "DOPI",
+        "DOPS",
+        "HAG",
+        "HAN",
+        "HV",
+        "HVDI",
+        "HVDS",
+        "HVI",
+        "HVN",
+        "HVPI",
+        "HVPS",
+        "MAG",
+        "MAN",
+        "MD",
+        "MDDI",
+        "MDDS",
+        "MDI",
+        "MDN",
+        "MDPI",
+        "MDPS",
+        "RAG",
+        "RAN",
+        "RD",
+        "RDDI",
+        "RDDS",
+        "RDI",
+        "RDN",
+        "RDPI",
+        "RDPS",
+        "VAG",
+        "VAN",
+        "VB",
+        "VBDI",
+        "VBDS",
+        "VBI",
+        "VBN",
+        "VBPI",
+        "VBPS",
+        # adverbs
+        "ADV",
+        "WADV",
+        "ADVR",
+        "ADVS",
+        # adjectives
+        "ADJ",
+        "ADJR",  # comparative
+        "ADJS",  # superlative
+        "WADJ",  # wh-adjective
+        "SUCH",
+        #
+        # conjunctions
+        "CONJ",
+        "C",
+        # determiners
+        "D",
+        "WD",  # wh-determiner
+        # nouns
+        "N",
+        "NS",
+        "NPR",
+        "NPRS",
+        "NX",
+        "ONE",
+        "ONES",
+        # particles
+        "FP",  # focus particle
+        "RP",  # adverbial particle
+        "RPX",  # adverbial particle
+        # pronouns
+        "PRO",
+        "WPRO",
+        # prepositions
+        "P",
+        # quantifiers
+        "Q",  # 'fáir'
+        "QR",  # 'færri'
+        "QS",  # 'fæstir'
+        "WQ",  # 'hver'
+        # miscellaneous
+        "LS",  # list marker
+        "FW",  # foreign word
+        #####
+        "TO",
+        "NEG",
+        "ALSO",
+        "NUM",
+        "ES",
+        "INTJ",
+        "OTHER",
+        "OTHERS",
+        # shared modifers
+    )
+)
 
 CASES = ("N", "A", "D", "G")
 
@@ -229,10 +234,10 @@ def split_wordform_lemma(word_str, pos_str):
         return "-", "-"
     elif word_str == r'"-"-"':
         return '"', '"'
-    elif word_str == "---":
-        return '-', '-'
+    elif word_str == "---" or len(set(word_str)) == 1 and "-" in word_str:
+        return "-", "-"
     elif word_str == "-":
-        return '-', '-'
+        return "-", "-"
     elif word_str == "víst-vís/viss":
         return "víst", "viss"
     elif word_str == "sylgju$":
@@ -312,7 +317,7 @@ def maybe_fix_by_pos_str_and_wordlemma(wordlemma, pos_str):
 
     if pos_str == "ADJP":
         fixed = "ADJ"
-        if  wordlemma == "tólfti-tólf":
+        if wordlemma == "tólfti-tólf":
             return wordlemma, fixed
         if wordlemma == "limaður-limaður":
             return wordlemma, fixed
@@ -356,60 +361,59 @@ def maybe_fix_by_pos_str_and_wordlemma(wordlemma, pos_str):
 
     if pos_str == "NP-ADT":
         if wordlemma == "járnum-járna":
-            return  "járnum-járn", "NS-D"
+            return "járnum-járn", "NS-D"
 
     if pos_str == "POR-D":
         # sér-sig
-        return  wordlemma, "PRO-D"
+        return wordlemma, "PRO-D"
     if pos_str == "POR-A":
-        return  wordlemma, "PRO-A"
-
+        return wordlemma, "PRO-A"
 
     if pos_str == "RPO-D":
         # sér-sig
-        return  wordlemma, "PRO-D"
+        return wordlemma, "PRO-D"
 
     if pos_str == "VBDP":
         # sér-sig
-        return  wordlemma, "VBDS"
+        return wordlemma, "VBDS"
 
     # if pos_str == "N-S":
     #     return  wordlemma, "NS"
 
     if pos_str == "N-S":
         # hryggjar-hrygg
-        return  wordlemma, "NS-G"
+        return wordlemma, "NS-G"
 
     if pos_str == "NPR-S":
         # Óspakur-óspakur
-        return  wordlemma, "NPRS-N"
+        return wordlemma, "NPRS-N"
 
     if pos_str == "DVBN":
-        return  wordlemma, "VBN"
+        return wordlemma, "VBN"
 
     if pos_str == "MS-N":
-        return  wordlemma, "QS-N"
+        return wordlemma, "QS-N"
 
     if pos_str == "RBN":
-        return  wordlemma, "RDN"
+        return wordlemma, "RDN"
 
     if pos_str == "WRPO-N":
-        return  wordlemma, "WPRO-N"
+        return wordlemma, "WPRO-N"
 
     if pos_str == "QDJ-A":
-        return  wordlemma, "ADJ-A"
+        return wordlemma, "ADJ-A"
 
     if pos_str == "POS-D":
-        return  wordlemma, "PRO-D"
+        return wordlemma, "PRO-D"
 
     if pos_str == "NPRO-A":
-        return  wordlemma, "NPR-A"
+        return wordlemma, "NPR-A"
 
     if pos_str == "HDDI":
-        return  wordlemma, "HVDI"
+        return wordlemma, "HVDI"
 
     if pos_str == "DV":
-        return  wordlemma, "ADV"
+        return wordlemma, "ADV"
 
     # (NPR meistara-meistari) og fleiri
     # (WNP-N-1 hver-hver)
@@ -423,6 +427,8 @@ def convert_icepahc_nltk_tree_to_node_tree(tree, lowercase_pos=False, dummy_pret
         raise ValueError(f"Unexpected tree: {str(tree)}")
 
     def _is_icepahc_leaf(node):
+        if not isinstance(node, nltk.Tree):
+            raise ValueError(f"Expected nltk.Tree instance, got {node}")
         if isinstance(node[0], str):
             return True
         return False
@@ -452,7 +458,9 @@ def convert_icepahc_nltk_tree_to_node_tree(tree, lowercase_pos=False, dummy_pret
             reformatted_pos_str = pos_str
             if lowercase_pos:
                 reformatted_pos_str = pos_str.lower().replace("-", "_")
-            new_node = greynir_utils.TerminalNode(wordform, reformatted_pos_str, category=reformatted_pos_str, skip_terminal_check=True)
+            new_node = greynir_utils.TerminalNode(
+                wordform, reformatted_pos_str, category=reformatted_pos_str, skip_terminal_check=True
+            )
             if dummy_preterminal is not None:
                 new_node = greynir_utils.NonterminalNode(dummy_preterminal, [new_node])
             return new_node, None
@@ -486,7 +494,11 @@ def convert_icepahc_nltk_tree_to_node_tree(tree, lowercase_pos=False, dummy_pret
                 return None, tree_id
         return new_node, tree_id
 
-    return visitor(tree)
+    res, tree_id = visitor(tree)
+    if res is not None:
+        res = merge_split_leaves(res)
+        res = maybe_wrap_terminals_in_tree(res)
+    return res, tree_id
 
 
 def get_nonterminals(node_tree):
@@ -511,11 +523,19 @@ def parse_nt(nt_str):
     # discard coindexing
     parts = [part for part in parts if not (part.isnumeric() or part == "NaN" or part == "")]
 
-    illegal_parts = [] if (head in LEGAL_NT_HEADS or head in NT_DISQUALIFY_BOTH_HEAD_AND_PARTS or head in LEGAL_POS_HEADS) else [head]
+    illegal_parts = (
+        []
+        if (head in LEGAL_NT_HEADS or head in NT_DISQUALIFY_BOTH_HEAD_AND_PARTS or head in LEGAL_POS_HEADS)
+        else [head]
+    )
     if len(parts) > 1:
-        illegal_parts = illegal_parts.extend([part for part in parts if not (part in LEGAL_NT_FLAGS or part in NT_DISQUALIFY_BOTH_HEAD_AND_PARTS)])
+        illegal_parts = illegal_parts.extend(
+            [part for part in parts if not (part in LEGAL_NT_FLAGS or part in NT_DISQUALIFY_BOTH_HEAD_AND_PARTS)]
+        )
     if head_extra:
-        illegal_parts.extend([part for part in head_extra if not (part in LEGAL_POS_HEADS or part in NT_DISQUALIFY_BOTH_HEAD_AND_PARTS)])
+        illegal_parts.extend(
+            [part for part in head_extra if not (part in LEGAL_POS_HEADS or part in NT_DISQUALIFY_BOTH_HEAD_AND_PARTS)]
+        )
     if illegal_parts:
         ic(nt_str, illegal_parts, head in LEGAL_NT_HEADS)
         breakpoint()
@@ -525,7 +545,7 @@ def parse_nt(nt_str):
     cleaned = head
     if parts:
         cleaned = head + "-" + "-".join(parts)
-    if (h_disqualify or disqualify):
+    if h_disqualify or disqualify:
         # ic(nt_str, parts, cleaned, h_legal, h_disqualify, legal, disqualify)
         raise DiscardTreeException(f"Could not parse: '{nt_str}'")
     return cleaned
@@ -554,27 +574,27 @@ def merge_split_leaves(node_tree):
             return True
         return False
 
-    def merge(node, left, right):
+    def merge(node, left_node, right_node):
         if node.terminal:
             raise ValueError("Leaves have no children")
         for child in node.children:
-            if child is left:
+            if child is left_node:
                 # XXX: Do we want to change the leaf POS?
                 # XXX: Do we want to modify the label of the governing nonterminal?
-                child._text = left.text.replace("$", "") + right.text.replace("$", "")
+                child._text = left_node.text.replace("$", "") + right_node.text.replace("$", "")
                 return True
             if child.nonterminal:
-                merged = merge(child, left, right)
+                merged = merge(child, left_node, right_node)
                 if merged:
                     return True
         return False
 
-    leaves = [c for c in node_tree.leaves]
+    leaves = [leaf for leaf in node_tree.leaves]
     merge_ends = [idx for idx, leaf in enumerate(leaves) if leaf.text.startswith("$") and idx > 0]
     merge_pairs = [(leaves[idx - 1], leaves[idx]) for idx in merge_ends if leaves[idx - 1].text.endswith("$")]
-    for left, right in merge_pairs:
-        delete(node_tree, right)
-        merge(node_tree, left, right)
+    for left_node, right_node in merge_pairs:
+        delete(node_tree, right_node)
+        merge(node_tree, left_node, right_node)
     return node_tree
 
 
@@ -589,7 +609,7 @@ def maybe_unwrap_nonterminals_in_tree(node, unwrap_set=UNWRAP):
         if child.nonterminal in unwrap_set:
             node._children.pop(idx)
             maybe_unwrap_nonterminals_in_tree(child, unwrap_set)
-            node._children[idx:idx + 1] = child.children
+            node._children[idx : idx + 1] = child.children
             found = True
     return found
 
@@ -602,8 +622,76 @@ REMAP_POS = {
     ":": "PUNCT",
     ";": "PUNCT",
     "Q+\u0143UM-D": "Q+NUM-D",
-    'OTHER+G': "OTHER-G",
+    "OTHER+G": "OTHER-G",
 }
+
+VPWRAP = "VP"
+WRAP_POS_WITH_NT = {
+    "bag": VPWRAP,
+    "ban": VPWRAP,
+    "be": VPWRAP,
+    "bedi": VPWRAP,
+    "beds": VPWRAP,
+    "bei": VPWRAP,
+    "ben": VPWRAP,
+    "bepi": VPWRAP,
+    "beps": VPWRAP,
+    "dag": VPWRAP,
+    "dan": VPWRAP,
+    "do": VPWRAP,
+    "dodi": VPWRAP,
+    "dods": VPWRAP,
+    "doi": VPWRAP,
+    "don": VPWRAP,
+    "dopi": VPWRAP,
+    "dops": VPWRAP,
+    "hag": VPWRAP,
+    "han": VPWRAP,
+    "hv": VPWRAP,
+    "hvdi": VPWRAP,
+    "hvds": VPWRAP,
+    "hvi": VPWRAP,
+    "hvn": VPWRAP,
+    "hvpi": VPWRAP,
+    "hvps": VPWRAP,
+    "mag": VPWRAP,
+    "man": VPWRAP,
+    "md": VPWRAP,
+    "mddi": VPWRAP,
+    "mdds": VPWRAP,
+    "mdi": VPWRAP,
+    "mdn": VPWRAP,
+    "mdpi": VPWRAP,
+    "mdps": VPWRAP,
+    "rag": VPWRAP,
+    "ran": VPWRAP,
+    "rd": VPWRAP,
+    "rddi": VPWRAP,
+    "rdds": VPWRAP,
+    "rdi": VPWRAP,
+    "rdn": VPWRAP,
+    "rdpi": VPWRAP,
+    "rdps": VPWRAP,
+    "vag": VPWRAP,
+    "van": VPWRAP,
+    "vb": VPWRAP,
+    "vbdi": VPWRAP,
+    "vbds": VPWRAP,
+    "vbi": VPWRAP,
+    "vbn": VPWRAP,
+    "vbpi": VPWRAP,
+    "vbps": VPWRAP,
+}
+
+
+def maybe_wrap_terminals_in_tree(node, wrap_map=WRAP_POS_WITH_NT):
+    if node.terminal:
+        if node.terminal.lower() not in wrap_map:
+            return node
+        return greynir_utils.NonterminalNode(wrap_map[node.terminal], children=[node])
+    new_children = [maybe_wrap_terminals_in_tree(child) for child in node.children]
+    return greynir_utils.NonterminalNode(node.nonterminal, children=new_children)
+
 
 def merged_pos_heads_precedence(merged_heads):
     # stórmikið                  'ADJ+Q': 1,
@@ -651,6 +739,7 @@ def merged_pos_heads_precedence(merged_heads):
     # annaðhvort                 'WPRO+Q': 1}  # note, should be  OTHER+WPRO
     pass
 
+
 def maybe_fix_nt(nt):
     fixes = {
         "ADJP-OC": "ADJP-LOC",
@@ -685,133 +774,123 @@ def maybe_fix_nt(nt):
     return fixes.get(nt, nt)
 
 
-LEGAL_NT_HEADS =set((
-    "ADJP",
-    "ADJX",
-    "ADV",  # (ADVP (ADV (ADV21 full-full) (ADJ22 fagurt-fagur)))
-    "ADVP",
-    "ADVX",
-    "CONJP",
-    "CP",
-    "ENGLISH",
-    "FOREIGN",
-    "FRAG",  # fragment, not enough to construct an IP
-    "FS",  # false start
-    "INTJP",
-    "IP",
-    "LATIN",
-    "NEGP",
-    "NP",
-    "NUMP",
-    "PP",
-    "QP",
-    "QTP",  # quotation phrase
-    "QX",
-    "REF",  # reference (citation)
-    "REP",  # repetition
-    "RRC",  # reduced relative clauses
-    "TRANSLATION",
-    "VP",
-    "WADJP",
-    "WADJX",
-    "WADVP",
-    "WNP",
-    "WPP",  # pied-piping, https://linguist.is/icelandic_treebank/WPP
-    "WQP",
-    ## actually pos
-))
+LEGAL_NT_HEADS = set(
+    (
+        "ADJP",
+        "ADJX",
+        "ADV",  # (ADVP (ADV (ADV21 full-full) (ADJ22 fagurt-fagur)))
+        "ADVP",
+        "ADVX",
+        "CONJP",
+        "CP",
+        "ENGLISH",
+        "FOREIGN",
+        "FRAG",  # fragment, not enough to construct an IP
+        "FS",  # false start
+        "INTJP",
+        "IP",
+        "LATIN",
+        "NEGP",
+        "NP",
+        "NUMP",
+        "PP",
+        "QP",
+        "QTP",  # quotation phrase
+        "QX",
+        "REF",  # reference (citation)
+        "REP",  # repetition
+        "RRC",  # reduced relative clauses
+        "TRANSLATION",
+        "VP",
+        "WADJP",
+        "WADJX",
+        "WADVP",
+        "WNP",
+        "WPP",  # pied-piping, https://linguist.is/icelandic_treebank/WPP
+        "WQP",
+        ## actually pos
+    )
+)
 
-LEGAL_NT_FLAGS = set((
-    "ABS",  # IP-ABS
-    "ADT",  # NP-ADT, tækjafall
-    "ADV",  # NP-ADV
-    "BY",  # PP-BY
-    "CAR",  # CP-CAR, clause-adjoined relatives
-    "CLF",  # CP-CLF, cleft (it is money that I love)
-    "CMP",  # CP-CMP
-    "COM",
-    "DEG",  # CP-DEG
-    "DIR",
-    "ELAB",   # https://linguist.is/icelandic_treebank/Disfluencies
-    "EOP",  # CP-EOP, purpose/relative infinites
-    "EXL",  # CP-EXL, exclamatives, 'en sú óheppni!'
-    "FRL",  #  CP-FRL, adverbial free relatives https://linguist.is/icelandic_treebank/CP-FRL
-    "IMP",
-    "INF",
-    "LFD",  # left dislocation
-    "LOC",
-    "MAT",
-    "MSR",  # measure (comparison)
-    "OB1",
-    "OB2",
-    "OB3",
-    "POS",
-    "PPL",  # participial clause
-    "PRD",
-    "PRN",
-    "PRP",
-    "QUE",
-    "REL",
-    "RSP",  # https://linguist.is/icelandic_treebank/RSP
-    "SBJ",
-    "SMC",  # small-clause
-    "SPE",
-    "SPR",  # secondary predicate
-    "SUB",
-    "THT",
-    "TMC",  # CP-TMC, tough movement complements  https://www.ling.upenn.edu/~beatrice/annotation/syn-sub.html#tough_movement
-    "TMP",
-    "TTT",  # spelling error
-    "VOC",  # NP-VOC, vocative (Einar, hvar eru paprikurnar?)
-    # Cases, only temporary, remove this later
-    # "N", "A", "D", "G"
-))
+LEGAL_NT_FLAGS = set(
+    (
+        "ABS",  # IP-ABS
+        "ADT",  # NP-ADT, tækjafall
+        "ADV",  # NP-ADV
+        "BY",  # PP-BY
+        "CAR",  # CP-CAR, clause-adjoined relatives
+        "CLF",  # CP-CLF, cleft (it is money that I love)
+        "CMP",  # CP-CMP
+        "COM",
+        "DEG",  # CP-DEG
+        "DIR",
+        "ELAB",  # https://linguist.is/icelandic_treebank/Disfluencies
+        "EOP",  # CP-EOP, purpose/relative infinites
+        "EXL",  # CP-EXL, exclamatives, 'en sú óheppni!'
+        "FRL",  #  CP-FRL, adverbial free relatives https://linguist.is/icelandic_treebank/CP-FRL
+        "IMP",
+        "INF",
+        "LFD",  # left dislocation
+        "LOC",
+        "MAT",
+        "MSR",  # measure (comparison)
+        "OB1",
+        "OB2",
+        "OB3",
+        "POS",
+        "PPL",  # participial clause
+        "PRD",
+        "PRN",
+        "PRP",
+        "QUE",
+        "REL",
+        "RSP",  # https://linguist.is/icelandic_treebank/RSP
+        "SBJ",
+        "SMC",  # small-clause
+        "SPE",
+        "SPR",  # secondary predicate
+        "SUB",
+        "THT",
+        "TMC",  # CP-TMC, tough movement complements  https://www.ling.upenn.edu/~beatrice/annotation/syn-sub.html#tough_movement
+        "TMP",
+        "TTT",  # spelling error
+        "VOC",  # NP-VOC, vocative (Einar, hvar eru paprikurnar?)
+        # Cases, only temporary, remove this later
+        # "N", "A", "D", "G"
+    )
+)
 
-NT_DISQUALIFY_BOTH_HEAD_AND_PARTS = set((
-    "2SBJ",
-    "BEFORE",
-    "BP",
-    "DP",
-    "FINITE",
-    "KOMINN",
-    "LLL",
-    "MISS",
-    "NB",
-    "SBP",
-    "SENT",
-    "SPJ",
-    "SUV",
-    "UNKNOWN",
-    "VERB",
-    "WNX",
-    "WXP",
-    "X",
-    "XP",
-    "ZZZ",
-    "NS21",
-))
+NT_DISQUALIFY_BOTH_HEAD_AND_PARTS = set(
+    (
+        "2SBJ",
+        "BEFORE",
+        "BP",
+        "DP",
+        "FINITE",
+        "KOMINN",
+        "LLL",
+        "MISS",
+        "NB",
+        "SBP",
+        "SENT",
+        "SPJ",
+        "SUV",
+        "UNKNOWN",
+        "VERB",
+        "WNX",
+        "WXP",
+        "X",
+        "XP",
+        "ZZZ",
+        "NS21",
+    )
+)
 
-LEGAL_NT_HEAD_BUT_DISQUALIFY_AS_PART = set((
-    "REP",
-    "CONJP",
-    "NPR",
-    "PRO",
-))
+LEGAL_NT_HEAD_BUT_DISQUALIFY_AS_PART = set(("REP", "CONJP", "NPR", "PRO"))
 
-POS_DISQUALIFY_PARTS = set((
-    "YYY",
-    "S",
-    "INF",
-    "INF",
-))
+POS_DISQUALIFY_PARTS = set(("YYY", "S", "INF", "INF"))
 
-POS_LEGAL_PARTS = set((
-    "N",
-    "A",
-    "D",
-    "G",
-    "TTT",
-))
+POS_LEGAL_PARTS = set(("N", "A", "D", "G", "TTT"))
 
 #  'ADT': 1,
 #  'ADV': 1,
@@ -837,8 +916,6 @@ POS_LEGAL_PARTS = set((
 #  'V': 1,
 #  'WPRO': 5,  # (OTHER-WPRO annaðhvort) # this is a typo
 #  'YYY': 1}
-
-
 
 
 # pos used as phrase unit
