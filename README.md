@@ -10,14 +10,7 @@ GreynirSeq is a natural language parsing toolkit for Icelandic focused on sequen
 
 The modeling part (nicenlp) of GreynirSeq is built on top of the excellent [fairseq](https://github.com/pytorch/fairseq) from Facebook (which is built on top of pytorch).
 
-GreynirSeq is licensed under the GNU AFFERO GPLv3 license unless otherwise stated at the top of a file.
-
-**What's new?**
-* An Icelandic RoBERTa model, **IceBERT** finetuned for NER and POS tagging.
-* Icelandic - English translation.
-
-**What's on the horizon?**
-* More fine tuning tasks for Icelandic, constituency parsing and grammatical error detection
+GreynirSeq is licensed under the MIT license unless otherwise stated at the top of a file. Model files hosted by Miðeind or on Hugging Face are under the GNU AFFERO GPLv3 license unless released elsewhere under CC-BY, e.g. on CLARIN.
 
 ---
 
