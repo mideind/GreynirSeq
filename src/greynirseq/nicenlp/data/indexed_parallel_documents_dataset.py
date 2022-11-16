@@ -92,6 +92,7 @@ class KEYS:
     TARGET_OFFSETS = "target_offsets"
     SOURCE_WEIGHTS = "source_weights"
     TARGET_WEIGHTS = "target_weights"
+    EXACT_ALIGNMENT = "exact_alignment"
 
 
 @dataclass
@@ -184,7 +185,9 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             insert_sep = np.random.randint(2, dtype=np.bool)
 
-        if insert_sep and len(src_segments) > 1:
+        assert KEYS.EXACT_ALIGNMENT in item or not insert_sep  # insert_sep implies exact_alignment
+        if insert_sep and len(src_segments) > 1 and np.all(item[KEYS.EXACT_ALIGNMENT]):
+            # only insert separator when alignment is *exact*
             bos = torch.tensor([self.dictionary.bos()])
             src_out = [bos] * (len(src_segments) * 2 - 1)
             src_out[0::2] = [self.encoder.encode(seg) for seg in src_segments]
@@ -836,6 +839,7 @@ def merge_adjacent_sentences(
             KEYS.SOURCE_INDICES: [],
             KEYS.TARGET_INDICES: [],
             KEYS.WEIGHT: [],
+            KEYS.EXACT_ALIGNMENT: [],
         }
         # set up reproducible rng state that depends implicitly on batch_size but is invariant to num_proc
         rng = np.random.default_rng((seed, abs_align_indices))
@@ -852,10 +856,11 @@ def merge_adjacent_sentences(
         )
 
         last_doc_idx, last_pg_idx = doc_idxs[0], pg_idxs[0]
-        accum_src, accum_tgt, accum_weight = (
+        accum_src, accum_tgt, accum_weight, accum_exact = (
             all_src_idxs[0],
             all_tgt_idxs[0],
             weights[0],
+            True,
         )
         num_outputs, nmerges_in_curr = 0, 1
         for _loop_idx, (
@@ -865,9 +870,8 @@ def merge_adjacent_sentences(
             src_idxs,
             tgt_idxs,
             skip_,
-            roll_bin,
         ) in enumerate(
-            zip(doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip, roll_bins)
+            zip(doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip)
         ):
             if _loop_idx < 1:
                 # skip first, it is already in accumulators
@@ -883,13 +887,15 @@ def merge_adjacent_sentences(
             has_budget = accum_weight + weight <= rolled_length
 
             # if passthrough succeeded store accumulator and reset,
-            # passthrough is only performed once at the beginning concatenation_chain
+            # passthrough is only performed once at the beginning of each concatenation chain
             if nmerges_in_curr == 1 and (not skip_) and passthrough[num_outputs]:
                 # ic("passing through")
                 ex_out[KEYS.SOURCE_INDICES].append(accum_src)
                 ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
                 ex_out[KEYS.WEIGHT].append(accum_weight)
+                ex_out[KEYS.EXACT_ALIGNMENT].append(accum_exact)
                 accum_src, accum_tgt, accum_weight = src_idxs, tgt_idxs, weight
+                accum_exact = len(src_idxs) == len(tgt_idxs)
                 last_doc_idx, last_pg_idx = doc_idx, pg_idx
                 num_outputs += 1
                 nmerges_in_curr = 1
@@ -899,6 +905,7 @@ def merge_adjacent_sentences(
                 accum_src.extend(src_idxs)
                 accum_tgt.extend(tgt_idxs)
                 accum_weight += weight
+                accum_exact &= len(src_idxs) == len(tgt_idxs)
                 last_doc_idx, last_pg_idx = doc_idx, pg_idx
                 nmerges_in_curr += 1
                 continue
@@ -906,20 +913,22 @@ def merge_adjacent_sentences(
             num_outputs += 1
             nmerges_in_curr = 1
             # clear accumulators since we exceeded budget, met a boundary or should skip
-            # breakpoint()
             if accum_src and accum_tgt:
                 # store examples
                 ex_out[KEYS.SOURCE_INDICES].append(accum_src)
                 ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
                 ex_out[KEYS.WEIGHT].append(accum_weight)
+                ex_out[KEYS.EXACT_ALIGNMENT].append(accum_exact)
 
             if skip_:
                 # discard newest
                 accum_src, accum_tgt, accum_weight = [], [], 0
+                accum_exact = True
                 last_doc_idx, last_pg_idx = None, None
                 nmerges_in_curr = 0
             else:
                 accum_src, accum_tgt, accum_weight = src_idxs, tgt_idxs, weight
+                accum_exact = len(src_idxs) == len(tgt_idxs)
                 last_doc_idx, last_pg_idx = doc_idx, pg_idx
 
         if skip or not accum_src or not accum_tgt or accum_weight == 0:
@@ -930,6 +939,7 @@ def merge_adjacent_sentences(
         ex_out[KEYS.SOURCE_INDICES].append(accum_src)
         ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
         ex_out[KEYS.WEIGHT].append(accum_weight)
+        ex_out[KEYS.EXACT_ALIGNMENT].append(accum_exact)
         return ex_out
 
     assert max_seq_len is not None
@@ -944,5 +954,5 @@ def merge_adjacent_sentences(
         load_from_cache_file=False,
         num_proc=num_proc,
     )
-    dataset.set_format("numpy", [KEYS.SOURCE_INDICES, KEYS.TARGET_INDICES, KEYS.WEIGHT])
+    dataset.set_format("numpy", [KEYS.SOURCE_INDICES, KEYS.TARGET_INDICES, KEYS.WEIGHT, KEYS.EXACT_ALIGNMENT])
     return dataset
