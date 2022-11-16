@@ -140,7 +140,10 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
 
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             insert_sep = np.random.randint(2, dtype=np.bool)
-        if insert_sep and len(src_segments) > 1:
+
+        assert KEYS.EXACT_ALIGNMENT in item or not insert_sep  # insert_sep implies exact_alignment
+        if insert_sep and len(src_segments) > 1 and np.all(item[KEYS.EXACT_ALIGNMENT]):
+            # only insert separator when alignment is *exact*
             bos = torch.tensor([self.dictionary.bos()])
             src_out = [bos] * (len(src_segments) * 2 - 1)
             src_out[0::2] = [maybe_noised_encode_fn(seg) for seg in src_segments]
@@ -228,10 +231,9 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             self._sizes = self._sorted_lengths
 
             logger.info(f"Memory mapping {len(self.index_dataset)} indices")
-            _ = self.index_dataset.save_to_disk("/data/scratch/haukur/document_translation/parquet/index_dataset.foo")
-            self.index_datset = hf_datasets.load_from_disk(
-                "/data/scratch/haukur/document_translation/parquet/index_dataset.foo"
-            )
+            index_cache_path = "/data/scratch/haukur/document_translation/parquet/index_dataset.foo"
+            _ = self.index_dataset.save_to_disk(index_cache_path)
+            self.index_datset = hf_datasets.load_from_disk(index_cache_path)
 
     def __len__(self):
         return len(self.index_dataset) if self.index_dataset is not None else 0
