@@ -13,6 +13,7 @@ from greynirseq.nicenlp.tasks import (
     parser_task,
     translation_from_pretrained_bart,
     translation_from_pretrained_bart_with_domain,
+    document_translation_from_pretrained_bart,
     translation_with_backtranslation,
     translation_with_glossary,
 )

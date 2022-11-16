@@ -18,11 +18,15 @@ from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask
 from fairseq.tasks.translation_from_pretrained_bart import TranslationFromPretrainedBARTTask
 
+from greynirseq.nicenlp.data.batch_sampler import batch_by_size
+from greynirseq.nicenlp.data.indexed_parallel_bt_documents_dataset import IndexedParallelBTDocumentsDataset
+from greynirseq.nicenlp.data.indexed_parallel_documents_dataset import IndexedParallelDocumentsDataset
+
 logger = logging.getLogger(__name__)
 
 
-@register_task("document_translation_from_pretrained_bart2")
-class DocumentTranslationFromPretrainedBART2(TranslationFromPretrainedBARTTask):
+@register_task("document_translation_from_pretrained_bart")
+class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
@@ -37,7 +41,8 @@ class DocumentTranslationFromPretrainedBART2(TranslationFromPretrainedBARTTask):
         parser.add_argument('--prepend-bos', action='store_true',
                             help='prepend bos token to each sentence, which matches '
                                  'mBART pretraining')
-        parser.add_argument('--max-sentences', type=int, default=100)
+        parser.add_argument('--max-sentences', type=int, default=100
+        )
         parser.add_argument('--max-sequence-length', type=int, default=int(1024*0.75))
         parser.add_argument('--num-preprocess-workers', type=int, default=2)
         parser.add_argument('--bt-subset', type=str, default="")
@@ -93,8 +98,6 @@ class DocumentTranslationFromPretrainedBART2(TranslationFromPretrainedBARTTask):
 
         bpe = encoders.build_bpe(self.args)
         from greynirseq.nicenlp.data.encoders import Encoder
-        from greynirseq.nicenlp.data.indexed_parallel_bt_documents_dataset2 import IndexedParallelBTDocumentsDataset
-        from greynirseq.nicenlp.data.indexed_parallel_documents_dataset2 import IndexedParallelDocumentsDataset
 
         my_enc = Encoder(
             self.args,
@@ -240,7 +243,6 @@ class DocumentTranslationFromPretrainedBART2(TranslationFromPretrainedBARTTask):
         lengths = dataset.ordered_sizes()
 
         logger.debug("Batching by size...")
-        from .batch_sampler import batch_by_size
 
         with data_utils.numpy_seed(seed, epoch):
             batch_sampler = batch_by_size(indices, lengths, max_tokens, max_sentences)

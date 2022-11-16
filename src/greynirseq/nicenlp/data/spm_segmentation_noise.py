@@ -26,7 +26,7 @@ class SpmNoiser(Noiser):
 def spm_reencode_w_segmentation_noise(sequence: List[Union[str, int, Tensor]], dictionary, spm):
     # TODO: convert to tensor here?
     encoded_sample = []
-    noise_allowed_mask = torch.tensor([], dtype=bool)
+    noise_allowed_mask = torch.tensor([], dtype=torch.bool)
 
     for i in sequence:
         if isinstance(i, str):

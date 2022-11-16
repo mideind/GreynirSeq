@@ -10,8 +10,9 @@ import numpy as np
 import torch
 from fairseq.data import LanguagePairDataset, data_utils
 
-from fairseq_user_dir.encoders import Encoder
-from fairseq_user_dir.indexed_parallel_documents_dataset2 import (
+
+from greynirseq.nicenlp.data.encoders import Encoder
+from greynirseq.nicenlp.data.indexed_parallel_documents_dataset import (
     KEYS,
     IndexedParallelDocumentsDataset,
     merge_adjacent_sentences,
