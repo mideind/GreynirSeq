@@ -14,7 +14,7 @@ import torch
 from datasets import Dataset as HFDataset
 from datasets import Sequence, Value
 from fairseq.data import Dictionary, LanguagePairDataset, data_utils
-from fairseq_user_dir.encoders import Encoder
+from greynirseq.nicenlp.data.encoders import Encoder
 
 logger = logging.getLogger(__name__)
 
@@ -541,7 +541,6 @@ def make_align_dataset_from_monolingual_document_dataset(
     dataset = dataset.map(
         document_to_one_to_one_alignment,
         remove_columns=remove_columns,
-        load_from_cache_file=False,
         load_from_cache_file=load_from_cache_file,
         num_proc=num_proc,
     )
