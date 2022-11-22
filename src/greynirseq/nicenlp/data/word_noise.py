@@ -24,7 +24,7 @@ class WordNoiser(Noiser):
         self.pos_noise_dist = torch.distributions.categorical.Categorical(probs=self.pos_noise_probs)
 
     def apply(self, sequence: List[Union[str, int, Tensor]]):
-        return word_noise_v2(
+        return word_noise(
             sequence,
             self.drop_prob,
             pos_noise_dist=self.pos_noise_dist,
@@ -59,7 +59,7 @@ def calculate_dropout_keep_matrix(length, drop_prob):
     return keep_matrix
 
 
-def word_noise_v2(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noise_dist, max_shuffle_distance: int):
+def word_noise(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noise_dist, max_shuffle_distance: int):
     noised_sample = []
     for part in sequence:
         if isinstance(part, str):
@@ -82,38 +82,6 @@ def word_noise_v2(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noi
             # Drop words with probability p,
             # keep_matrix = self.calculate_dropout_keep_matrix(len(words))
             keep_matrix = calculate_dropout_keep_matrix(len(words), drop_prob)
-            reordered_words = [words[i] for i in perm if keep_matrix[i]]
-            reordered_part = " ".join(reordered_words)
-
-            noised_sample.append(reordered_part)
-        else:
-            noised_sample.append(part)
-
-    return noised_sample
-
-
-def word_noise(sequence: List[Union[str, int, Tensor]], prob, *, max_shuffle_distance: int):
-    noised_sample = []
-    for part in sequence:
-        if isinstance(part, str):
-            # Only add noise to strings
-
-            # Consider words to be space separated.
-            # Consecutive spaces will cause empty-string words, but that's fine.
-            words = part.split(" ")
-
-            # Shuffle words to within-k distance
-            unnoised_pos = torch.arange(len(words))
-            if max_shuffle_distance > 0:
-                pos_noise = torch.randint(0, max_shuffle_distance, (len(words),))
-                noised_pos = unnoised_pos + pos_noise
-                perm = noised_pos.argsort()
-            else:
-                perm = unnoised_pos
-
-            # Drop words with probability p,
-            # keep_matrix = self.calculate_dropout_keep_matrix(len(words))
-            keep_matrix = calculate_dropout_keep_matrix(len(words), prob)
             reordered_words = [words[i] for i in perm if keep_matrix[i]]
             reordered_part = " ".join(reordered_words)
 

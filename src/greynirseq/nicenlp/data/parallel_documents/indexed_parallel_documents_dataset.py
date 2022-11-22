@@ -11,10 +11,12 @@ import datasets as hf_datasets
 import numpy as np
 import pyarrow as pa
 import torch
-from datasets import Dataset as HFDataset
-from datasets import Sequence, Value
 from fairseq.data import Dictionary, LanguagePairDataset, data_utils
 from greynirseq.nicenlp.data.encoders import Encoder
+
+# Sequence, Value, HFDataset = hf_datasets.Sequence, hf_datasets.Value, hf_datasets.Dataset
+from datasets import Dataset as HFDataset
+from datasets import Sequence, Value
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +116,7 @@ class IndexedParallelFingerprints:
 
 
 class IndexedParallelDocumentsDataset(LanguagePairDataset):
-    version = "1.7"
+    version = "1.8"
 
     def __init__(
         self,

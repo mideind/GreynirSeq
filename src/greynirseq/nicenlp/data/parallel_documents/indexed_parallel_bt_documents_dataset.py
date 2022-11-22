@@ -10,13 +10,12 @@ import numpy as np
 import torch
 from fairseq.data import LanguagePairDataset, data_utils
 
-
 from greynirseq.nicenlp.data.encoders import Encoder
-from greynirseq.nicenlp.data.indexed_parallel_documents_dataset import (
+from greynirseq.nicenlp.data.parallel_documents.indexed_parallel_documents_dataset import (
     KEYS,
     IndexedParallelDocumentsDataset,
-    merge_adjacent_sentences,
     lengths_to_offsets,
+    merge_adjacent_sentences,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,14 +170,15 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             "target": tgt_out,
         }
 
+        # print(src_segments)
+        # self.decode(example)
         return example
 
     def decode(self, example):
         src_string = self.src_dict.string(example["source"])
         tgt_string = self.src_dict.string(example["target"])
-        print()
-        print(f"Source string={self.encoder.bpe.decode(src_string)}")
-        print(f"Target string={self.encoder.bpe.decode(tgt_string)}")
+        print(f"{self.encoder.bpe.decode(src_string)}")
+        print(f"{self.encoder.bpe.decode(tgt_string)}")
         print()
 
     def set_epoch(self, epoch: int):

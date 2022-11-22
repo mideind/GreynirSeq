@@ -1,8 +1,13 @@
+# Copyright (C) Miðeind ehf.
+# This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
+# See the LICENSE file in the root of the project for terms of use.
+
 from typing import List, Union
 
 import torch
 from fairseq.data import encoders
 
+from greynirseq.nicenlp.data.char_noise import CharacterNoiser
 from greynirseq.nicenlp.data.fragment_noise import FragmentNoiser
 from greynirseq.nicenlp.data.spm_segmentation_noise import SpmNoiser
 from greynirseq.nicenlp.data.word_noise import WordNoiser
@@ -28,6 +33,16 @@ class Encoder:
         self.word_noiser = WordNoiser(word_noise_prob, max_shuffle_dist)
         self.noisy_subword_enc = SpmNoiser(self.dictionary, self.bpe_noisy)
         self.fragment_noiser = FragmentNoiser(fragment_noise_prob, min_val=self.min_val, max_val=self.max_val)
+        self.char_noiser = CharacterNoiser(
+            swap_prob=args.char_swap_prob,
+            delete_prob=args.char_delete_prob,
+            insert_prob=args.char_insert_prob,
+            duplicate_prob=args.char_duplicate_prob,
+            case_prob=args.char_case_prob,
+            substitution_prob=args.char_substitution_prob,
+            seq_lower_prob=args.seq_lower_prob,
+            seq_upper_prob=args.seq_upper_prob,
+        )
 
     def encode(self, parts: List[Union[int, str]]):
         if isinstance(parts, (str, int)):
@@ -44,6 +59,7 @@ class Encoder:
     def encode_noisy(self, sequence: List[Union[str, int, torch.Tensor]]):
         if not isinstance(sequence, list):
             sequence = [sequence]
+        sequence = [self.char_noiser.apply(item) if isinstance(item, str) else item for item in sequence]
         res = self.word_noiser.apply(sequence)
         res = self.noisy_subword_enc.apply(res)
         seq_tensor = self.fragment_noiser.apply(res.sequence, res.noise_allowed_mask)

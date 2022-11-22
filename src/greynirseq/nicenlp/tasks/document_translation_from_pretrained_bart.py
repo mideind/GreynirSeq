@@ -19,8 +19,12 @@ from fairseq.tasks.translation import TranslationTask
 from fairseq.tasks.translation_from_pretrained_bart import TranslationFromPretrainedBARTTask
 
 from greynirseq.nicenlp.data.batch_sampler import batch_by_size
-from greynirseq.nicenlp.data.indexed_parallel_bt_documents_dataset import IndexedParallelBTDocumentsDataset
-from greynirseq.nicenlp.data.indexed_parallel_documents_dataset import IndexedParallelDocumentsDataset
+from greynirseq.nicenlp.data.parallel_documents.indexed_parallel_bt_documents_dataset import (
+    IndexedParallelBTDocumentsDataset,
+)
+from greynirseq.nicenlp.data.parallel_documents.indexed_parallel_documents_dataset import (
+    IndexedParallelDocumentsDataset,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +57,15 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         parser.add_argument('--fragment-noise-prob', type=float, default=0.01)
         parser.add_argument('--max-merges', type=int, default=10, help="How many segments are at most merged into a single training example.")
         parser.add_argument('--max-shuffle-dist', type=int, default=3)
+        ### character noising
+        parser.add_argument('--char-swap-prob', type=float, default=0.01)
+        parser.add_argument('--char-delete-prob', type=float, default=0.01)
+        parser.add_argument('--char-insert-prob', type=float, default=0.01)
+        parser.add_argument('--char-duplicate-prob', type=float, default=0.01)
+        parser.add_argument('--char-case-prob', type=float, default=0.01)
+        parser.add_argument('--char-substitution-prob', type=float, default=0.01)
+        parser.add_argument('--seq-lower-prob', type=float, default=0.01)
+        parser.add_argument('--seq-upper-prob', type=float, default=0.01)
         # fmt: on
 
     def __init__(self, args, src_dict, tgt_dict):
