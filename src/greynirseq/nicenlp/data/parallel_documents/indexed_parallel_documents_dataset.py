@@ -392,9 +392,9 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
 
     def set_epoch(self, epoch: int):
         self.epoch = epoch
-        logger.info(f"Preparing next epoch")
+        logger.info(f"Preparing epoch {epoch}")
         self.interleave_indices()
-        logger.info(f"Done preparing epoch")
+        logger.info(f"Done preparing epoch {epoch}")
 
     def interleave_indices(self):
         # XXX: implement differing behavior based on interleave strategy -- for valid vs train
@@ -406,7 +406,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             seed=(self.seed, self.epoch),
         )
         if self.epoch != self._interleave_epoch_index:
-            logger.info(f"Merging adjacent segments in source and target")
+            logger.info("Merging adjacent segments in source and target")
             self.index_dataset = merge_adjacent_sentences(
                 self.flat_align,
                 max_seq_len=self.max_seq_len,
@@ -580,7 +580,7 @@ def compute_offsets_and_flatten_alignments(
     flip_alignment: bool = False,
 ):
     num_proc = 1 if len(src_dataset) < 11_000 else num_proc
-    logger.info(f"Computing sentence lengths of src documents")
+    logger.info("Computing sentence lengths of src documents")
     src_num_bpes = get_mono_document_sentence_lengths_dataset(
         src_dataset,
         bpe_encoder,
@@ -588,7 +588,7 @@ def compute_offsets_and_flatten_alignments(
         load_from_cache_file=load_from_cache_file,
         num_proc=num_proc,
     ).rename_column(KEYS.SENTENCE_WEIGHTS, KEYS.SOURCE_WEIGHTS, new_fingerprint=None)
-    logger.info(f"Computing sentence lengths of tgt documents")
+    logger.info("Computing sentence lengths of tgt documents")
     tgt_num_bpes = get_mono_document_sentence_lengths_dataset(
         tgt_dataset,
         bpe_encoder,
@@ -597,7 +597,7 @@ def compute_offsets_and_flatten_alignments(
         num_proc=num_proc,
     ).rename_column(KEYS.SENTENCE_WEIGHTS, KEYS.TARGET_WEIGHTS, new_fingerprint=None)
 
-    logger.info(f"Computing offsets")
+    logger.info("Computing offsets")
     src_doc_offsets = compute_doc_offsets(
         src_dataset,
         num_proc=num_proc,
@@ -611,7 +611,7 @@ def compute_offsets_and_flatten_alignments(
         fingerprint="tgt",
     ).rename_column(KEYS.NUM_SEGMENTS, KEYS.TARGET_OFFSETS, new_fingerprint="tgt")
 
-    logger.info(f"Flattening alignments")
+    logger.info("Flattening alignments")
     align_w_info = hf_datasets.concatenate_datasets(
         [
             align_dataset,
