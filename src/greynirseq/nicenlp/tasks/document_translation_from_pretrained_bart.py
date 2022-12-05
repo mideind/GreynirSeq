@@ -34,48 +34,71 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
-        # fmt: off
         TranslationTask.add_args(parser)
-        parser.add_argument('--langs',  type=str, metavar='LANG',
-                help='comma-separated list of monolingual language, '
-                        'for example, "en,de,fr". These should match the '
-                        'langs from pretraining (and be in the same order). '
-                        'You should always add all pretraining language idx '
-                        'during finetuning.')
-        parser.add_argument('--prepend-bos', action='store_true',
-                help='prepend bos token to each sentence, which matches '
-                        'mBART pretraining')
-        parser.add_argument('--max-sentences', type=int, default=100)
-        parser.add_argument('--max-sequence-length', type=int, default=int(1024*0.75))
-        parser.add_argument('--num-preprocess-workers', type=int, default=2)
-        parser.add_argument('--bt-subset', type=str, default="")
-        parser.add_argument('--align-subset', type=str, default="", 
-                help="The subset of parallel data that has requires an alignment jsonl file")
-        parser.add_argument('--sentencepiece-alpha', type=float, default=1.00, 
-                help="Parameter for segmentation distribution, this is NOT a probability")
-        parser.add_argument('--parallel-prob', type=float, default=0.33, 
-                help="Probability of sampling parallel data if bt data is included (Note: NOT sample weight)")
-        parser.add_argument('--word-noise-prob', type=float, default=0.01)
-        parser.add_argument('--fragment-noise-prob', type=float, default=0.01)
-        parser.add_argument('--max-merges', type=int, default=10, 
-                help="How many segments are at most merged into a single training example.")
-        parser.add_argument('--max-shuffle-dist', type=int, default=3)
-        ### character noising
-        parser.add_argument('--char-swap-prob', type=float, default=0.01)
-        parser.add_argument('--char-delete-prob', type=float, default=0.01)
-        parser.add_argument('--char-insert-prob', type=float, default=0.01)
-        parser.add_argument('--char-duplicate-prob', type=float, default=0.01)
-        parser.add_argument('--char-case-prob', type=float, default=0.01)
-        parser.add_argument('--char-substitution-prob', type=float, default=0.01)
-        parser.add_argument('--seq-lower-prob', type=float, default=0.01)
-        parser.add_argument('--seq-upper-prob', type=float, default=0.01)
-        parser.add_argument('--decoder-langtok', action='store_true', 
-                help='replace beginning-of-sentence in target sentence with target language token')
-        # fmt: on
+        parser.add_argument(
+            "--langs",
+            type=str,
+            metavar="LANG",
+            help="comma-separated list of monolingual language, "
+            'for example, "en,de,fr". These should match the '
+            "langs from pretraining (and be in the same order). "
+            "You should always add all pretraining language idx "
+            "during finetuning.",
+        )
+        parser.add_argument(
+            "--prepend-bos",
+            action="store_true",
+            help="prepend bos token to each sentence, which matches " "mBART pretraining",
+        )
+        parser.add_argument("--max-sentences", type=int, default=100)
+        parser.add_argument("--max-sequence-length", type=int, default=int(1024 * 0.75))
+        parser.add_argument("--num-preprocess-workers", type=int, default=2)
+        parser.add_argument("--bt-subset", type=str, default="")
+        parser.add_argument(
+            "--align-subset",
+            type=str,
+            default="",
+            help="The subset of parallel data that has requires an alignment jsonl file",
+        )
+        parser.add_argument(
+            "--sentencepiece-alpha",
+            type=float,
+            default=1.00,
+            help="Parameter for segmentation distribution, this is NOT a probability",
+        )
+        parser.add_argument(
+            "--parallel-prob",
+            type=float,
+            default=0.33,
+            help="Probability of sampling parallel data if bt data is included (Note: NOT sample weight)",
+        )
+        parser.add_argument("--word-noise-prob", type=float, default=0.01)
+        parser.add_argument("--fragment-noise-prob", type=float, default=0.01)
+        parser.add_argument(
+            "--max-merges",
+            type=int,
+            default=10,
+            help="How many segments are at most merged into a single training example.",
+        )
+        parser.add_argument("--max-shuffle-dist", type=int, default=3)
+        # character noising
+        parser.add_argument("--char-swap-prob", type=float, default=0.01)
+        parser.add_argument("--char-delete-prob", type=float, default=0.01)
+        parser.add_argument("--char-insert-prob", type=float, default=0.01)
+        parser.add_argument("--char-duplicate-prob", type=float, default=0.01)
+        parser.add_argument("--char-case-prob", type=float, default=0.01)
+        parser.add_argument("--char-substitution-prob", type=float, default=0.01)
+        parser.add_argument("--seq-lower-prob", type=float, default=0.01)
+        parser.add_argument("--seq-upper-prob", type=float, default=0.01)
+        parser.add_argument(
+            "--decoder-langtok",
+            action="store_true",
+            help="replace beginning-of-sentence in target sentence with target language token",
+        )
 
-    def __init__(self, args, src_dict, tgt_dict):
+    def __init__(self, args, src_dict: Dictionary, tgt_dict: Dictionary):
         super().__init__(args, src_dict, tgt_dict)
-        self.src_dict: Dictionary = self.src_dict
+        self.src_dict = src_dict
         self.langs = args.langs.split(",")
         for dict_ in [src_dict, tgt_dict]:
             for lang in self.langs:

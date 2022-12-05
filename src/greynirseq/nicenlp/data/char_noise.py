@@ -171,7 +171,8 @@ def apply_character_noise(
         new_size = len(old_sequence) + num_inserts
 
         # Calculate the positions of the old data in the new sequence
-        # The positions are shifted by the amount of new elements inserted before them, i.e. the cumsum of the insertion mask
+        # The positions are shifted by the amount of new elements inserted before them,
+        # i.e. the cumsum of the insertion mask
         new_indexes_for_old_data = torch.arange(len(old_sequence)) + torch.cumsum(insert_mask, 0)
 
         # Preallocate a correctly sized tensor to contain the new sequence
@@ -180,7 +181,8 @@ def apply_character_noise(
         sequence[new_indexes_for_old_data] = old_sequence
 
         # Calculate positions for new data
-        # The positions are the indexes of True values in the insertion mask, shifted by the number of elements inserted before
+        # The positions are the indexes of True values in the insertion mask,
+        # shifted by the number of elements inserted before
         new_indexes_for_inserted_data = torch.arange(len(old_sequence))[insert_mask] + torch.arange(num_inserts)
 
         # Generate new data
