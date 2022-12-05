@@ -3,6 +3,9 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
+import multiprocessing
+import time
+from pathlib import Path
 from typing import List
 
 import datasets as hf_datasets
@@ -49,6 +52,8 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         self.num_proc = num_proc
 
         assert parallel_datasets or bt_datasets
+        self.parent_parallel_datasets = parallel_datasets
+        self.parent_bt_datasets = bt_datasets
         all_datasets = parallel_datasets + bt_datasets
         self.foo = all_datasets[0]
 
@@ -56,26 +61,28 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             [d.flat_src for d in all_datasets],
             axis=0,
         )
-        logger.info(f"Loaded {len(self.flat_src)} source segments")
-        self.flat_src.to_parquet("/data/scratch/haukur/document_translation/parquet/flat_src.parquet")
-        self.flat_src = hf_datasets.Dataset.from_parquet(
-            "/data/scratch/haukur/document_translation/parquet/flat_src.parquet"
-        )
+        # logger.info(f"Loaded {len(self.flat_src)} source segments")
+        # self.flat_src.to_parquet("/data/scratch/haukur/document_translation/parquet/flat_src.parquet")
+        # self.flat_src = hf_datasets.Dataset.from_parquet(
+        #     "/data/scratch/haukur/document_translation/parquet/flat_src.parquet"
+        # )
 
         self.flat_tgt = hf_datasets.concatenate_datasets(
             [d.flat_tgt for d in all_datasets],
             axis=0,
         )
-        logger.info(f"Loaded {len(self.flat_tgt)} target segments")
-        self.flat_tgt.to_parquet("/data/scratch/haukur/document_translation/parquet/flat_tgt.parquet")
-        self.flat_tgt = hf_datasets.Dataset.from_parquet(
-            "/data/scratch/haukur/document_translation/parquet/flat_tgt.parquet"
-        )
+        # logger.info(f"Loaded {len(self.flat_tgt)} target segments")
+        # self.flat_tgt.to_parquet("/data/scratch/haukur/document_translation/parquet/flat_tgt.parquet")
+        # self.flat_tgt = hf_datasets.Dataset.from_parquet(
+        #     "/data/scratch/haukur/document_translation/parquet/flat_tgt.parquet"
+        # )
 
         self.bt_src_start = (
             np.cumsum([len(dset.flat_src) for dset in parallel_datasets])[-1] if parallel_datasets else 0
         )
-        self.bt_tgt_start = np.array([len(dset.flat_tgt) for dset in parallel_datasets])[-1] if parallel_datasets else 0
+        self.bt_tgt_start = (
+            np.cumsum([len(dset.flat_tgt) for dset in parallel_datasets])[-1] if parallel_datasets else 0
+        )
 
         nparallel = len(parallel_datasets)
         doc_src_offsets = lengths_to_offsets([len(d.flat_src) for d in all_datasets])
@@ -90,8 +97,8 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         p_all_offsets = np.concatenate(parallel_offsets) if parallel_offsets else empty_array
         b_all_offsets = np.concatenate(bt_offsets) if bt_offsets else empty_array
 
-        # The reason we keep them separated is that their super/sub-sampled during the interleave
-        # which is discarded after each epoch
+        # The reason we keep them separated is that they are super/sub-sampled during the interleave
+        # which is discarded after each epoch (with a new seed)
         self.flat_align_parallel = (
             hf_datasets.concatenate_datasets([d.flat_align for d in parallel_datasets], axis=0)
             .add_column(KEYS.SOURCE_OFFSETS, column=p_all_offsets[:, 0])
@@ -170,8 +177,6 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             "target": tgt_out,
         }
 
-        # print(src_segments)
-        # self.decode(example)
         return example
 
     def decode(self, example):
@@ -187,53 +192,104 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         self.interleave_indices()
         logger.info(f"Done preparing epoch")
 
+    def _interleave_indices_inner(self):
+        parallel_merged = None
+        bt_merged = None
+
+        if self.flat_align_parallel is not None:
+            logger.info(f"Merging adjacent parallel using {self.num_proc} workers")
+            parallel_merged = merge_adjacent_sentences(
+                self.flat_align_parallel,
+                num_proc=self.num_proc,
+                passthrough_prob=self.passthrough_prob,
+                max_seq_len=self.max_seq_len,
+                max_merges=self.max_merges,
+                seed=self.seed,
+            )
+        if self.flat_align_bt is not None:
+            logger.info(f"Merging adjacent bt using {self.num_proc} workers")
+            bt_merged = merge_adjacent_sentences(
+                self.flat_align_bt,
+                num_proc=self.num_proc,
+                passthrough_prob=self.passthrough_prob,
+                max_seq_len=self.max_seq_len,
+                max_merges=self.max_merges,
+                seed=self.seed,
+            )
+        if parallel_merged is not None and bt_merged is not None:
+            logger.info("Interleaving parallel and bt")
+            self.index_dataset = hf_datasets.interleave_datasets(
+                [parallel_merged, bt_merged],
+                seed=self.epoch,
+                probabilities=self.mixture_ratios,
+            )
+
+        else:
+            self.index_dataset = parallel_merged or bt_merged
+
+        self._interleave_seed = self.epoch
+        logger.info("Sorting index dataset on lengths")
+        lengths = np.array(self.index_dataset[KEYS.WEIGHT])
+        self._sorted_indices = lengths.argsort()
+        self._sorted_lengths = lengths[self._sorted_indices]
+        self._sizes = self._sorted_lengths
+
+        logger.info(f"Caching index_dataset to disk at epoch {self.epoch} to {self.get_index_cache_path()}")
+        _ = self.index_dataset.save_to_disk(str(self.get_index_cache_path()))
+
+    def get_index_cache_path(self):
+        # TODO: add a fingerprint to this path
+        document_translation_cache_dir = hf_datasets.config.HF_DATASETS_CACHE / f"document_translation"
+        document_translation_cache_dir.mkdir(exist_ok=True)
+        return document_translation_cache_dir / f"index_dataset.epoch.{self.epoch}"
+
     def interleave_indices(self):
         if self.epoch != self._interleave_seed:
-            logger.info(f"Interleaving parallel and bt datasets with ratios={self.mixture_ratios}")
-            parallel_merged = None
-            bt_merged = None
-            if self.flat_align_parallel is not None:
-                logger.info(f"Merging adjacent parallel using {self.num_proc}")
-                parallel_merged = merge_adjacent_sentences(
-                    self.flat_align_parallel,
-                    num_proc=self.num_proc,
-                    passthrough_prob=self.passthrough_prob,
-                    max_seq_len=self.max_seq_len,
-                    max_merges=self.max_merges,
-                    seed=self.seed,
-                )
-            if self.flat_align_bt is not None:
-                logger.info(f"Merging adjacent bt using {self.num_proc}")
-                bt_merged = merge_adjacent_sentences(
-                    self.flat_align_bt,
-                    num_proc=self.num_proc,
-                    passthrough_prob=self.passthrough_prob,
-                    max_seq_len=self.max_seq_len,
-                    max_merges=self.max_merges,
-                    seed=self.seed,
-                )
-            if parallel_merged is not None and bt_merged is not None:
-                logger.info("Interleaving parallel and bt")
-                self.index_dataset = hf_datasets.interleave_datasets(
-                    [parallel_merged, bt_merged],
-                    seed=self.epoch,
-                    probabilities=self.mixture_ratios,
-                )
+            logger.info(
+                f"Interleaving parallel and bt datasets with ratios={self.mixture_ratios}, at epoch {self.epoch}"
+            )
 
-            else:
-                self.index_dataset = parallel_merged or bt_merged
+            index_cache_path = self.get_index_cache_path()
+            lockfile_path = Path(f"{index_cache_path}.lock")
+            # TODO: write main process PID into lockfile so that we can detect if the lockfile is stale
+            while True:
+                try:
+                    with lockfile_path.open(mode="x") as _lockfile:
+                        # mode=exclusive creation
+                        pass
+                    # we have the lock now
 
-            self._interleave_seed = self.epoch
-            logger.info("Sorting index dataset on lengths")
-            lengths = np.array(self.index_dataset[KEYS.WEIGHT])
-            self._sorted_indices = lengths.argsort()
-            self._sorted_lengths = lengths[self._sorted_indices]
-            self._sizes = self._sorted_lengths
+                    ### BEGIN CRITICAL SECTION ###
+                    if multiprocessing.get_context().parent_process() is None:
+                        # erum main process, þ.e.a.s. ekki worker
+                        self._interleave_indices_inner()
+                    elif index_cache_path.exists():
+                        # cache til og multiprocessing er í gangi
+                        # gerum ekki neitt
+                        logger.info(f"Found matching cached index_dataset, skipping interleave at epoch {self.epoch}")
+                    else:
+                        # cache ekki til
+                        # Eyðum gomlum indexum TODO XXX: delete older epochs
+                        # búum til cache-ið
+                        self._interleave_indices_inner()
 
-            logger.info(f"Memory mapping {len(self.index_dataset)} indices")
-            index_cache_path = "/data/scratch/haukur/document_translation/parquet/index_dataset.foo"
-            _ = self.index_dataset.save_to_disk(index_cache_path)
-            self.index_datset = hf_datasets.load_from_disk(index_cache_path)
+                    ### END CRITICAL SECTION ###
+
+                    # sleppa las
+                    lockfile_path.unlink(missing_ok=False)  # we want to crash if this fails
+
+                    # og loada gognum
+                    logger.info(f"Memory mapping indices at epoch {self.epoch}")
+                    self.index_dataset = hf_datasets.load_from_disk(str(index_cache_path))
+                    logger.info(f"Memory mapped {len(self.index_dataset)} at {self.epoch}")
+                    lengths = np.array(self.index_dataset[KEYS.WEIGHT])
+                    self._sorted_indices = lengths.argsort()
+                    self._sorted_lengths = lengths[self._sorted_indices]
+                    self._sizes = self._sorted_lengths
+                    break
+
+                except FileExistsError as e:
+                    time.sleep(0.25)
 
     def __len__(self):
         return len(self.index_dataset) if self.index_dataset is not None else 0

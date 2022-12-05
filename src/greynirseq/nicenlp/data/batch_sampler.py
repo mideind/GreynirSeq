@@ -14,21 +14,27 @@ def batch_by_size(
     shuffle=True,
 ):
     assert max_tokens is not None or max_sequences is not None
+    assert max_tokens is not None
     batch = []
-    ntokens = 0
     batches = []
+    olengths = []
+    batch_width = 0
     for index, length in zip(indices, lengths):
-        assert length < max_tokens
-        batch_exceeds_seqs = max_sequences is not None and len(batch) >= max_sequences
-        batch_exceeds_tokens = max_tokens is not None and ntokens + length >= max_tokens
-        if not (batch_exceeds_seqs or batch_exceeds_tokens):
+        assert length <= max_tokens
+        batch_within_seqs = max_sequences is not None and len(batch) <= max_sequences
+        new_batch_width = max(batch_width, length)
+        batch_within_tokens = ((len(batch) + 1) * new_batch_width) <= max_tokens
+
+        if batch_within_seqs and batch_within_tokens:
             batch.append(index)
-            ntokens += length
+            olengths.append(length)
+            batch_width = new_batch_width
         elif batch:
             # yield batch
             batches.append(batch)
             batch = [index]
-            ntokens = length
+            olengths = [length]
+            batch_width = length
         else:
             raise NotImplementedError
     if batch and not drop_last_batch:

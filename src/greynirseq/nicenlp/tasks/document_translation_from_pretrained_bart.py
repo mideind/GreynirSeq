@@ -66,6 +66,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         parser.add_argument('--char-substitution-prob', type=float, default=0.01)
         parser.add_argument('--seq-lower-prob', type=float, default=0.01)
         parser.add_argument('--seq-upper-prob', type=float, default=0.01)
+        parser.add_argument('--decoder-langtok', action='store_true', help='replace beginning-of-sentence in target sentence with target language token')
         # fmt: on
 
     def __init__(self, args, src_dict, tgt_dict):
@@ -104,6 +105,9 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         assert (
             self.args.max_sequence_length <= self.args.max_source_positions
         ), "The maximum training sequence length should be lesser than the positional encoding."
+        assert (
+            self.args.max_sequence_length <= self.args.max_tokens
+        )
         max_seq_len = self.args.max_sequence_length
 
         logger.info(f"Max sequence length={max_seq_len}")
@@ -224,7 +228,10 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         data_buffer_size=0,
         disable_iterator_cache=False,
     ):
+        max_sentences = max_sentences or self.args.max_sentences
+        logger.info(f"S Batching by size... with max_tokens={max_tokens} and max_sentences={max_sentences}")
         if not hasattr(dataset, "ordered_sizes"):
+            logger.info("FOOFOO")
             return super().get_batch_iterator(
                 dataset,
                 max_tokens=max_tokens,
@@ -255,8 +262,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             indices = dataset.ordered_indices()
         lengths = dataset.ordered_sizes()
 
-        logger.debug("Batching by size...")
-
+        logger.info(f"Batching by size... with max_tokens={max_tokens} and max_sentences={max_sentences}")
         with data_utils.numpy_seed(seed, epoch):
             batch_sampler = batch_by_size(indices, lengths, max_tokens, max_sentences)
         logger.debug("Done")

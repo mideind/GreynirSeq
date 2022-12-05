@@ -11,12 +11,11 @@ import datasets as hf_datasets
 import numpy as np
 import pyarrow as pa
 import torch
-from fairseq.data import Dictionary, LanguagePairDataset, data_utils
-from greynirseq.nicenlp.data.encoders import Encoder
-
-# Sequence, Value, HFDataset = hf_datasets.Sequence, hf_datasets.Value, hf_datasets.Dataset
 from datasets import Dataset as HFDataset
 from datasets import Sequence, Value
+from fairseq.data import Dictionary, LanguagePairDataset, data_utils
+
+from greynirseq.nicenlp.data.encoders import Encoder
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +37,7 @@ _ALIGNMENTS_JSONL_FEATURE_DICT = {
     "alignments": Sequence(
         feature=Sequence(
             feature=Sequence(
-                feature=Sequence(
-                    feature=Value(dtype="int64", id=None), length=-1, id=None
-                ),
+                feature=Sequence(feature=Value(dtype="int64", id=None), length=-1, id=None),
                 length=-1,
                 id=None,
             ),
@@ -116,7 +113,7 @@ class IndexedParallelFingerprints:
 
 
 class IndexedParallelDocumentsDataset(LanguagePairDataset):
-    version = "1.8"
+    version = "2.0"
 
     def __init__(
         self,
@@ -152,7 +149,9 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         self.src_dict = self.dictionary
         self.left_pad_source = False  # expected by bart model
         self.left_pad_target = False  # expected by bart model
-        self.src_lang_id = None  # fairseq 0.10.2 accesses these in LanguagePairDataset.collater (so this attribute must exist)
+        self.src_lang_id = (
+            None  # fairseq 0.10.2 accesses these in LanguagePairDataset.collater (so this attribute must exist)
+        )
         self.tgt_lang_id = None
 
         self._interleave_epoch_index = None
@@ -174,9 +173,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
     @property
     def dataset_ntokens(self):
         if self._dataset_ntokens is None:
-            self._dataset_ntokens = sum(
-                self.document_dataset[f"{KEYS.DOCUMENT_WEIGHT}.{KEYS.LANG1}"]
-            )
+            self._dataset_ntokens = sum(self.document_dataset[f"{KEYS.DOCUMENT_WEIGHT}.{KEYS.LANG1}"])
         return self._dataset_ntokens
 
     def __getitem__(self, index):
@@ -200,19 +197,18 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             tgt_out = [self.encoder.encode(seg) for seg in tgt_segments]
 
         src_affix = (
-            [self.dictionary.eos()]
-            if self.append_source_id is None
-            else [self.dictionary.eos(), self.append_source_id]
+            [self.dictionary.eos()] if self.append_source_id is None else [self.dictionary.eos(), self.append_source_id]
         )
         tgt_affix = (
-            [self.dictionary.eos()]
-            if self.append_target_id is None
-            else [self.dictionary.eos(), self.append_target_id]
+            [self.dictionary.eos()] if self.append_target_id is None else [self.dictionary.eos(), self.append_target_id]
         )
         src_out = torch.cat(src_out + [torch.tensor(src_affix)])
         tgt_out = torch.cat(tgt_out + [torch.tensor(tgt_affix)])
 
         return {"id": index, "source": src_out, "target": tgt_out}
+
+    def _decode_seq(self, seq):
+        return self.encoder.bpe.decode(self.src_dict.string(seq))
 
     def cache_to_disk(self):
         if self.fingerprints is None:
@@ -239,13 +235,8 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
     ):
         cache_dir = hf_datasets.config.HF_DATASETS_CACHE
 
-        fp = IndexedParallelFingerprints.make_fingerprints(
-            src_paths, tgt_paths, align_paths, cls.version
-        )
-        if not all(
-            Path(f"{cache_dir}/{val}").exists()
-            for val in [fp.source, fp.target, fp.align]
-        ):
+        fp = IndexedParallelFingerprints.make_fingerprints(src_paths, tgt_paths, align_paths, cls.version)
+        if not all(Path(f"{cache_dir}/{val}").exists() for val in [fp.source, fp.target, fp.align]):
             return None
         flat_src = hf_datasets.load_from_disk(f"{cache_dir}/{fp.source}")
         flat_tgt = hf_datasets.load_from_disk(f"{cache_dir}/{fp.target}")
@@ -283,8 +274,6 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         align_paths: Optional[str] = None,
         seed: int = 1,
     ):
-        # check if we it is already precomputed
-        #if load_from_cache_file and False:
         if load_from_cache_file:
             cached_dataset = cls.load_from_cache(
                 src_paths,
@@ -300,20 +289,14 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
                 seed=seed,
             )
             if cached_dataset is not None:
-                logger.info(
-                    f"Found matching cached dataset for {src_paths} and {tgt_paths}"
-                )
+                logger.info(f"Found matching cached dataset for {src_paths} and {tgt_paths}")
                 return cached_dataset
 
         features = hf_datasets.Features(_DOCUMENT_JSONL_FEATURE_DICT)
         logger.info(f"Loading src_dataset: {src_paths}")
-        src_dataset = hf_datasets.Dataset.from_json(
-            src_paths, split="train", chunksize=40 << 20, features=features
-        )
+        src_dataset = hf_datasets.Dataset.from_json(src_paths, split="train", chunksize=40 << 20, features=features)
         logger.info(f"Loading tgt_dataset: {tgt_paths}")
-        tgt_dataset = hf_datasets.Dataset.from_json(
-            tgt_paths, split="train", chunksize=40 << 20, features=features
-        )
+        tgt_dataset = hf_datasets.Dataset.from_json(tgt_paths, split="train", chunksize=40 << 20, features=features)
 
         src_lang = src_dataset[0][KEYS.LANG]
         tgt_lang = tgt_dataset[0][KEYS.LANG]
@@ -336,9 +319,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
                 flip_alignment = True
                 logger.info(f"Flipping alignments: {align_paths}")
         else:
-            align_dataset = make_align_dataset_default_alignments(
-                src_dataset, tgt_dataset
-            )
+            align_dataset = make_align_dataset_default_alignments(src_dataset, tgt_dataset)
 
         flat_align = compute_offsets_and_flatten_alignments(
             src_dataset,
@@ -365,15 +346,9 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             num_proc=num_proc,
         )
 
-        flat_src = flat_src.remove_columns(
-            [i for i in flat_src.column_names if i != KEYS.SEGMENT]
-        )
-        flat_tgt = flat_tgt.remove_columns(
-            [i for i in flat_tgt.column_names if i != KEYS.SEGMENT]
-        )
-        fingerprints = IndexedParallelFingerprints.make_fingerprints(
-            src_paths, tgt_paths, align_paths, cls.version
-        )
+        flat_src = flat_src.remove_columns([i for i in flat_src.column_names if i != KEYS.SEGMENT])
+        flat_tgt = flat_tgt.remove_columns([i for i in flat_tgt.column_names if i != KEYS.SEGMENT])
+        fingerprints = IndexedParallelFingerprints.make_fingerprints(src_paths, tgt_paths, align_paths, cls.version)
 
         obj = cls(
             flat_align,
@@ -464,9 +439,7 @@ def compute_doc_offsets(
         load_from_cache_file=load_from_cache_file,
         num_proc=num_proc,
     )
-    dataset.set_format(
-        type="numpy", columns=[KEYS.NUM_SEGMENTS], output_all_columns=False
-    )
+    dataset.set_format(type="numpy", columns=[KEYS.NUM_SEGMENTS], output_all_columns=False)
 
     dataset = hf_datasets.Dataset(
         pa.Table.from_arrays(
@@ -487,7 +460,7 @@ def flatten_document_dataset(
 ):
     def _inner_flatten_document_dataset(
         ex_batched,
-        document_index: int,
+        document_idxs: List[int],
     ):
         # this should be applied with batched=True
         ex_out = {
@@ -495,14 +468,21 @@ def flatten_document_dataset(
             KEYS.PARAGRAPH_INDEX: [],
             KEYS.SEGMENT: [],
         }
-        for doc_idx, doc in zip(document_index, ex_batched[KEYS.DOCUMENT]):
+        for doc_idx, doc in zip(document_idxs, ex_batched[KEYS.DOCUMENT]):
+            doc_segments, doc_pg_idxs, doc_doc_idxs = [], [], []
             for pg_idx, pg in enumerate(doc):
                 if any((not s) for s in pg for pg in doc):
-                    breakpoint()
-                    print()
-                ex_out[KEYS.SEGMENT].extend(pg)
-                ex_out[KEYS.PARAGRAPH_INDEX].extend(len(pg) * [pg_idx])
-                ex_out[KEYS.DOCUMENT_INDEX].extend(len(pg) * [doc_idx])
+                    # most of EEA documents have empty sentences
+                    # logger.error(f"Found empty sentence in {doc_idx} pg {pg_idx}... skipping document")
+                    # doc_segments, doc_pg_idxs, doc_doc_idxs = [], [], []
+                    # break
+                    pass
+                doc_segments.extend(pg)
+                doc_pg_idxs.extend(len(pg) * [pg_idx])
+                doc_doc_idxs.extend(len(pg) * [doc_idx])
+            ex_out[KEYS.SEGMENT].extend(doc_segments)
+            ex_out[KEYS.PARAGRAPH_INDEX].extend(doc_pg_idxs)
+            ex_out[KEYS.DOCUMENT_INDEX].extend(doc_doc_idxs)
         return ex_out
 
     dataset = dataset.map(
@@ -516,7 +496,7 @@ def flatten_document_dataset(
     )
     # the column_names dataset._format_columns can become stale if saved to disk
     # this is to avoid that
-    dataset.set_format("numpy", KEYS.SEGMENT)
+    dataset.set_format("numpy", KEYS.SEGMENT)  # type: ignore
     return dataset
 
 
@@ -530,12 +510,7 @@ def make_align_dataset_from_monolingual_document_dataset(
     def document_to_one_to_one_alignment(example):
         idxs = []
         for pg_idx, paragraph in enumerate(example[KEYS.DOCUMENT]):
-            idxs.extend(
-                [
-                    [[[pg_idx, s_idx]], [[pg_idx, s_idx]]]
-                    for s_idx in range(len(paragraph))
-                ]
-            )
+            idxs.extend([[[[pg_idx, s_idx]], [[pg_idx, s_idx]]] for s_idx in range(len(paragraph))])
         return {
             KEYS.UUID: example[KEYS.UUID],
             KEYS.ALIGNMENTS: idxs,
@@ -574,12 +549,11 @@ def make_align_dataset_default_alignments(
             KEYS.UUID: example[KEYS.UUID],
             KEYS.ALIGNMENTS: idxs,
         }
+
     dataset = hf_datasets.concatenate_datasets(
         [
             src_dataset,
-            tgt_dataset.rename_columns(
-                {name: f"{name}.tgt" for name in tgt_dataset.column_names}
-            ),
+            tgt_dataset.rename_columns({name: f"{name}.tgt" for name in tgt_dataset.column_names}),
         ],
         axis=1,
     )
@@ -645,12 +619,12 @@ def compute_offsets_and_flatten_alignments(
             tgt_num_bpes,
             src_doc_offsets,
             tgt_doc_offsets,
-            src_dataset.remove_columns(
-                [c for c in src_dataset.column_names if c != KEYS.DOCUMENT]
-            ).rename_column(KEYS.DOCUMENT, "src_doc"),
-            tgt_dataset.remove_columns(
-                [c for c in tgt_dataset.column_names if c != KEYS.DOCUMENT]
-            ).rename_column(KEYS.DOCUMENT, "tgt_doc"),
+            src_dataset.remove_columns([c for c in src_dataset.column_names if c != KEYS.DOCUMENT]).rename_column(
+                KEYS.DOCUMENT, "src_doc"
+            ),
+            tgt_dataset.remove_columns([c for c in tgt_dataset.column_names if c != KEYS.DOCUMENT]).rename_column(
+                KEYS.DOCUMENT, "tgt_doc"
+            ),
         ],
         axis=1,
     )
@@ -671,9 +645,7 @@ def get_mono_document_sentence_lengths_dataset(
     load_from_cache_file=True,
     num_proc: int = 4,
 ):
-    def _mono_document_to_sentence_lengths2(
-        example, bpe_encoder=None, dictionary: Dictionary = None
-    ):
+    def _mono_document_to_sentence_lengths2(example, bpe_encoder=None, dictionary: Dictionary = None):
         sent_lens_per_pg = [
             [
                 np.array(
@@ -705,9 +677,7 @@ def get_mono_document_sentence_lengths_dataset(
         num_proc=num_proc,
     )
     # this fixes internal pyarrow block length mismatch which occurs when concatting this table with offsets table
-    return hf_datasets.Dataset.from_pandas(dataset.to_pandas()).with_format(
-        "numpy", KEYS.SENTENCE_WEIGHTS
-    )
+    return hf_datasets.Dataset.from_pandas(dataset.to_pandas()).with_format("numpy", KEYS.SENTENCE_WEIGHTS)
 
 
 def flatten_alignments(
@@ -717,12 +687,7 @@ def flatten_alignments(
     num_proc: int = 4,
     flip_alignment: bool = False,
 ):
-    def _inner(
-        ex_batched,
-        indices,
-        *,
-        flip_alignment
-    ):
+    def _inner(ex_batched, indices, *, flip_alignment):
         # this should be applied with batched=True and with_indices=True
         ex_out = {
             KEYS.DOCUMENT_INDEX: [],
@@ -732,55 +697,47 @@ def flatten_alignments(
             KEYS.TARGET_INDICES: [],
             KEYS.SKIP: [],
         }
-        for rel_doc_idx, (abs_idx, doc_alignments) in enumerate(
-            zip(indices, ex_batched[KEYS.ALIGNMENTS])
-        ):
+        for rel_doc_idx, (abs_idx, doc_alignments) in enumerate(zip(indices, ex_batched[KEYS.ALIGNMENTS])):
             # semantics of each index:
             # doc_alignments[pair_idx][source or target][segments in pair][pg_idx or seg_idx]
             src_doc_offset = ex_batched[KEYS.SOURCE_OFFSETS][rel_doc_idx]
             tgt_doc_offset = ex_batched[KEYS.TARGET_OFFSETS][rel_doc_idx]
-            src_pg_offsets = lengths_to_offsets(
-                [len(pg) for pg in ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx]]
-            )
-            tgt_pg_offsets = lengths_to_offsets(
-                [len(pg) for pg in ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx]]
-            )
+            src_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx]])
+            tgt_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx]])
             skip_arr = np.repeat(False, len(doc_alignments))
             weight_arr = np.repeat(0, len(doc_alignments))
-            ex_out[KEYS.DOCUMENT_INDEX].extend(
-                len(doc_alignments) * [indices[rel_doc_idx]]
-            )
+            ex_out[KEYS.DOCUMENT_INDEX].extend(len(doc_alignments) * [indices[rel_doc_idx]])
             for rel_pair_idx, (src_parts, tgt_parts) in enumerate(doc_alignments):
                 if flip_alignment:
                     src_parts, tgt_parts = tgt_parts, src_parts
                 src_pg_indices, rel_src_seg_indices = zip(*src_parts)
                 tgt_pg_indices, rel_tgt_seg_indices = zip(*tgt_parts)
                 pg_idx = src_pg_indices[0]
-                assert all(pg_idx == idx for idx in src_pg_indices) and all(
-                    pg_idx == idx for idx in tgt_pg_indices
-                )
+                assert all(pg_idx == idx for idx in src_pg_indices) and all(pg_idx == idx for idx in tgt_pg_indices)
                 src_weight = sum(
-                    ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx][pg_idx][seg_idx]
-                    for seg_idx in rel_src_seg_indices
+                    ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx][pg_idx][seg_idx] for seg_idx in rel_src_seg_indices
                 )
                 tgt_weight = sum(
-                    ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx][pg_idx][seg_idx]
-                    for seg_idx in rel_tgt_seg_indices
+                    ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx][pg_idx][seg_idx] for seg_idx in rel_tgt_seg_indices
                 )
                 weight_arr[rel_pair_idx] = max(src_weight, tgt_weight)
-                skip_arr[rel_pair_idx] = min(src_weight, tgt_weight) == 0
+
+                # TODO: make this a parameter instead of hardcoded
+                # skip if this sample has very unbalanced lengths
+                if (src_weight > 4 and tgt_weight > 4) and (
+                    (src_weight * 1.4 < tgt_weight) or (tgt_weight * 1.4 < src_weight)
+                ):
+                    skip_arr[rel_pair_idx] = True
+                # skip if any part is of length 0
+                elif min(src_weight, tgt_weight) == 0:
+                    skip_arr[rel_pair_idx] = min(src_weight, tgt_weight) == 0
+
                 ex_out[KEYS.PARAGRAPH_INDEX].append(pg_idx)
                 ex_out[KEYS.SOURCE_INDICES].append(
-                    [
-                        src_doc_offset + src_pg_offsets[pg_idx] + seg_offset
-                        for seg_offset in rel_src_seg_indices
-                    ]
+                    [src_doc_offset + src_pg_offsets[pg_idx] + seg_offset for seg_offset in rel_src_seg_indices]
                 )
                 ex_out[KEYS.TARGET_INDICES].append(
-                    [
-                        tgt_doc_offset + tgt_pg_offsets[pg_idx] + seg_offset
-                        for seg_offset in rel_tgt_seg_indices
-                    ]
+                    [tgt_doc_offset + tgt_pg_offsets[pg_idx] + seg_offset for seg_offset in rel_tgt_seg_indices]
                 )
 
             ex_out[KEYS.SKIP].extend(skip_arr.tolist())
@@ -826,14 +783,12 @@ def merge_adjacent_sentences(
             KEYS.TARGET_INDICES,
             KEYS.SKIP,
         ]
-        doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip = [
-            ex_batched[k] for k in keys
-        ]
+        doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip = [ex_batched[k] for k in keys]
 
         if KEYS.SOURCE_OFFSETS in ex_batched:
             src_doc_offsets = ex_batched[KEYS.SOURCE_OFFSETS]
             all_src_idxs = [[i + o for i in idxs] for (idxs, o) in zip(all_src_idxs, src_doc_offsets)]
-        if KEYS.TARGET_OFFSETS in  ex_batched:
+        if KEYS.TARGET_OFFSETS in ex_batched:
             tgt_doc_offsets = ex_batched[KEYS.TARGET_OFFSETS]
             all_tgt_idxs = [[i + o for i in idxs] for (idxs, o) in zip(all_tgt_idxs, tgt_doc_offsets)]
 
@@ -848,9 +803,7 @@ def merge_adjacent_sentences(
         bin_lengths = np.array([50, 100, 150, 350, max_seq_len], dtype=np.int64)
 
         # fetch maximum number of rolls to minimize fn calls
-        roll_bins = np.clip(
-            rng.poisson(_POISSON_MEAN, size=len(doc_idxs)), 0, len(bin_lengths) - 1
-        )
+        roll_bins = np.clip(rng.poisson(_POISSON_MEAN, size=len(doc_idxs)), 0, len(bin_lengths) - 1)
         passthrough = (
             rng.random(len(doc_idxs)) > passthrough_prob
             if passthrough_prob is not None
@@ -872,20 +825,14 @@ def merge_adjacent_sentences(
             src_idxs,
             tgt_idxs,
             skip_,
-        ) in enumerate(
-            zip(doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip)
-        ):
+        ) in enumerate(zip(doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip)):
             if _loop_idx < 1:
                 # skip first, it is already in accumulators
                 continue
 
             skip_ = skip_ or weight > max_seq_len
             rolled_length = bin_lengths[roll_bins[num_outputs]]
-            is_boundary = (
-                (doc_idx != last_doc_idx)
-                or (pg_idx != last_pg_idx)
-                or (nmerges_in_curr == max_merges)
-            )
+            is_boundary = (doc_idx != last_doc_idx) or (pg_idx != last_pg_idx) or (nmerges_in_curr == max_merges)
             has_budget = accum_weight + weight <= rolled_length
 
             # if passthrough succeeded store accumulator and reset,
@@ -896,12 +843,14 @@ def merge_adjacent_sentences(
                 ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
                 ex_out[KEYS.WEIGHT].append(accum_weight)
                 ex_out[KEYS.EXACT_ALIGNMENT].append(accum_exact)
+
                 accum_src, accum_tgt, accum_weight = src_idxs, tgt_idxs, weight
                 accum_exact = len(src_idxs) == len(tgt_idxs)
                 last_doc_idx, last_pg_idx = doc_idx, pg_idx
                 num_outputs += 1
                 nmerges_in_curr = 1
                 continue
+
             # we did not perform passthrough, perform regular concatenation
             if (not is_boundary) and has_budget and (not skip_):
                 accum_src.extend(src_idxs)
@@ -951,7 +900,12 @@ def merge_adjacent_sentences(
         with_indices=True,
         batch_size=5_000,
         remove_columns=flat_align.column_names,
-        fn_kwargs={"max_seq_len": max_seq_len, "seed": seed, "max_merges": max_merges, "passthrough_prob": passthrough_prob},
+        fn_kwargs={
+            "max_seq_len": max_seq_len,
+            "seed": seed,
+            "max_merges": max_merges,
+            "passthrough_prob": passthrough_prob,
+        },
         # we never want to load this from cache, since it should be fresh per epoch
         load_from_cache_file=False,
         num_proc=num_proc,
