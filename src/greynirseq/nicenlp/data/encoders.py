@@ -4,8 +4,8 @@
 
 from typing import List, Union
 
-import torch
 import numpy as np
+import torch
 from fairseq.data import encoders
 
 from greynirseq.nicenlp.data.char_noise import CharacterNoiser
