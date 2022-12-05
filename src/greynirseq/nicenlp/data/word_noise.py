@@ -112,7 +112,8 @@ class WordNoiseDataset(BaseWrapperDataset):
     -- word shuffling
     búa til 0..n-1 vector (arange) af lengd #fjöldi-orða-í-splitti
     leggja við hvert stak random tölu á bilinu [0-k[ (þar sem k er max-dist í umröðuninni)
-    sortera fylkið  og taka út .indexes (það er í boði í numpy - sjá líka bart kóðann) sem segir umröðunina sem sorteringin gerði
+    sortera fylkið  og taka út .indexes (það er í boði í numpy - sjá líka bart kóðann) 
+    sem segir umröðunina sem sorteringin gerði
     nota umröðunina til að endurraða orðum indexa upp á nýtt
 
     -- word dropout

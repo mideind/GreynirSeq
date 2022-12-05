@@ -37,25 +37,28 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         # fmt: off
         TranslationTask.add_args(parser)
         parser.add_argument('--langs',  type=str, metavar='LANG',
-                            help='comma-separated list of monolingual language, '
-                                 'for example, "en,de,fr". These should match the '
-                                 'langs from pretraining (and be in the same order). '
-                                 'You should always add all pretraining language idx '
-                                 'during finetuning.')
+                help='comma-separated list of monolingual language, '
+                        'for example, "en,de,fr". These should match the '
+                        'langs from pretraining (and be in the same order). '
+                        'You should always add all pretraining language idx '
+                        'during finetuning.')
         parser.add_argument('--prepend-bos', action='store_true',
-                            help='prepend bos token to each sentence, which matches '
-                                 'mBART pretraining')
-        parser.add_argument('--max-sentences', type=int, default=100
-        )
+                help='prepend bos token to each sentence, which matches '
+                        'mBART pretraining')
+        parser.add_argument('--max-sentences', type=int, default=100)
         parser.add_argument('--max-sequence-length', type=int, default=int(1024*0.75))
         parser.add_argument('--num-preprocess-workers', type=int, default=2)
         parser.add_argument('--bt-subset', type=str, default="")
-        parser.add_argument('--align-subset', type=str, default="", help="The subset of parallel data that has requires an alignment jsonl file")
-        parser.add_argument('--sentencepiece-alpha', type=float, default=1.00, help="Parameter for segmentation distribution, this is NOT a probability")
-        parser.add_argument('--parallel-prob', type=float, help="Probability of sampling parallel data if bt data is included (Note: NOT sample weight)", default=0.33)
+        parser.add_argument('--align-subset', type=str, default="", 
+                help="The subset of parallel data that has requires an alignment jsonl file")
+        parser.add_argument('--sentencepiece-alpha', type=float, default=1.00, 
+                help="Parameter for segmentation distribution, this is NOT a probability")
+        parser.add_argument('--parallel-prob', type=float, default=0.33, 
+                help="Probability of sampling parallel data if bt data is included (Note: NOT sample weight)")
         parser.add_argument('--word-noise-prob', type=float, default=0.01)
         parser.add_argument('--fragment-noise-prob', type=float, default=0.01)
-        parser.add_argument('--max-merges', type=int, default=10, help="How many segments are at most merged into a single training example.")
+        parser.add_argument('--max-merges', type=int, default=10, 
+                help="How many segments are at most merged into a single training example.")
         parser.add_argument('--max-shuffle-dist', type=int, default=3)
         ### character noising
         parser.add_argument('--char-swap-prob', type=float, default=0.01)
@@ -66,7 +69,8 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         parser.add_argument('--char-substitution-prob', type=float, default=0.01)
         parser.add_argument('--seq-lower-prob', type=float, default=0.01)
         parser.add_argument('--seq-upper-prob', type=float, default=0.01)
-        parser.add_argument('--decoder-langtok', action='store_true', help='replace beginning-of-sentence in target sentence with target language token')
+        parser.add_argument('--decoder-langtok', action='store_true', 
+                help='replace beginning-of-sentence in target sentence with target language token')
         # fmt: on
 
     def __init__(self, args, src_dict, tgt_dict):
@@ -105,9 +109,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         assert (
             self.args.max_sequence_length <= self.args.max_source_positions
         ), "The maximum training sequence length should be lesser than the positional encoding."
-        assert (
-            self.args.max_sequence_length <= self.args.max_tokens
-        )
+        assert self.args.max_sequence_length <= self.args.max_tokens
         max_seq_len = self.args.max_sequence_length
 
         logger.info(f"Max sequence length={max_seq_len}")
