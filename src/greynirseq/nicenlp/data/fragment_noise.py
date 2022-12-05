@@ -75,7 +75,8 @@ def fragment_noise(
     new_size = len(encoded_sequence) + num_inserts
 
     # Calculate the positions of the old data in the new sequence
-    # The positions are shifted by the amount of new elements inserted before them, i.e. the cumsum of the insertion mask
+    # The positions are shifted by the amount of new elements inserted before them,
+    # i.e. the cumsum of the insertion mask
     new_indexes_for_old_data = torch.arange(len(encoded_sequence)) + torch.cumsum(insert_mask, 0)
 
     # Preallocate a correctly sized tensor to contain the new sequence
@@ -84,7 +85,8 @@ def fragment_noise(
     new_enc_seq[new_indexes_for_old_data] = encoded_sequence
 
     # Calculate positions for new data
-    # The positions are the indexes of True values in the insertion mask, shifted by the number of elements inserted before
+    # The positions are the indexes of True values in the insertion mask,
+    # shifted by the number of elements inserted before
     new_indexes_for_inserted_data = torch.arange(len(encoded_sequence))[insert_mask] + torch.arange(num_inserts)
 
     # Generate new data

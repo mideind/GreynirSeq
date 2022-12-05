@@ -188,9 +188,9 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
 
     def set_epoch(self, epoch: int):
         self.epoch = epoch
-        logger.info(f"Preparing next epoch")
+        logger.info(f"Preparing epoch {epoch}")
         self.interleave_indices()
-        logger.info(f"Done preparing epoch")
+        logger.info(f"Done preparing epoch {epoch}")
 
     def _interleave_indices_inner(self):
         parallel_merged = None
@@ -239,7 +239,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
 
     def get_index_cache_path(self):
         # TODO: add a fingerprint to this path
-        document_translation_cache_dir = hf_datasets.config.HF_DATASETS_CACHE / f"document_translation"
+        document_translation_cache_dir = hf_datasets.config.HF_DATASETS_CACHE / "document_translation"
         document_translation_cache_dir.mkdir(exist_ok=True)
         return document_translation_cache_dir / f"index_dataset.epoch.{self.epoch}"
 
@@ -254,12 +254,12 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             # TODO: write main process PID into lockfile so that we can detect if the lockfile is stale
             while True:
                 try:
-                    with lockfile_path.open(mode="x") as _lockfile:
+                    with lockfile_path.open(mode="x"):
                         # mode=exclusive creation
                         pass
                     # we have the lock now
 
-                    ### BEGIN CRITICAL SECTION ###
+                    # BEGIN CRITICAL SECTION
                     if multiprocessing.get_context().parent_process() is None:
                         # erum main process, þ.e.a.s. ekki worker
                         self._interleave_indices_inner()
@@ -273,7 +273,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
                         # búum til cache-ið
                         self._interleave_indices_inner()
 
-                    ### END CRITICAL SECTION ###
+                    # END CRITICAL SECTION
 
                     # sleppa las
                     lockfile_path.unlink(missing_ok=False)  # we want to crash if this fails
@@ -288,7 +288,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
                     self._sizes = self._sorted_lengths
                     break
 
-                except FileExistsError as e:
+                except FileExistsError:
                     time.sleep(0.25)
 
     def __len__(self):
