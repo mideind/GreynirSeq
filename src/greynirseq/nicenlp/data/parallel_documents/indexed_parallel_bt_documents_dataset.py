@@ -147,17 +147,17 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             insert_sep = np.random.randint(2, dtype=np.bool)
 
-        assert KEYS.EXACT_ALIGNMENT in item or not insert_sep  # insert_sep implies exact_alignment
-        if insert_sep and len(src_segments) > 1 and np.all(item[KEYS.EXACT_ALIGNMENT]):
-            # only insert separator when alignment is *exact*
-            bos = torch.tensor([self.dictionary.bos()])
-            src_out = [bos] * (len(src_segments) * 2 - 1)
-            src_out[0::2] = [maybe_noised_encode_fn(seg) for seg in src_segments]
-            tgt_out = [bos] * (len(tgt_segments) * 2 - 1)
-            tgt_out[0::2] = [self.encoder.encode(seg) for seg in tgt_segments]
-        else:
-            src_out = [maybe_noised_encode_fn(seg) for seg in src_segments]
-            tgt_out = [self.encoder.encode(seg) for seg in tgt_segments]
+            assert KEYS.EXACT_ALIGNMENT in item or not insert_sep  # insert_sep implies exact_alignment
+            if insert_sep and len(src_segments) > 1 and np.all(item[KEYS.EXACT_ALIGNMENT]):
+                # only insert separator when alignment is *exact*
+                bos = torch.tensor([self.dictionary.bos()])
+                src_out = [bos] * (len(src_segments) * 2 - 1)
+                src_out[0::2] = [maybe_noised_encode_fn(seg) for seg in src_segments]
+                tgt_out = [bos] * (len(tgt_segments) * 2 - 1)
+                tgt_out[0::2] = [self.encoder.encode(seg) for seg in tgt_segments]
+            else:
+                src_out = [maybe_noised_encode_fn(seg) for seg in src_segments]
+                tgt_out = [self.encoder.encode(seg) for seg in tgt_segments]
 
         src_affix = (
             [self.dictionary.eos()] if self.append_source_id is None else [self.dictionary.eos(), self.append_source_id]

@@ -81,6 +81,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             help="How many segments are at most merged into a single training example.",
         )
         parser.add_argument("--max-shuffle-dist", type=int, default=3)
+        parser.add_argument("--global-skip-noise-prob", type=float, default=0.10)
         # character noising
         parser.add_argument("--char-swap-prob", type=float, default=0.01)
         parser.add_argument("--char-delete-prob", type=float, default=0.01)
