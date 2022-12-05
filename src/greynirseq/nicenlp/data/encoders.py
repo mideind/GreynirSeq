@@ -5,6 +5,7 @@
 from typing import List, Union
 
 import torch
+import numpy as np
 from fairseq.data import encoders
 
 from greynirseq.nicenlp.data.char_noise import CharacterNoiser
@@ -32,6 +33,7 @@ class Encoder:
         fragment_noise_prob = self.args.fragment_noise_prob
         self.word_noiser = WordNoiser(word_noise_prob, max_shuffle_dist)
         self.noisy_subword_enc = SpmNoiser(self.dictionary, self.bpe_noisy)
+        self.global_skip_noise_prob = self.args.global_skip_noise_prob
         self.fragment_noiser = FragmentNoiser(fragment_noise_prob, min_val=self.min_val, max_val=self.max_val)
         self.char_noiser = CharacterNoiser(
             swap_prob=args.char_swap_prob,
@@ -44,7 +46,7 @@ class Encoder:
             seq_upper_prob=args.seq_upper_prob,
         )
 
-    def encode(self, parts: List[Union[int, str]]):
+    def encode(self, parts: List[Union[str, int, torch.Tensor]]):
         if isinstance(parts, (str, int)):
             parts = [parts]
         encoded_parts = []
@@ -57,6 +59,8 @@ class Encoder:
         return torch.cat(encoded_parts).long()
 
     def encode_noisy(self, sequence: List[Union[str, int, torch.Tensor]]):
+        if np.random.rand() < self.global_skip_noise_prob:
+            return self.encode(sequence)
         if not isinstance(sequence, list):
             sequence = [sequence]
         sequence = [self.char_noiser.apply(item) if isinstance(item, str) else item for item in sequence]
