@@ -15,12 +15,10 @@ from typing import List
 import numpy
 import torch
 from fairseq import utils
-from fairseq.data import BaseWrapperDataset, Dictionary, data_utils
-from fairseq.data.language_pair_dataset import collate
+from fairseq.data import BaseWrapperDataset, Dictionary, LanguagePairDataset, data_utils
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
 from fairseq.tasks.translation_from_pretrained_bart import TranslationFromPretrainedBARTTask
-from torch.utils.data import Dataset
 
 _EES_DEFAULT_DOMAIN = "ees_ótiltekið"
 
@@ -30,12 +28,13 @@ class DomainPrefixingDataset(BaseWrapperDataset):
 
     def __init__(
         self,
-        langpair_dataset: Dataset,
+        langpair_dataset: LanguagePairDataset,
         domain_per_example: List[str],
         src_dict: Dictionary,
         domain_dict: Dictionary,
         seed: int = 1,
     ):
+        super().__init__(langpair_dataset)
         self.domain_per_example = domain_per_example
         self.domain_dict = domain_dict
         self.src_dict = src_dict
@@ -61,63 +60,8 @@ class DomainPrefixingDataset(BaseWrapperDataset):
         pair_dict["source"] = torch.cat([vec, pair_dict["source"]])
         return pair_dict
 
-    def __getattr__(self, attr):
-        return getattr(self.dataset, attr)
-
     def collater(self, samples, pad_to_length=None):
-        """Merge a list of samples to form a mini-batch.
-
-        Args:
-            samples (List[dict]): samples to collate
-            pad_to_length (dict, optional): a dictionary of
-                {'source': source_pad_to_length, 'target': target_pad_to_length}
-                to indicate the max length to pad to in source and target respectively.
-
-        Returns:
-            dict: a mini-batch with the following keys:
-
-                - `id` (LongTensor): example IDs in the original input order
-                - `ntokens` (int): total number of tokens in the batch
-                - `net_input` (dict): the input to the Model, containing keys:
-
-                  - `src_tokens` (LongTensor): a padded 2D Tensor of tokens in
-                    the source sentence of shape `(bsz, src_len)`. Padding will
-                    appear on the left if *left_pad_source* is ``True``.
-                  - `src_lengths` (LongTensor): 1D Tensor of the unpadded
-                    lengths of each source sentence of shape `(bsz)`
-                  - `prev_output_tokens` (LongTensor): a padded 2D Tensor of
-                    tokens in the target sentence, shifted right by one
-                    position for teacher forcing, of shape `(bsz, tgt_len)`.
-                    This key will not be present if *input_feeding* is
-                    ``False``.  Padding will appear on the left if
-                    *left_pad_target* is ``True``.
-                  - `src_lang_id` (LongTensor): a long Tensor which contains source
-                    language IDs of each sample in the batch
-
-                - `target` (LongTensor): a padded 2D Tensor of tokens in the
-                  target sentence of shape `(bsz, tgt_len)`. Padding will appear
-                  on the left if *left_pad_target* is ``True``.
-                - `tgt_lang_id` (LongTensor): a long Tensor which contains target language
-                   IDs of each sample in the batch
-        """
-        res = collate(
-            samples,
-            pad_idx=self.src_dict.pad(),
-            eos_idx=self.eos,
-            left_pad_source=self.left_pad_source,
-            left_pad_target=self.left_pad_target,
-            input_feeding=self.input_feeding,
-            pad_to_length=pad_to_length,
-            pad_to_multiple=self.pad_to_multiple,
-        )
-        if self.src_lang_id is not None or self.tgt_lang_id is not None:
-            src_tokens = res["net_input"]["src_tokens"]
-            bsz = src_tokens.size(0)
-            if self.src_lang_id is not None:
-                res["net_input"]["src_lang_id"] = torch.LongTensor([[self.src_lang_id]]).expand(bsz, 1).to(src_tokens)
-            if self.tgt_lang_id is not None:
-                res["tgt_lang_id"] = torch.LongTensor([[self.tgt_lang_id]]).expand(bsz, 1).to(src_tokens)
-        return res
+        return self.dataset.collater(samples, pad_to_length)
 
 
 @register_task("translation_from_pretrained_bart_domain")
@@ -140,11 +84,14 @@ class TranslationFromPretrainedBARTTaskWithDomain(TranslationFromPretrainedBARTT
                                  'mBART pretraining')
         parser.add_argument('--domain-dict', type=str, required=True,
                             help='Path a file that contains a list of all domains (same format as dict.txt)')
-        parser.add_argument('--train-domains', type=str, required=True,
+        parser.add_argument('--train-domains', type=str, required=False,
                             help='File of same line count as training split where each '
                             'line has some domain from the domain_dict.txt')
-        parser.add_argument('--valid-domains', type=str, required=True,
+        parser.add_argument('--valid-domains', type=str, required=False,
                             help='File of same line count as validation split where each '
+                            'line has some domain from the domain_dict.txt')
+        parser.add_argument('--test-domains', type=str, required=False,
+                            help='File of same line count as test split where each '
                             'line has some domain from the domain_dict.txt')
         # fmt: on
 
@@ -182,8 +129,11 @@ class TranslationFromPretrainedBARTTaskWithDomain(TranslationFromPretrainedBARTT
             domain_path = self.args.train_domains
         elif "valid" in split:
             domain_path = self.args.valid_domains
+        elif "test" in split:
+            domain_path = self.args.test_domains
+
         else:
-            assert False, "We currently do not handle test splits"
+            raise ValueError(f"Unknown split {split}")
         with open(domain_path) as in_fh:
             domain_per_example = [domain.strip() for domain in in_fh]
 
