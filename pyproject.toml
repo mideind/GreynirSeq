@@ -51,7 +51,7 @@ greynirseq = "greynirseq.cli.greynirseq_main:main"
 
 [tool.poetry.dependencies]
 python = "^3.7.2"
-fairseq = "^0.10.0"
+fairseq = "^0.12.2"
 nltk = "^3.5"
 reynir = "^3.5.0"
 transformers = "^4.3.2"
