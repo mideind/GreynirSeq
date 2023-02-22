@@ -85,16 +85,15 @@ class MultiLabelRobertaModel(RobertaModel):
         sentence_encoder = self.encoder.sentence_encoder
         if args.freeze_embeddings:
             freeze_module_params(sentence_encoder.embed_tokens)
-            freeze_module_params(sentence_encoder.segment_embeddings)
             freeze_module_params(sentence_encoder.embed_positions)
-            freeze_module_params(sentence_encoder.emb_layer_norm)
+            freeze_module_params(sentence_encoder.layernorm_embedding)
 
         for layer in range(args.n_trans_layers_to_freeze):
             freeze_module_params(sentence_encoder.layers[layer])
 
         self.task = task
         self.task_head = MultiLabelTokenClassificationHead(
-            in_features=sentence_encoder.embedding_dim,
+            in_features=sentence_encoder.embed_tokens.embedding_dim,
             out_features=self.task.num_labels,
             num_cats=self.task.num_cats,
             pooler_dropout=self.args.pooler_dropout,
@@ -190,7 +189,7 @@ class MultiLabelRobertaModel(RobertaModel):
 class MultiLabelRobertaHubInterface(RobertaHubInterface):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
+        self.word_start_dict = get_word_beginnings(self.cfg.model, self.task.dictionary)
 
     def prepare_batch(self, sentences: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
         # Note, this assumes sensible batch size

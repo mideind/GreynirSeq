@@ -18,6 +18,7 @@ from fairseq.models.roberta.model import (
 )
 from fairseq.modules import LayerNorm
 from fairseq.tasks import FairseqTask
+from rich import print
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
@@ -79,16 +80,15 @@ class MultiClassRobertaModel(RobertaModel):
         sentence_encoder = self.encoder.sentence_encoder
         if args.freeze_embeddings:
             freeze_module_params(sentence_encoder.embed_tokens)
-            freeze_module_params(sentence_encoder.segment_embeddings)
             freeze_module_params(sentence_encoder.embed_positions)
-            freeze_module_params(sentence_encoder.emb_layer_norm)
+            freeze_module_params(sentence_encoder.layernorm_embedding)
 
         for layer in range(args.n_trans_layers_to_freeze):
             freeze_module_params(sentence_encoder.layers[layer])
 
         self.task = task
         self.task_head = MultiClassTokenClassificationHead(
-            in_features=sentence_encoder.embedding_dim,
+            in_features=sentence_encoder.embed_tokens.embedding_dim,
             out_features=self.task.num_labels,
             pooler_dropout=self.args.pooler_dropout,
         )
@@ -173,7 +173,7 @@ class MultiClassRobertaModel(RobertaModel):
 class MultiClassRobertaHubInterface(RobertaHubInterface):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.word_start_dict = get_word_beginnings(self.args, self.task.dictionary)
+        self.word_start_dict = get_word_beginnings(self.cfg.model, self.task.dictionary)
 
     def encode(self, sentence: str) -> torch.LongTensor:
         # Space added if needed to ensure encoding of words at the front
