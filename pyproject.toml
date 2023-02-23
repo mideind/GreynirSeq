@@ -1,6 +1,6 @@
 [project]
 name = "greynirseq"
-version = "0.4"
+version = "0.5"
 description = "Natural language processing for Icelandic"
 authors = [{name = "Miðeind ehf", email="tauganet@mideind.is"}]
 classifiers = [
