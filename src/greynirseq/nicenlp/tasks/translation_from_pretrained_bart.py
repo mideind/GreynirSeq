@@ -60,10 +60,10 @@ class TranslationFromPretrainedBARTTask(TranslationTask):
     def __init__(self, cfg, src_dict, tgt_dict):
         super().__init__(cfg, src_dict, tgt_dict)
         self.langs = cfg.langs.split(",")
-        for d in [src_dict, tgt_dict]:
-            for l in self.langs:
-                d.add_symbol("[{}]".format(l))
-            d.add_symbol("<mask>")
+        for dictionary in [src_dict, tgt_dict]:
+            for lang in self.langs:
+                dictionary.add_symbol("[{}]".format(lang))
+            dictionary.add_symbol("<mask>")
 
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.
