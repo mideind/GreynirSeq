@@ -82,7 +82,7 @@ There are also a some translation models available. They are Transformer models 
 To install GreynirSeq in development mode install it with pip in editable mode
 
 ```bash
-pip install -e .
+pip install -e .[dev]
 ```
 
 ### Linting
