@@ -79,10 +79,10 @@ There are also a some translation models available. They are Transformer models 
 1. [Translation](https://github.com/mideind/GreynirSeq/blob/main/src/greynirseq/nicenlp/examples/translation/README.md)
 
 ## Development
-To install GreynirSeq in development mode we recommend using poetry as shown below
+To install GreynirSeq in development mode install it with pip in editable mode
 
 ```bash
-pip install poetry && poetry install
+pip install -e .
 ```
 
 ### Linting
