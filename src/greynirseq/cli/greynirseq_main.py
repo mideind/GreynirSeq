@@ -130,7 +130,7 @@ class TranslateBART(GreynirSeqIO):
         if has_bos:
             tokens = [seq[1:] for seq in tokens]
         sample = self.model._build_sample(tokens)  # type: ignore
-        gen_args = copy.copy(self.model.args)
+        gen_args = copy.copy(self.model.cfg.generation)
         # TODO: Support using generation flags from self.kwargs
         gen_args.beam = 1
         generator = self.model.task.build_generator([self.model.model], gen_args)
