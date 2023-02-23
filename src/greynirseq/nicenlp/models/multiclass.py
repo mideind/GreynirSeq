@@ -18,7 +18,6 @@ from fairseq.models.roberta.model import (
 )
 from fairseq.modules import LayerNorm
 from fairseq.tasks import FairseqTask
-from rich import print
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 
