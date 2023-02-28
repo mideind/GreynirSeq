@@ -29,10 +29,11 @@ keywords = ["nlp", "pos", "ner", "icelandic", "translation"]
 license = {text="AGPLv3+"}
 requires-python = ">=3.8"
 readme = "README.md"
+# These fields are not yet supported by any PEP spec, but were supported by poetry.
+# We might want to add them back in the future.
 # homepage = "https://github.com/mideind/GreynirSeq"
 # repository = "https://github.com/mideind/GreynirSeq"
 # include = ["LICENSE"]
-# build = "build.py"
 dependencies = [
     "fairseq>=0.12.2",
     "nltk>=3.5",
