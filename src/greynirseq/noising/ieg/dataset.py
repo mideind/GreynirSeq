@@ -1,11 +1,11 @@
 import math
-from typing import Any, Optional, TextIO, List, Tuple, Union, Type
+from typing import List, Optional, TextIO, Tuple, Type, Union
 
+from reynir.simpletree import SimpleTree
 from torch.utils.data import Dataset, get_worker_info
 
 from . import greynir
 from .errorrules.errors import ErrorRule
-from reynir.simpletree import SimpleTree
 
 
 def worker_init_fn(worker_id):

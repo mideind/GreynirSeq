@@ -12,7 +12,7 @@ class DropCommaRule(ErrorRule):
     @classmethod
     def random_apply(cls, data) -> bool:
         text = data["text"]
-        if not "," in text.split():
+        if "," not in text.split():
             return False
         # lowering the application ratio
         if random.random() < cls.CUSTOM_RATIO:
@@ -21,7 +21,7 @@ class DropCommaRule(ErrorRule):
 
     @classmethod
     def _apply(cls, data) -> str:
-        text, pos = data["text"], data["pos"]
+        text, _ = data["text"], data["pos"]
         text_list = text.split()
         text_list = list(filter(lambda a: a != ",", text_list))
         return " ".join(text_list)

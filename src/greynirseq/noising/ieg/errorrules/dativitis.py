@@ -28,9 +28,9 @@ class DativitisErrorRule(ErrorRule):
         for i in inflectional_phrase:
             np = i.first_match("NP")
             vp = i.first_match("VP")
-            noun_suggest = (
-                np.dative_np
-            )  # fails on "Ingibjörg Sólrún Gísladóttir, formaður Samfylkingarinnar: Mig langar bara að taka dæmi af, hérna."
+            noun_suggest = np.dative_np
+            #  fails on "Ingibjörg Sólrún Gísladóttir, formaður
+            #  Samfylkingarinnar: Mig langar bara að taka dæmi af, hérna."
             if vp is None or np is None:
                 continue
             so = vp.first_match("so_subj")

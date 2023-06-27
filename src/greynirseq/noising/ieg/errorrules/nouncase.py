@@ -1,7 +1,8 @@
+import random
+
 from ieg import bin_islenska
 
 from .errors import ErrorRule
-import random
 
 
 class NounCaseErrorRule(ErrorRule):

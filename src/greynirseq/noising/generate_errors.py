@@ -1,21 +1,20 @@
 import argparse
 import sys
 
-from torch.utils.data import DataLoader
-
 from ieg.dataset import ErrorDataset, worker_init_fn
 from ieg.errorrules import (
     DativitisErrorRule,
     DeleteSpaceErrorRule,
+    DropCommaRule,
     DuplicateWordsRule,
     MoodErrorRule,
     NoiseErrorRule,
     NounCaseErrorRule,
     SplitWordsRule,
-    DropCommaRule,
     SwapErrorRule,
 )
 from tokenizer import correct_spaces
+from torch.utils.data import DataLoader
 
 
 def main() -> None:
