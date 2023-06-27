@@ -233,7 +233,7 @@ def regex_rules():
             )
 
 
-FLIP_CHANCE = 0.5
+FLIP_CHANCE = 1
 
 
 def accent_flip():
@@ -291,10 +291,35 @@ def accent_flip():
 
     Rules.append(Rule(lambda x: less_regex.search(x), flip_less_accents, "flip_less_accents"))
 
+    def only_accent_no_letter(w):
+        def maybe_flip(match):
+            ret = match.group(0)
+            # Don't flip everything
+            if coinflip(1 - FLIP_CHANCE):
+                return ret
+            ret = ret.replace("á", "´")
+            ret = ret.replace("é", "´")
+            ret = ret.replace("í", "´")
+            ret = ret.replace("ó", "´")
+            ret = ret.replace("ú", "´")
+            ret = ret.replace("ý", "´")
+            ret = ret.replace("Á", "´")
+            ret = ret.replace("É", "´")
+            ret = ret.replace("Í", "´")
+            ret = ret.replace("Ó", "´")
+            ret = ret.replace("Ú", "´")
+            ret = ret.replace("Ý", "´")
+            return ret
+
+        return more_regex.sub(maybe_flip, w)
+
+    Rules.append(Rule(lambda x: more_regex.search(x), only_accent_no_letter, "only_accent_no_letter"))
+
 
 def char_noise():
     global Rules
 
+    # possible keyboard slipups
     noise_chars = string.ascii_lowercase + string.digits + "þæöð´'°.,'"
 
     def add_random_char(w):

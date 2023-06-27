@@ -1,7 +1,8 @@
 import argparse
 import sys
 
-import torch
+from torch.utils.data import DataLoader
+
 from ieg.dataset import ErrorDataset, worker_init_fn
 from ieg.errorrules import (
     DativitisErrorRule,
@@ -11,6 +12,7 @@ from ieg.errorrules import (
     NoiseErrorRule,
     NounCaseErrorRule,
     SplitWordsRule,
+    DropCommaRule,
     SwapErrorRule,
 )
 from tokenizer import correct_spaces
@@ -25,12 +27,12 @@ def main() -> None:
         "-w",
         "--word-spelling-error-rate",
         type=float,
-        default=0.3,
+        default=0.6,
         help="Error rate used for spelling of words.",
         required=False,
     )
     parser.add_argument(
-        "-r", "--rule-chance-error-rate", help="Chance for each rule to be applied", default=0.9, type=float
+        "-r", "--rule-chance-error-rate", help="Chance for each rule to be applied", default=0.3, type=float
     )
     parser.add_argument(
         "-p", "--parse-online", help="Parse sentence with Greynir if pos not provided", type=bool, default=True
@@ -39,22 +41,23 @@ def main() -> None:
     parser.add_argument("-t", "--dont-detokenize", action="store_true")
     parser.add_argument("-n", "--nproc", default=1, type=int)
     parser.add_argument("-b", "--batch-size", default=1, type=int)
+
     args = parser.parse_args()
 
     error_generators = [
         DativitisErrorRule,
         MoodErrorRule,
         NounCaseErrorRule,
+        DropCommaRule,
         SwapErrorRule,
         DuplicateWordsRule,
         SplitWordsRule,
         NoiseErrorRule,
         DeleteSpaceErrorRule,
     ]
-
     error_dataset = ErrorDataset(args.infile, args.posfile, args, error_generators=error_generators)
 
-    error_loader = torch.utils.data.DataLoader(
+    error_loader = DataLoader(
         error_dataset,
         num_workers=args.nproc,
         worker_init_fn=worker_init_fn,
@@ -62,11 +65,11 @@ def main() -> None:
     )
 
     for error_batch in error_loader:
-        for error_sentence in error_batch:
-            if args.dont_detokenize:
-                print(error_sentence)
-            else:
-                print(correct_spaces(error_sentence))
+        if len(error_batch) == 2:
+            sent_pair = []
+            for error_sentence in error_batch:
+                sent_pair.append(error_sentence[0])
+            print(f"{correct_spaces(sent_pair[0])}\t{correct_spaces(sent_pair[1])}")
 
 
 if __name__ == "__main__":

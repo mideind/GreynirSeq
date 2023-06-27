@@ -7,3 +7,4 @@ from .noise import NoiseErrorRule
 from .nouncase import NounCaseErrorRule
 from .spaces import DeleteSpaceErrorRule, SplitWordsRule
 from .swap import SwapErrorRule
+from .dropcomma import DropCommaRule

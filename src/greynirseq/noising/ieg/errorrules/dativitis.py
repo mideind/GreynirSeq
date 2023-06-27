@@ -6,17 +6,18 @@ class DativitisErrorRule(ErrorRule):
     subjects, mig vantar -> mér vantar) - the so called "þágufallshneigð". Needs to be the first rule to be applied.
     """
 
+    needs_pos = True
+
     @classmethod
     def _apply(cls, data) -> str:
         sentence = data["text"]
         try:
             s_tree = data["tree"]
             tok_list = sentence.split()
-
-            if kh_ip := s_tree.all_matches("IP >> { ('hlakka') }"):  # TODO: kvíða
-                sentence = cls.nom_to_acc_or_dat(tok_list, kh_ip)
-            if lvd_ip := s_tree.all_matches("IP >> { ('langa'|'vanta'|'dreyma') }"):
-                sentence = cls.acc_to_dat(tok_list, lvd_ip)
+            if hlakka_ip := s_tree.all_matches("IP >> { ('hlakka') }"):  # TODO: kvíða
+                sentence = cls.nom_to_acc_or_dat(tok_list, hlakka_ip)
+            if langa_dreyma_ip := s_tree.all_matches("IP >> { ('langa'|'dreyma') }"):  # TODO: vanta
+                sentence = cls.acc_to_dat(tok_list, langa_dreyma_ip)
         except Exception:
             # Sentence does not parse
             return sentence
@@ -27,14 +28,16 @@ class DativitisErrorRule(ErrorRule):
         for i in inflectional_phrase:
             np = i.first_match("NP")
             vp = i.first_match("VP")
-            suggest = np.dative_np
+            noun_suggest = (
+                np.dative_np
+            )  # fails on "Ingibjörg Sólrún Gísladóttir, formaður Samfylkingarinnar: Mig langar bara að taka dæmi af, hérna."
             if vp is None or np is None:
                 continue
             so = vp.first_match("so_subj")
             if so is None:
                 continue
             start, end = np.span[0], np.span[1] + 1
-            tok_list[start:end] = [suggest]
+            tok_list[start:end] = [noun_suggest]
         return " ".join(tok_list)
 
     @classmethod
@@ -49,6 +52,7 @@ class DativitisErrorRule(ErrorRule):
             for v in vp.all_matches("so"):
                 if v.lemma == "hlakka":  # or v.lemma == "kvíði":
                     verb = v
+                    print(verb)
 
             if verb is None:
                 continue
@@ -60,6 +64,8 @@ class DativitisErrorRule(ErrorRule):
             verb_variants.add("et")
 
             verb_suggest = super().get_wordform(verb_text, verb.lemma, verb.cat, verb_variants)
+            if not verb_suggest:
+                verb_suggest = verb_text  # Hún segist hlakka til
             np_start, np_end = np.span[0], np.span[1] + 1
             verb_start, verb_end = verb.span[0], verb.span[1]
             tok_list.pop(verb_start)

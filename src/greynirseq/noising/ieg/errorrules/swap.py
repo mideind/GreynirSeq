@@ -6,6 +6,9 @@ from .errors import ErrorRule
 class SwapErrorRule(ErrorRule):
     """Error rule class that randomly swaps adjacent words in a sentence, avoiding the first and last tokens."""
 
+    needs_pos = False
+    CUSTOM_RATIO = 0.1
+
     @staticmethod
     def _apply(data) -> str:
         text = data["text"]
@@ -19,6 +22,10 @@ class SwapErrorRule(ErrorRule):
     @classmethod
     def random_apply(cls, data) -> bool:
         text = data["text"]
+        # not swapping in very short sentences
         if len(text.split()) <= 3:
             return False
-        return super().random_apply(data)
+        # lowering the application ratio
+        if random.random() < cls.CUSTOM_RATIO:
+            return super().random_apply(data)
+        return False

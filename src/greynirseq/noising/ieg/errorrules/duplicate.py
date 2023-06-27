@@ -4,7 +4,7 @@ from .errors import ErrorRule
 
 
 class DuplicateWordsRule(ErrorRule):
-    """Error rule class for duplicating a random word in a sentence so that it appears twice in succession"""
+    """Error rule class for duplicating a random word in a sentence so that it appears twice in succession."""
 
     needs_pos = True
 
@@ -12,6 +12,9 @@ class DuplicateWordsRule(ErrorRule):
     def _apply(cls, data):
         text, pos = data["text"], data["pos"]
         text_list = text.split()
+        if len(text_list) == 0:
+            return text
+
         if not super().tok_and_pos_match(cls, text_list, pos):
             return text
         rand_int = random.randint(0, len(text_list) - 1)

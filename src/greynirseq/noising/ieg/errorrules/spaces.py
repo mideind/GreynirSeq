@@ -7,7 +7,7 @@ from .errors import ErrorRule
 
 class SplitWordsRule(ErrorRule):
     """Error rule class for adding spaces to words. For now only adds spaces to
-    compounds not found in BÍN, such as "rauð doppótta", "botn hreinsið" and "fjalla hryggir"."""
+    compounds not found in BÍN, such as "rauð doppótta", "botn hreinsið" and "fjalla hryggir" (very rare)."""
 
     needs_pos = True
 
@@ -22,7 +22,7 @@ class SplitWordsRule(ErrorRule):
                 # restricted to certain word classes to avoid introducing corrections
                 # instead of errors in some phrases (utanað->utan að)
                 if bin_id == 0 and w_class in ["no", "lo", "so"]:
-                    sent_tokens[idx] = m[0].bmynd.replace("-", " ").upper()
+                    sent_tokens[idx] = m[0].bmynd.replace("-", " ")
             return " ".join(sent_tokens)
 
         return data["text"]
@@ -30,6 +30,8 @@ class SplitWordsRule(ErrorRule):
 
 class DeleteSpaceErrorRule(ErrorRule):
     """Error rule class that randomly removes the space between words. Best if applied last."""
+
+    needs_pos = False
 
     @staticmethod
     def _apply(data) -> str:
