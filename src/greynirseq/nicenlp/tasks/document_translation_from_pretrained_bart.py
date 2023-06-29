@@ -11,142 +11,139 @@
 #    LICENSE file in the root directory of this source tree.
 
 import logging
+from dataclasses import dataclass, field
+from typing import cast
 
 from fairseq import utils
-from fairseq.data import Dictionary, FairseqDataset, data_utils, encoders, iterators
+from fairseq.data import Dictionary, FairseqDataset, data_utils, iterators
+from fairseq.data.encoders.sentencepiece_bpe import SentencepieceBPE, SentencepieceConfig
 from fairseq.tasks import register_task
-from fairseq.tasks.translation import TranslationTask
-from fairseq.tasks.translation_from_pretrained_bart import TranslationFromPretrainedBARTTask
+from omegaconf import II
 
 from greynirseq.nicenlp.data.batch_sampler import batch_by_size
+from greynirseq.nicenlp.data.char_noise import CharacterNoiserConfig
 from greynirseq.nicenlp.data.parallel_documents.indexed_parallel_bt_documents_dataset import (
     IndexedParallelBTDocumentsDataset,
 )
 from greynirseq.nicenlp.data.parallel_documents.indexed_parallel_documents_dataset import (
     IndexedParallelDocumentsDataset,
 )
+from greynirseq.nicenlp.data.word_noise import WordNoiserConfig
+
+from .translation_from_pretrained_bart import TranslationFromPretrainedBARTConfig, TranslationFromPretrainedBARTTask
 
 logger = logging.getLogger(__name__)
 
 
-@register_task("document_translation_from_pretrained_bart")
+@dataclass
+class DocumentTranslationFromPretrainedBARTConfig(TranslationFromPretrainedBARTConfig):
+    max_sequence_length: int = field(
+        default=int(1024 * 0.75),
+        metadata={"help": "max sequence length"},
+    )
+    num_preprocess_workers: int = field(
+        default=2,
+        metadata={"help": "number of workers to preprocess the data"},
+    )
+    bt_subset: str = field(
+        default="",
+        metadata={"help": "comma separated list of subsets to use for backtranslation"},
+    )
+    align_subset: str = field(
+        default="",
+        metadata={"help": "The subset of parallel data that has requires an alignment jsonl file"},
+    )
+    parallel_prob: float = field(
+        default=0.33,
+        metadata={"help": "Probability of sampling parallel data if bt data is included (Note: NOT sample weight)"},
+    )
+    fragment_noise_prob: float = field(
+        default=0.01,
+        metadata={"help": "Probability of fragment noise"},
+    )
+    max_merges: int = field(
+        default=10,
+        metadata={"help": "How many segments are at most merged into a single training example."},
+    )
+    global_skip_noise_prob: float = field(
+        default=0.10,
+        metadata={"help": "Probability of skipping a segment"},
+    )
+    word_noise_config: WordNoiserConfig = field(
+        default=WordNoiserConfig(),
+        metadata={"help": "Word noising config"},
+    )
+    char_noise_config: CharacterNoiserConfig = field(
+        default=CharacterNoiserConfig(),
+        metadata={"help": "Character noising config"},
+    )
+    spm_model: str = II("bpe.sentencepiece_model")
+    valid_subset: str = II("dataset.valid_subset")
+    seed: int = II("common.seed")
+
+
+@register_task("document_translation_from_pretrained_bart", dataclass=DocumentTranslationFromPretrainedBARTConfig)
 class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
-    @staticmethod
-    def add_args(parser):
-        """Add task-specific arguments to the parser."""
-        TranslationTask.add_args(parser)
-        parser.add_argument(
-            "--langs",
-            type=str,
-            metavar="LANG",
-            help="comma-separated list of monolingual language, "
-            'for example, "en,de,fr". These should match the '
-            "langs from pretraining (and be in the same order). "
-            "You should always add all pretraining language idx "
-            "during finetuning.",
-        )
-        parser.add_argument(
-            "--prepend-bos",
-            action="store_true",
-            help="prepend bos token to each sentence, which matches " "mBART pretraining",
-        )
-        parser.add_argument("--max-sentences", type=int, default=100)
-        parser.add_argument("--max-sequence-length", type=int, default=int(1024 * 0.75))
-        parser.add_argument("--num-preprocess-workers", type=int, default=2)
-        parser.add_argument("--bt-subset", type=str, default="")
-        parser.add_argument(
-            "--align-subset",
-            type=str,
-            default="",
-            help="The subset of parallel data that has requires an alignment jsonl file",
-        )
-        parser.add_argument(
-            "--sentencepiece-alpha",
-            type=float,
-            default=1.00,
-            help="Parameter for segmentation distribution, this is NOT a probability",
-        )
-        parser.add_argument(
-            "--parallel-prob",
-            type=float,
-            default=0.33,
-            help="Probability of sampling parallel data if bt data is included (Note: NOT sample weight)",
-        )
-        parser.add_argument("--word-noise-prob", type=float, default=0.01)
-        parser.add_argument("--fragment-noise-prob", type=float, default=0.01)
-        parser.add_argument(
-            "--max-merges",
-            type=int,
-            default=10,
-            help="How many segments are at most merged into a single training example.",
-        )
-        parser.add_argument("--max-shuffle-dist", type=int, default=3)
-        parser.add_argument("--global-skip-noise-prob", type=float, default=0.10)
-        # character noising
-        parser.add_argument("--char-swap-prob", type=float, default=0.01)
-        parser.add_argument("--char-delete-prob", type=float, default=0.01)
-        parser.add_argument("--char-insert-prob", type=float, default=0.01)
-        parser.add_argument("--char-duplicate-prob", type=float, default=0.01)
-        parser.add_argument("--char-case-prob", type=float, default=0.01)
-        parser.add_argument("--char-substitution-prob", type=float, default=0.01)
-        parser.add_argument("--seq-lower-prob", type=float, default=0.01)
-        parser.add_argument("--seq-upper-prob", type=float, default=0.01)
-        parser.add_argument(
-            "--decoder-langtok",
-            action="store_true",
-            help="replace beginning-of-sentence in target sentence with target language token",
-        )
+    """Task for training multi sentence translation models from pre-trained BART models."""
 
-    def __init__(self, args, src_dict: Dictionary, tgt_dict: Dictionary):
-        super().__init__(args, src_dict, tgt_dict)
-        self.src_dict = src_dict
-        self.langs = args.langs.split(",")
-        for dict_ in [src_dict, tgt_dict]:
-            for lang in self.langs:
-                dict_.add_symbol("[{}]".format(lang))
-            dict_.add_symbol("<mask>")
+    def __init__(self, cfg: DocumentTranslationFromPretrainedBARTConfig, src_dict: Dictionary, tgt_dict: Dictionary):
+        super().__init__(cfg, src_dict=src_dict, tgt_dict=tgt_dict)
 
-    def load_dataset(self, split, epoch=1, combine=False, **kwargs):
+    def load_dataset(self, split: str, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.
 
         Args:
-            split (str): name of the split (e.g., train, valid, test)
+            split (str): The value of --train-subset, --valid-subset or --test-subset CLI args.
+                Each is a comma-separated list of dataset names.
+                This method is called separately for each subset.
         """
+        self.cfg = cast(DocumentTranslationFromPretrainedBARTConfig, self.cfg)
         # this is for sharding
-        paths = utils.split_paths(self.args.data)
+        paths = utils.split_paths(self.cfg.data)
         assert len(paths) > 0
         data_dir_path = paths[(epoch - 1) % len(paths)]
-        # this is for different datasets that comprise the training set
+
+        # all datasets in this split
         all_dataset_names = sorted(set(split.split(",")))  # split.split(",")
-        bt_dataset_names = self.args.bt_subset.split(",")
-        align_dataset_names = self.args.align_subset.split(",")
+        # all bt datasets defined for this task
+        bt_dataset_names = self.cfg.bt_subset.split(",")
+        # all alignment datasets defined for this task
+        align_dataset_names = self.cfg.align_subset.split(",")
+        # the parallel (1-to-1) datasets are the ones that are not bt or alignment datasets
         parallel_dataset_names = [
             name for name in all_dataset_names if name not in bt_dataset_names and name not in align_dataset_names
         ]
 
-        # infer langcode and translation direction
-        src, tgt = self.args.source_lang, self.args.target_lang
+        # langcode and translation direction
+        src, tgt = self.cfg.source_lang, self.cfg.target_lang
         direction = f"{src}-{tgt}"
 
-        # XXX: since this is at document level, we probably dont want to apply this too aggressively
-        # XXX: e.g. only enable a noiser with some probability
+        # sanity checks
         assert (
-            self.args.max_sequence_length <= self.args.max_source_positions
+            self.cfg.max_sequence_length <= self.cfg.max_source_positions
         ), "The maximum training sequence length should be lesser than the positional encoding."
-        assert self.args.max_sequence_length <= self.args.max_tokens
-        max_seq_len = self.args.max_sequence_length
+        max_seq_len = self.cfg.max_sequence_length
 
         logger.info(f"Max sequence length={max_seq_len}")
-        logger.info(f"Max merges={self.args.max_merges}")
+        logger.info(f"Max merges={self.cfg.max_merges}")
+        print(self.cfg)
 
-        bpe = encoders.build_bpe(self.args)
+        bpe = SentencepieceBPE(SentencepieceConfig(sentencepiece_model=self.cfg.spm_model))
+        noisy_bpe = SentencepieceBPE(
+            SentencepieceConfig(sentencepiece_model=self.cfg.spm_model, sentencepiece_enable_sampling=True)
+        )
         from greynirseq.nicenlp.data.encoders import Encoder
 
         my_enc = Encoder(
-            self.args,
-            self.src_dict,
-            min_val=self.src_dict.nspecial,
-            max_val=len(self.src_dict) - 1 - len(self.langs),
+            dictionary=self.src_dict,
+            bpe=bpe,
+            noisy_bpe=noisy_bpe,
+            allowed_dictionary_min=self.src_dict.nspecial,
+            allowed_dictionary_max=len(self.src_dict) - 1 - len(self.langs),
+            fragment_noise_prob=self.cfg.fragment_noise_prob,
+            global_skip_noise_prob=self.cfg.global_skip_noise_prob,
+            word_noise_config=self.cfg.word_noise_config,
+            char_noise_config=self.cfg.char_noise_config,
         )
 
         def decode(example):
@@ -164,7 +161,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
 
         logger.info(f"Split name {split}")
 
-        if split in self.args.valid_subset:
+        if split in self.cfg.valid_subset:
             src_paths = [f"{data_dir_path}/{name}.{direction}.{src}.jsonl" for name in parallel_dataset_names]
             tgt_paths = [f"{data_dir_path}/{name}.{direction}.{tgt}.jsonl" for name in parallel_dataset_names]
             parallel_dataset = IndexedParallelDocumentsDataset.from_parallel_jsonl_many(
@@ -174,11 +171,11 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 self.src_dict,
                 encoder=my_enc,
                 max_seq_len=max_seq_len,
-                max_merges=self.args.max_merges,
-                append_source_id=self.src_dict.index("[{}]".format(self.args.source_lang)),  # 250_004 for english
-                append_target_id=self.tgt_dict.index("[{}]".format(self.args.target_lang)),  # 250_012 for icelandic
-                num_proc=self.args.num_preprocess_workers,
-                seed=self.args.seed,
+                max_merges=self.cfg.max_merges,
+                append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),  # 250_004 for english
+                append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),  # 250_012 for icelandic
+                num_proc=self.cfg.num_preprocess_workers,
+                seed=self.cfg.seed,
             )
             self.datasets[split] = parallel_dataset
             return parallel_dataset
@@ -201,12 +198,12 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 self.src_dict,
                 encoder=my_enc,
                 max_seq_len=max_seq_len,
-                max_merges=self.args.max_merges,
-                append_source_id=self.src_dict.index("[{}]".format(self.args.source_lang)),  # 250_004 for english
-                append_target_id=self.tgt_dict.index("[{}]".format(self.args.target_lang)),  # 250_012 for icelandic
+                max_merges=self.cfg.max_merges,
+                append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),  # 250_004 for english
+                append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),  # 250_012 for icelandic
                 align_paths=alignment_path,
-                num_proc=self.args.num_preprocess_workers,
-                seed=self.args.seed,
+                num_proc=self.cfg.num_preprocess_workers,
+                seed=self.cfg.seed,
             )
             if dataset_name in bt_dataset_names:
                 bt_datasets.append(dataset)
@@ -214,7 +211,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 parallel_datasets.append(dataset)
 
         # we already handled this
-        valid_dataset_names = self.args.valid_subset
+        valid_dataset_names = self.cfg.valid_subset
         if split in valid_dataset_names:
             assert False
 
@@ -223,13 +220,13 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             bt_datasets,
             self.src_dict,
             encoder=my_enc,
-            append_source_id=self.src_dict.index("[{}]".format(self.args.source_lang)),
-            append_target_id=self.tgt_dict.index("[{}]".format(self.args.target_lang)),
-            parallel_prob=self.args.parallel_prob,
-            seed=self.args.seed,
+            append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),
+            append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),
+            parallel_prob=self.cfg.parallel_prob,
+            seed=self.cfg.seed,
             max_seq_len=max_seq_len,
-            max_merges=self.args.max_merges,
-            num_proc=self.args.num_preprocess_workers,
+            max_merges=self.cfg.max_merges,
+            num_proc=self.cfg.num_preprocess_workers,
         )
         # often a trainer will check to see if dataset is empty before training/validation
         dataset.set_epoch(1)
@@ -253,8 +250,11 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         epoch=1,
         data_buffer_size=0,
         disable_iterator_cache=False,
+        skip_remainder_batch=False,
+        grouped_shuffling=False,
+        update_epoch_batch_itr=False,
     ):
-        max_sentences = max_sentences or self.args.max_sentences
+        max_sentences = max_sentences or self.cfg.max_sentences
         logger.info(f"S Batching by size... with max_tokens={max_tokens} and max_sentences={max_sentences}")
         if not hasattr(dataset, "ordered_sizes"):
             logger.info("FOOFOO")
@@ -272,6 +272,9 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 epoch=epoch,
                 data_buffer_size=data_buffer_size,
                 disable_iterator_cache=disable_iterator_cache,
+                skip_remainder_batch=skip_remainder_batch,
+                grouped_shuffling=grouped_shuffling,
+                update_epoch_batch_itr=update_epoch_batch_itr,
             )
         can_reuse_epoch_itr = not disable_iterator_cache and self.can_reuse_epoch_itr(dataset)
         if can_reuse_epoch_itr and dataset in self.dataset_to_epoch_iter:
@@ -304,6 +307,8 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             num_workers=num_workers,
             epoch=epoch,
             buffer_size=data_buffer_size,
+            skip_remainder_batch=skip_remainder_batch,
+            grouped_shuffling=grouped_shuffling,
         )
 
         if can_reuse_epoch_itr:

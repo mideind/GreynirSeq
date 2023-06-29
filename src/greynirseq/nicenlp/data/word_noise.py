@@ -2,86 +2,133 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
+from dataclasses import dataclass, field
 from typing import List, Union
 
 import torch
-from fairseq.data import BaseWrapperDataset
+from fairseq.dataclass import FairseqDataclass
 from torch import Tensor
 
 from .noiser import Noiser
 
+# The probability of a word being shifted to a different position
 _POS_PROB = 0.0025  # results in 0.5-1.0% words being shifted using categorial distribution
+# The minimum length of a sequence to apply word noise to
+MIN_LENGTH = 3
+
+
+@dataclass
+class WordNoiserConfig(FairseqDataclass):
+    drop_word_prob: float = field(
+        default=0.1,
+        metadata={"help": "Probability of dropping a word"},
+    )
+    max_shift_distance: int = field(
+        default=3,
+        metadata={"help": "Maximum distance to shift a word. 0 means no shifting."},
+    )
+    shift_prob: float = field(
+        default=_POS_PROB,
+        metadata={"help": "Probability of each word being shifted to a different position"},
+    )
 
 
 class WordNoiser(Noiser):
-    def __init__(self, drop_prob: float, max_shuffle_distance: int, pos_prob: float = _POS_PROB):
-        self.drop_prob = drop_prob
-        self.pos_prob = pos_prob
-        self.max_shuffle_distance = max_shuffle_distance
-        self.pos_noise_probs = torch.tensor(
-            [1 - max_shuffle_distance * self.pos_prob] + [self.pos_prob] * max_shuffle_distance, dtype=torch.float
+    """Noiser that applies word-level noise to a sequence of strings.
+
+    The noise consists of:
+    - Dropping words (with a given probability)
+    - Shifting words to a different position (with a probability that decreases with distance)
+
+    A word is a sequence of characters separated by spaces.
+    """
+
+    def __init__(self, config: WordNoiserConfig):
+        self.config = config
+        # Create a categorical distribution for the word position noise
+        # Example: for max_shuffle_distance=3 and pos_prob=0.0025, we get
+        # [0.9875, 0.0025, 0.0025, 0.0025]
+        # which means that 98.75% of words are not shifted, 0.25% are shifted by 1,
+        # 0.25% by 2, and 0.25% by 3 positions.
+        self.pos_noise_dist = get_shift_distribution(
+            max_shuffle_distance=config.max_shift_distance, shift_prob=config.shift_prob
         )
-        self.pos_noise_dist = torch.distributions.categorical.Categorical(probs=self.pos_noise_probs)
 
     def apply(self, sequence: List[Union[str, int, Tensor]]):
         return word_noise(
             sequence,
-            self.drop_prob,
+            self.config.drop_word_prob,
             pos_noise_dist=self.pos_noise_dist,
-            max_shuffle_distance=self.max_shuffle_distance,
+            max_shuffle_distance=self.config.max_shift_distance,
         )
 
 
-def calculate_dropout_keep_matrix(length, drop_prob):
-    """
-    Calculate a keep-iff-true matrix for a sequence of the given length
-    """
+def get_shift_distribution(max_shuffle_distance: int, shift_prob) -> torch.distributions.Distribution:
+    pos_noise_probs = torch.tensor(
+        [1 - max_shuffle_distance * shift_prob] + [shift_prob] * max_shuffle_distance,
+        dtype=torch.float,
+    )
+    return torch.distributions.categorical.Categorical(probs=pos_noise_probs)
+
+
+def calculate_dropout_keep_matrix(length: int, drop_prob: float) -> Tensor:
+    """Calculate a boolean matrix of length `length` where each element is True with probability 1-drop_prob."""
     keep_matrix = torch.full((length,), True)
-    # Don't drop anything for sequences that are too short
-    MIN_LENGTH = 3
     if length <= MIN_LENGTH:
         return keep_matrix
 
-    # Otherwise, use drop_prob as the target fraction of elements to drop
-    # Use stochastic rounding
+    # Calculate the number of words to drop using stochastic rounding
     drop_amount = int(length * drop_prob + torch.rand(1).item())
     # Still force a minimum amount remaining
     drop_amount = min(drop_amount, length - MIN_LENGTH)
 
-    # Low drop probability will sometimes try to drop nothing in short sequences
+    # If we're not dropping any words, return the keep matrix as-is
     if drop_amount <= 0:
         return keep_matrix
 
+    # Calculate a multinomial distribution for dropping words
     drop_weights = torch.ones((length,))
-    drop_indexes = torch.multinomial(drop_weights, drop_amount)
+    drop_indexes = torch.multinomial(drop_weights, num_samples=drop_amount, replacement=False)
     keep_matrix[drop_indexes] = False
 
     return keep_matrix
 
 
-def word_noise(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noise_dist, max_shuffle_distance: int):
-    noised_sample = []
+def word_noise(
+    sequence: List[Union[str, int, Tensor]],
+    drop_prob: float,
+    *,
+    pos_noise_dist: torch.distributions.Distribution,
+    max_shuffle_distance: int,
+) -> List[Union[str, int, Tensor]]:
+    noised_sample: List[Union[str, int, Tensor]] = []
     for part in sequence:
+        # Only add noise to strings
         if isinstance(part, str):
-            # Only add noise to strings
-
             # Consider words to be space separated.
             # Consecutive spaces will cause empty-string words, but that's fine.
             words = part.split(" ")
+            num_words = len(words)
 
-            # Shuffle words to within-k distance
-            unnoised_pos = torch.arange(len(words))
+            unnoised_pos = torch.arange(num_words)
             if max_shuffle_distance > 0:
-                # pos_noise = torch.randint(0, max_shuffle_distance, (len(words),))
-                pos_noise = pos_noise_dist.sample(sample_shape=(len(words),))
+                # For each word, sample a distance to shift it by
+                pos_noise = pos_noise_dist.sample(sample_shape=torch.Size((num_words,)))
+                # Example for max_shuffle_distance=3 and num_words=4:
+                #   pos_noise           = [1, 2, 1, 0]
+                #   unnoised_pos        = [0, 1, 2, 3]
+                #   shifted_pos_noise   = [1, 3, 3, 3]
+                # TODO: This seems to be a bug - i.e. a shift of 1 seems to imply that the word would get shifted
+                # but the example above shows that the first word is not shifted - since it has the same index as another word.
                 noised_pos = unnoised_pos + pos_noise
+                # We then do an argsort to get the indexes of the words in the new order
                 perm = noised_pos.argsort()
             else:
                 perm = unnoised_pos
 
             # Drop words with probability p,
             # keep_matrix = self.calculate_dropout_keep_matrix(len(words))
-            keep_matrix = calculate_dropout_keep_matrix(len(words), drop_prob)
+            keep_matrix = calculate_dropout_keep_matrix(num_words, drop_prob)
             reordered_words = [words[i] for i in perm if keep_matrix[i]]
             reordered_part = " ".join(reordered_words)
 
@@ -90,44 +137,3 @@ def word_noise(sequence: List[Union[str, int, Tensor]], drop_prob, *, pos_noise_
             noised_sample.append(part)
 
     return noised_sample
-
-
-class WordNoiseDataset(BaseWrapperDataset):
-    """
-    Apply word noise to the string segments in a sequence.
-
-    The types of noise are:
-        within-k word shuffling
-        word dropout
-
-    Input should be of type List[Union[str, int]]
-        strings are literal strings in the sample
-        ints are embedding indexes from the source dict
-    Output type is the same List[Union[str, int]]
-    """
-
-    """
-    splitta hverjum streng á bilum og rugla innan strengs
-
-    -- word shuffling
-    búa til 0..n-1 vector (arange) af lengd #fjöldi-orða-í-splitti
-    leggja við hvert stak random tölu á bilinu [0-k[ (þar sem k er max-dist í umröðuninni)
-    sortera fylkið  og taka út .indexes (það er í boði í numpy - sjá líka bart kóðann)
-    sem segir umröðunina sem sorteringin gerði
-    nota umröðunina til að endurraða orðum indexa upp á nýtt
-
-    -- word dropout
-    henda orðum úr listanum með líkum
-
-    splæsa saman með bilum
-    """
-
-    def __init__(self, args, dataset, noise_prob, max_shuffle_distance):
-        super().__init__(dataset)
-        # TODO: should noise_prob and max_shuffle_distance be part of args?
-        self.p = noise_prob
-        self.k = max_shuffle_distance
-
-    def __getitem__(self, index):
-        item = self.dataset[index]
-        return word_noise(item, self.p, max_shuffle_distance=self.k, pos_noise_dist=self.p)

@@ -6,50 +6,50 @@ from typing import List, Union
 
 import numpy as np
 import torch
-from fairseq.data import encoders
+from fairseq.data import Dictionary
+from fairseq.data.encoders.sentencepiece_bpe import SentencepieceBPE
 
-from greynirseq.nicenlp.data.char_noise import CharacterNoiser
+from greynirseq.nicenlp.data.char_noise import CharacterNoiser, CharacterNoiserConfig
 from greynirseq.nicenlp.data.fragment_noise import FragmentNoiser
 from greynirseq.nicenlp.data.spm_segmentation_noise import SpmNoiser
-from greynirseq.nicenlp.data.word_noise import WordNoiser
+from greynirseq.nicenlp.data.word_noise import WordNoiser, WordNoiserConfig
 
 
 class Encoder:
-    def __init__(self, args, dictionary, min_val: int, max_val: int):
-        """docstring"""
-        self.args = args
-        self.bpe = encoders.build_bpe(self.args)
+    """Encodes a sequence of tokens into a sequence of integers using BPE and then the fairseq dictionary.
+
+    The encoded sequence can also be noised using various noise models.
+    Special care needs to be taken in which order the noising is applied since some models expect the input to be
+    strings, and others expect integers.
+    """
+
+    def __init__(
+        self,
+        bpe: SentencepieceBPE,
+        noisy_bpe: SentencepieceBPE,
+        dictionary: Dictionary,
+        allowed_dictionary_min: int,
+        allowed_dictionary_max: int,
+        fragment_noise_prob: float,
+        global_skip_noise_prob: float,
+        word_noise_config: WordNoiserConfig,
+        char_noise_config: CharacterNoiserConfig,
+    ):
+        self.bpe = bpe
         self.dictionary = dictionary
-        self.min_val = min_val
-        self.max_val = max_val
-        import copy
 
-        _args_w_bpe_sampling = copy.deepcopy(self.args)
-        _args_w_bpe_sampling.bpe = "sentencepiece_sampled"
-        self.bpe_noisy = encoders.build_bpe(_args_w_bpe_sampling)
-
-        word_noise_prob = self.args.word_noise_prob
-        max_shuffle_dist = self.args.max_shuffle_dist
-        fragment_noise_prob = self.args.fragment_noise_prob
-        self.word_noiser = WordNoiser(word_noise_prob, max_shuffle_dist)
-        self.noisy_subword_enc = SpmNoiser(self.dictionary, self.bpe_noisy)
-        self.global_skip_noise_prob = self.args.global_skip_noise_prob
-        self.fragment_noiser = FragmentNoiser(fragment_noise_prob, min_val=self.min_val, max_val=self.max_val)
+        self.word_noiser = WordNoiser(word_noise_config)
+        self.noisy_subword_enc = SpmNoiser(self.dictionary, noisy_bpe=noisy_bpe)
+        self.global_skip_noise_prob = global_skip_noise_prob
+        self.fragment_noiser = FragmentNoiser(
+            fragment_noise_prob, min_val=allowed_dictionary_min, max_val=allowed_dictionary_max
+        )
         self.char_noiser = CharacterNoiser(
-            swap_prob=args.char_swap_prob,
-            delete_prob=args.char_delete_prob,
-            insert_prob=args.char_insert_prob,
-            duplicate_prob=args.char_duplicate_prob,
-            case_prob=args.char_case_prob,
-            substitution_prob=args.char_substitution_prob,
-            seq_lower_prob=args.seq_lower_prob,
-            seq_upper_prob=args.seq_upper_prob,
+            char_noiser_config=char_noise_config,
         )
 
     def encode(self, parts: List[Union[str, int, torch.Tensor]]):
-        if isinstance(parts, (str, int)):
-            parts = [parts]
-        encoded_parts = []
+        """Encode a sequence of tokens into a sequence of integers using BPE and then the fairseq dictionary."""
         encoded_parts = [
             self.dictionary.encode_line(self.bpe.encode(part), append_eos=False, add_if_not_exist=False).long()
             if isinstance(part, str)
@@ -59,10 +59,10 @@ class Encoder:
         return torch.cat(encoded_parts).long()
 
     def encode_noisy(self, sequence: List[Union[str, int, torch.Tensor]]):
+        """Encode a sequence of tokens into a sequence of integers using BPE and then the fairseq dictionary and
+        apply noise to the sequence."""
         if np.random.rand() < self.global_skip_noise_prob:
             return self.encode(sequence)
-        if not isinstance(sequence, list):
-            sequence = [sequence]
         sequence = [self.char_noiser.apply(item) if isinstance(item, str) else item for item in sequence]
         res = self.word_noiser.apply(sequence)
         res = self.noisy_subword_enc.apply(res)

@@ -3,9 +3,6 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
-import multiprocessing
-import time
-from pathlib import Path
 from typing import List
 
 import datasets as hf_datasets
@@ -145,7 +142,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         tgt_segments = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
 
         with data_utils.numpy_seed(self.seed, self.epoch, index):
-            insert_sep = np.random.randint(2, dtype=np.bool)
+            insert_sep = np.random.randint(2, dtype=bool)
 
             assert KEYS.EXACT_ALIGNMENT in item or not insert_sep  # insert_sep implies exact_alignment
             if insert_sep and len(src_segments) > 1 and np.all(item[KEYS.EXACT_ALIGNMENT]):
@@ -234,62 +231,13 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         self._sorted_lengths = lengths[self._sorted_indices]
         self._sizes = self._sorted_lengths
 
-        logger.info(f"Caching index_dataset to disk at epoch {self.epoch} to {self.get_index_cache_path()}")
-        _ = self.index_dataset.save_to_disk(str(self.get_index_cache_path()))
-
-    def get_index_cache_path(self):
-        # TODO: add a fingerprint to this path
-        document_translation_cache_dir = hf_datasets.config.HF_DATASETS_CACHE / "document_translation"
-        document_translation_cache_dir.mkdir(exist_ok=True)
-        return document_translation_cache_dir / f"index_dataset.epoch.{self.epoch}"
-
     def interleave_indices(self):
         if self.epoch != self._interleave_seed:
             logger.info(
                 f"Interleaving parallel and bt datasets with ratios={self.mixture_ratios}, at epoch {self.epoch}"
             )
 
-            index_cache_path = self.get_index_cache_path()
-            lockfile_path = Path(f"{index_cache_path}.lock")
-            # TODO: write main process PID into lockfile so that we can detect if the lockfile is stale
-            while True:
-                try:
-                    with lockfile_path.open(mode="x"):
-                        # mode=exclusive creation
-                        pass
-                    # we have the lock now
-
-                    # BEGIN CRITICAL SECTION
-                    if multiprocessing.get_context().parent_process() is None:
-                        # erum main process, þ.e.a.s. ekki worker
-                        self._interleave_indices_inner()
-                    elif index_cache_path.exists():
-                        # cache til og multiprocessing er í gangi
-                        # gerum ekki neitt
-                        logger.info(f"Found matching cached index_dataset, skipping interleave at epoch {self.epoch}")
-                    else:
-                        # cache ekki til
-                        # Eyðum gomlum indexum TODO XXX: delete older epochs
-                        # búum til cache-ið
-                        self._interleave_indices_inner()
-
-                    # END CRITICAL SECTION
-
-                    # sleppa las
-                    lockfile_path.unlink(missing_ok=False)  # we want to crash if this fails
-
-                    # og loada gognum
-                    logger.info(f"Memory mapping indices at epoch {self.epoch}")
-                    self.index_dataset = hf_datasets.load_from_disk(str(index_cache_path))
-                    logger.info(f"Memory mapped {len(self.index_dataset)} at {self.epoch}")
-                    lengths = np.array(self.index_dataset[KEYS.WEIGHT])
-                    self._sorted_indices = lengths.argsort()
-                    self._sorted_lengths = lengths[self._sorted_indices]
-                    self._sizes = self._sorted_lengths
-                    break
-
-                except FileExistsError:
-                    time.sleep(0.25)
+            self._interleave_indices_inner()
 
     def __len__(self):
         return len(self.index_dataset) if self.index_dataset is not None else 0

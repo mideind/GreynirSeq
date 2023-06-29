@@ -182,7 +182,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         tgt_segments = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
 
         with data_utils.numpy_seed(self.seed, self.epoch, index):
-            insert_sep = np.random.randint(2, dtype=np.bool)
+            insert_sep = np.random.randint(2, dtype=bool)
 
         assert KEYS.EXACT_ALIGNMENT in item or not insert_sep  # insert_sep implies exact_alignment
         if insert_sep and len(src_segments) > 1 and np.all(item[KEYS.EXACT_ALIGNMENT]):

@@ -3,10 +3,12 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import string
+from dataclasses import dataclass
 from typing import List
 
 import torch
 from fairseq.data import BaseWrapperDataset
+from fairseq.dataclass import FairseqDataclass
 
 from greynirseq.nicenlp.data.noiser import Noiser
 
@@ -17,38 +19,36 @@ _INSERTABLE_UPPER_ORDINALS = [ord(i.upper()) for i in (string.ascii_lowercase + 
 _ALL_INSERTABLE_ORDINALS = _INSERTABLE_LOWER_ORDINALS + _INSERTABLE_UPPER_ORDINALS
 
 
+@dataclass
+class CharacterNoiserConfig(FairseqDataclass):
+    swap_prob: float = 0.01
+    delete_prob: float = 0.01
+    insert_prob: float = 0.01
+    duplicate_prob: float = 0.01
+    case_prob: float = 0.01
+    substitution_prob: float = 0.01
+    seq_lower_prob: float = 0.01
+    seq_upper_prob: float = 0.00
+
+
 class CharacterNoiser(Noiser):
     def __init__(
         self,
-        swap_prob: float = 0.01,
-        delete_prob: float = 0.01,
-        insert_prob: float = 0.01,
-        duplicate_prob: float = 0.01,
-        case_prob: float = 0.01,
-        substitution_prob: float = 0.01,
-        seq_lower_prob: float = 0.01,
-        seq_upper_prob: float = 0.00,
+        char_noiser_config: CharacterNoiserConfig,
     ):
-        self.swap_prob = swap_prob
-        self.delete_prob = delete_prob
-        self.insert_prob = insert_prob
-        self.duplicate_prob = duplicate_prob
-        self.case_prob = case_prob
-        self.substitution_prob = substitution_prob
-        self.seq_lower_prob = seq_lower_prob
-        self.seq_upper_prob = seq_upper_prob
+        self.char_noiser_config = char_noiser_config
 
     def apply(self, string: str):
         return apply_character_noise(
             string,
-            swap_prob=self.swap_prob,
-            delete_prob=self.delete_prob,
-            insert_prob=self.insert_prob,
-            duplicate_prob=self.duplicate_prob,
-            case_prob=self.case_prob,
-            substitution_prob=self.substitution_prob,
-            seq_lower_prob=self.seq_lower_prob,
-            seq_upper_prob=self.seq_upper_prob,
+            swap_prob=self.char_noiser_config.swap_prob,
+            delete_prob=self.char_noiser_config.delete_prob,
+            insert_prob=self.char_noiser_config.insert_prob,
+            duplicate_prob=self.char_noiser_config.duplicate_prob,
+            case_prob=self.char_noiser_config.case_prob,
+            substitution_prob=self.char_noiser_config.substitution_prob,
+            seq_lower_prob=self.char_noiser_config.seq_lower_prob,
+            seq_upper_prob=self.char_noiser_config.seq_upper_prob,
         )
 
 
@@ -72,7 +72,6 @@ def apply_character_noise(
         len(_ALL_INSERTABLE_ORDINALS) % 2 == 0
     ), "We expect the first half of insertion_ordinals to lower case and the latter part to be the same but upper case"
 
-    # XXX TODO: do not destroy: numbers
     # XXX TODO: implement preservation behavior
 
     seq_case_was_shifted = False
@@ -95,8 +94,7 @@ def apply_character_noise(
             for c, should_flip in zip(string, flip_case_mask)
         )
 
-    # TODO: we should probably not noise numbers
-    noise_allowed_mask = torch.tensor([c in KEEP_CHARS for c in string], dtype=torch.bool)
+    noise_allowed_mask = torch.tensor([c not in KEEP_CHARS for c in string], dtype=torch.bool)
 
     sequence = torch.tensor([ord(c) for c in string])
     insertion_pool_size = len(insertion_ordinals) // 2
@@ -133,11 +131,10 @@ def apply_character_noise(
 
     # Swap some fragments (with max shuffle dist 1)
     if swap_prob:
-        # TODO XXX: how should noise_allowed_mask be handled here?
-        EPSILON = 1e-1
-        prenoise_positions = torch.arange(len(sequence)).float()
+        prenoise_positions = torch.arange(len(sequence))
         # we use rand since max shuffle_dist is 1
-        positional_noise = (torch.rand(len(sequence)) < swap_prob).float() * (1 + EPSILON)
+        positional_noise = torch.rand(len(sequence)) < swap_prob
+        positional_noise *= noise_allowed_mask
         permutation = (prenoise_positions + positional_noise).argsort()
         # retrieve elements after position noising
         sequence = sequence[permutation]
@@ -222,3 +219,26 @@ class CharacterNoiseDataset(BaseWrapperDataset):
             seq_lower_prob=self.seq_lower_prob,
             seq_upper_prob=self.seq_upper_prob,
         )
+
+
+if __name__ == "__main__":
+    while True:
+        a = input("Enter string: ")
+        disable = 0.0
+        enable = 0.6
+        b = apply_character_noise(
+            a,
+            swap_prob=enable,
+            delete_prob=disable,
+            insert_prob=disable,
+            duplicate_prob=disable,
+            case_prob=disable,
+            substitution_prob=disable,
+            seq_lower_prob=disable,
+            seq_upper_prob=disable,
+        )
+        print(b)
+        # now show the diff - a very basic one
+        for i, (x, y) in enumerate(zip(a, b)):
+            if x != y:
+                print(f"{i}: {x} -> {y}")

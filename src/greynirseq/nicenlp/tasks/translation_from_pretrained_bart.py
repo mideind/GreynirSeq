@@ -9,6 +9,7 @@
 # https://github.com/facebookresearch/fairseq/issues/4479
 # https://github.com/facebookresearch/fairseq/pull/4487
 from dataclasses import dataclass, field
+from typing import cast
 
 import torch
 from fairseq import utils
@@ -67,7 +68,7 @@ class TranslationFromPretrainedBARTTask(TranslationTask):
     """
 
     def __init__(self, cfg, src_dict, tgt_dict):
-        super().__init__(cfg, src_dict, tgt_dict)
+        super().__init__(cfg, src_dict=src_dict, tgt_dict=tgt_dict)
         self.langs = cfg.langs.split(",")
         for dictionary in [src_dict, tgt_dict]:
             for lang in self.langs:
@@ -80,6 +81,7 @@ class TranslationFromPretrainedBARTTask(TranslationTask):
         Args:
             split (str): name of the split (e.g., train, valid, test)
         """
+        self.cfg = cast(TranslationFromPretrainedBARTConfig, self.cfg)
         # WARNING
         # This function has not been tested with the new fairseq version
         # The assumption here is that self.cfg is the 'task' config

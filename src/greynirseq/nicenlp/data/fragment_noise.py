@@ -34,7 +34,24 @@ def fragment_noise(
     max_val: int,
     *,
     noise_allowed_mask: Tensor,
-):
+) -> Tensor:
+    """Apply fragment noise to the encoded sequence.
+
+    The encoded sequence is a tensor of integers, where each integer represents a fragment.
+    This function applies noise to the sequence by replacing some fragments with random ones,
+    and removing some fragments entirely.
+
+    Args:
+        encoded_sequence: The encoded sequence to apply noise to.
+        prob: The probability of applying noise to each fragment.
+        min_val: The minimum value which a fragment can have.
+        max_val: The maximum value which a fragment can have.
+        noise_allowed_mask: A mask of which positions in the sequence are allowed to be noised.
+            This is used to prevent noise in padding tokens.
+
+    Returns:
+        The encoded sequence with noise applied.
+    """
     if not prob or prob <= 0:
         return encoded_sequence
 

@@ -5,7 +5,7 @@
 from typing import List, Union
 
 import torch
-from fairseq.data import BaseWrapperDataset
+from fairseq.data import BaseWrapperDataset, Dictionary
 from fairseq.data.encoders.sentencepiece_bpe import SentencepieceBPE
 from torch import Tensor
 
@@ -14,35 +14,36 @@ from .noiser import Noiser
 
 
 class SpmNoiser(Noiser):
-    def __init__(self, dictionary, spm):
-        """docstring"""
+    """Encode input encoded with SentencepieceBPE using sampling and possibly alpha."""
+
+    def __init__(self, dictionary: Dictionary, noisy_bpe: SentencepieceBPE):
         self.dictionary = dictionary
-        self.spm = spm
+        self.spm = noisy_bpe
 
     def apply(self, sequence: List[Union[str, int, Tensor]]) -> NoisedSequence:
         return spm_reencode_w_segmentation_noise(sequence, self.dictionary, self.spm)
 
 
-def spm_reencode_w_segmentation_noise(sequence: List[Union[str, int, Tensor]], dictionary, spm):
-    # TODO: convert to tensor here?
+def spm_reencode_w_segmentation_noise(
+    sequence: List[Union[str, int, Tensor]], dictionary: Dictionary, spm: SentencepieceBPE
+):
+    """Encode input encoded with SentencepieceBPE using sampling and possibly alpha."""
     encoded_sample = []
     noise_allowed_mask = torch.tensor([], dtype=torch.bool)
 
-    for i in sequence:
-        if isinstance(i, str):
-            original_str = i  # self.spm.decode(self.src_dict.string(i))
-            re_spm = spm.encode(original_str)
+    for part in sequence:
+        if isinstance(part, str):
+            re_spm = spm.encode(part)
             re_embed = dictionary.encode_line(re_spm, append_eos=False, add_if_not_exist=False).long()
             encoded_sample.extend(re_embed)
             noise_allowed_mask = torch.cat((noise_allowed_mask, torch.tensor([True] * len(re_embed))))
-        elif isinstance(i, int):
-            encoded_sample.append(i)
+        elif isinstance(part, int):
+            encoded_sample.append(part)
             noise_allowed_mask = torch.cat((noise_allowed_mask, torch.tensor([False])))
         else:
-            assert False, f"Unknown type {type(i)}"
+            assert False, f"Unknown type {type(part)}"
 
     # TODO: <unk> handling
-    # return torch.tensor(encoded_sample), noise_allowed_mask
     return NoisedSequence(torch.tensor(encoded_sample).long(), noise_allowed_mask)
 
 
