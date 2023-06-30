@@ -8,7 +8,7 @@ from typing import List
 import datasets as hf_datasets
 import numpy as np
 import torch
-from fairseq.data import LanguagePairDataset, data_utils
+from fairseq.data import Dictionary, LanguagePairDataset, data_utils
 
 from greynirseq.nicenlp.data.encoders import Encoder
 from greynirseq.nicenlp.data.parallel_documents.indexed_parallel_documents_dataset import (
@@ -26,7 +26,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         self,
         parallel_datasets: List[IndexedParallelDocumentsDataset],
         bt_datasets: List[IndexedParallelDocumentsDataset],
-        dictionary,
+        dictionary: Dictionary,
         encoder: Encoder,
         append_source_id=None,
         append_target_id=None,
@@ -49,12 +49,9 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         self.num_proc = num_proc
 
         assert parallel_datasets or bt_datasets
-        self.parent_parallel_datasets = parallel_datasets
-        self.parent_bt_datasets = bt_datasets
         all_datasets = parallel_datasets + bt_datasets
-        self.foo = all_datasets[0]
 
-        self.flat_src = hf_datasets.concatenate_datasets(
+        self.flat_src: hf_datasets.Dataset = hf_datasets.concatenate_datasets(
             [d.flat_src for d in all_datasets],
             axis=0,
         )
@@ -64,7 +61,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         #     "/data/scratch/haukur/document_translation/parquet/flat_src.parquet"
         # )
 
-        self.flat_tgt = hf_datasets.concatenate_datasets(
+        self.flat_tgt: hf_datasets.Dataset = hf_datasets.concatenate_datasets(
             [d.flat_tgt for d in all_datasets],
             axis=0,
         )
@@ -138,8 +135,8 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         item = self.index_dataset[int(index)]
         is_bt = any(item[KEYS.SOURCE_INDICES] >= self.bt_src_start)
         maybe_noised_encode_fn = self.encoder.encode_noisy if is_bt else self.encoder.encode
-        src_segments = [self.flat_src[int(i)]["segment"] for i in item[KEYS.SOURCE_INDICES]]
-        tgt_segments = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
+        src_segments: List[str] = [self.flat_src[int(i)]["segment"] for i in item[KEYS.SOURCE_INDICES]]
+        tgt_segments: List[str] = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
 
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             insert_sep = np.random.randint(2, dtype=bool)
@@ -166,6 +163,8 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         tgt_out = torch.cat(tgt_out + [torch.tensor(tgt_affix)])
 
         if len(src_out) > 1020 or len(tgt_out) > 1020:
+            print(f"Source: {self.encoder.bpe.decode(self.src_dict.string(src_out))}")
+            print(f"Target: {self.encoder.bpe.decode(self.src_dict.string(tgt_out))}")
             assert False
 
         example = {

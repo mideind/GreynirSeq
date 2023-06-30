@@ -3,7 +3,6 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 from dataclasses import dataclass, field
-from typing import List, Union
 
 import torch
 from fairseq.dataclass import FairseqDataclass
@@ -54,7 +53,7 @@ class WordNoiser(Noiser):
             max_shuffle_distance=config.max_shift_distance, shift_prob=config.shift_prob
         )
 
-    def apply(self, sequence: List[Union[str, int, Tensor]]):
+    def apply(self, sequence: str):
         return word_noise(
             sequence,
             self.config.drop_word_prob,
@@ -95,45 +94,37 @@ def calculate_dropout_keep_matrix(length: int, drop_prob: float) -> Tensor:
 
 
 def word_noise(
-    sequence: List[Union[str, int, Tensor]],
+    sequence: str,
     drop_prob: float,
     *,
     pos_noise_dist: torch.distributions.Distribution,
     max_shuffle_distance: int,
-) -> List[Union[str, int, Tensor]]:
-    noised_sample: List[Union[str, int, Tensor]] = []
-    for part in sequence:
-        # Only add noise to strings
-        if isinstance(part, str):
-            # Consider words to be space separated.
-            # Consecutive spaces will cause empty-string words, but that's fine.
-            words = part.split(" ")
-            num_words = len(words)
+) -> str:
+    # Consider words to be space separated.
+    # Consecutive spaces will cause empty-string words, but that's fine.
+    words = sequence.split(" ")
+    num_words = len(words)
 
-            unnoised_pos = torch.arange(num_words)
-            if max_shuffle_distance > 0:
-                # For each word, sample a distance to shift it by
-                pos_noise = pos_noise_dist.sample(sample_shape=torch.Size((num_words,)))
-                # Example for max_shuffle_distance=3 and num_words=4:
-                #   pos_noise           = [1, 2, 1, 0]
-                #   unnoised_pos        = [0, 1, 2, 3]
-                #   shifted_pos_noise   = [1, 3, 3, 3]
-                # TODO: This seems to be a bug - i.e. a shift of 1 seems to imply that the word would get shifted
-                # but the example above shows that the first word is not shifted - since it has the same index as another word.
-                noised_pos = unnoised_pos + pos_noise
-                # We then do an argsort to get the indexes of the words in the new order
-                perm = noised_pos.argsort()
-            else:
-                perm = unnoised_pos
+    unnoised_pos = torch.arange(num_words)
+    if max_shuffle_distance > 0:
+        # For each word, sample a distance to shift it by
+        pos_noise = pos_noise_dist.sample(sample_shape=torch.Size((num_words,)))
+        # Example for max_shuffle_distance=3 and num_words=4:
+        #   pos_noise           = [1, 2, 1, 0]
+        #   unnoised_pos        = [0, 1, 2, 3]
+        #   shifted_pos_noise   = [1, 3, 3, 3]
+        # TODO: This seems to be a bug - i.e. a shift of 1 seems to imply that the word would get shifted
+        # but the example above shows that the first word is not shifted - since it has the same index as another word.
+        noised_pos = unnoised_pos + pos_noise
+        # We then do an argsort to get the indexes of the words in the new order
+        perm = noised_pos.argsort()
+    else:
+        perm = unnoised_pos
 
-            # Drop words with probability p,
-            # keep_matrix = self.calculate_dropout_keep_matrix(len(words))
-            keep_matrix = calculate_dropout_keep_matrix(num_words, drop_prob)
-            reordered_words = [words[i] for i in perm if keep_matrix[i]]
-            reordered_part = " ".join(reordered_words)
+    # Drop words with probability p,
+    # keep_matrix = self.calculate_dropout_keep_matrix(len(words))
+    keep_matrix = calculate_dropout_keep_matrix(num_words, drop_prob)
+    reordered_words = [words[i] for i in perm if keep_matrix[i]]
+    reordered_part = " ".join(reordered_words)
 
-            noised_sample.append(reordered_part)
-        else:
-            noised_sample.append(part)
-
-    return noised_sample
+    return reordered_part

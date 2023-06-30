@@ -88,15 +88,21 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
 
     def __init__(self, cfg: DocumentTranslationFromPretrainedBARTConfig, src_dict: Dictionary, tgt_dict: Dictionary):
         super().__init__(cfg, src_dict=src_dict, tgt_dict=tgt_dict)
+        # this is for typing only
+        self.src_dict = src_dict
+        self.tgt_dict = tgt_dict
 
     def load_dataset(self, split: str, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.
 
         Args:
-            split (str): The value of --train-subset, --valid-subset or --test-subset CLI args.
+            split (str): The value of --train-subset OR
+                --valid-subset which has been split on "," OR
+                --test-subset which has been split on "," CLI args.
                 Each is a comma-separated list of dataset names.
                 This method is called separately for each subset.
         """
+        logger.info(f"Split name {split}")
         self.cfg = cast(DocumentTranslationFromPretrainedBARTConfig, self.cfg)
         # this is for sharding
         paths = utils.split_paths(self.cfg.data)
@@ -104,19 +110,21 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         data_dir_path = paths[(epoch - 1) % len(paths)]
 
         # all datasets in this split
-        all_dataset_names = sorted(set(split.split(",")))  # split.split(",")
+        split_dataset_names = sorted(set(split.split(",")))
         # all bt datasets defined for this task
         bt_dataset_names = self.cfg.bt_subset.split(",")
         # all alignment datasets defined for this task
         align_dataset_names = self.cfg.align_subset.split(",")
         # the parallel (1-to-1) datasets are the ones that are not bt or alignment datasets
         parallel_dataset_names = [
-            name for name in all_dataset_names if name not in bt_dataset_names and name not in align_dataset_names
+            name for name in split_dataset_names if name not in bt_dataset_names and name not in align_dataset_names
         ]
 
         # langcode and translation direction
         src, tgt = self.cfg.source_lang, self.cfg.target_lang
         direction = f"{src}-{tgt}"
+        if src is None or tgt is None:
+            raise ValueError("--source-lang and --target-lang must be set")
 
         # sanity checks
         assert (
@@ -156,10 +164,8 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             print(bpe.decode(tgt_string))
             print()
 
-        def create_path(name, lang, align=False):
+        def create_path(name: str, lang: str, align=False) -> str:
             return f"{data_dir_path}/{name}.{direction}.{lang if not align else 'align'}.jsonl"
-
-        logger.info(f"Split name {split}")
 
         if split in self.cfg.valid_subset:
             src_paths = [f"{data_dir_path}/{name}.{direction}.{src}.jsonl" for name in parallel_dataset_names]
@@ -182,7 +188,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
 
         bt_datasets = []
         parallel_datasets = []
-        for dataset_name in all_dataset_names:
+        for dataset_name in split_dataset_names:
             if dataset_name == "":
                 continue
             alignment_path = None

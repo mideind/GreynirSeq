@@ -5,7 +5,7 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, cast
 
 import datasets as hf_datasets
 import numpy as np
@@ -101,7 +101,7 @@ class IndexedParallelFingerprints:
     align: str
 
     @classmethod
-    def make_fingerprints(cls, src_paths, tgt_paths, align_paths, version):
+    def make_fingerprints(cls, src_paths: List[str], tgt_paths: List[str], align_paths: List[str], version):
         from datasets.fingerprint import Hasher
 
         # there is no randomness that goes into flattening so we don't need seed here
@@ -117,17 +117,17 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
 
     def __init__(
         self,
-        flat_align,
-        flat_src,
-        flat_tgt,
-        dictionary,
+        flat_align: HFDataset,
+        flat_src: HFDataset,
+        flat_tgt: HFDataset,
+        dictionary: Dictionary,
         encoder: Encoder,
+        fingerprints: IndexedParallelFingerprints,
         append_source_id=None,
         append_target_id=None,
         seed: int = 1,
         max_seq_len=None,
         max_merges=10,
-        fingerprints: IndexedParallelFingerprints = None,
         paths=None,
     ):
         super().__init__(None, 0, dictionary)
@@ -178,8 +178,8 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
 
     def __getitem__(self, index):
         item = self.index_dataset[int(index)]
-        src_segments = [self.flat_src[int(i)]["segment"] for i in item[KEYS.SOURCE_INDICES]]
-        tgt_segments = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
+        src_segments: List[str] = [self.flat_src[int(i)]["segment"] for i in item[KEYS.SOURCE_INDICES]]
+        tgt_segments: List[str] = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
 
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             insert_sep = np.random.randint(2, dtype=bool)
@@ -223,7 +223,6 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         cls,
         src_paths: List[str],
         tgt_paths: List[str],
-        bpe_encoder,
         dictionary: Dictionary,
         encoder: Encoder,
         max_seq_len: int = None,
@@ -232,7 +231,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         max_merges: Optional[int] = 10,
         align_paths: Optional[str] = None,
         seed: int = 1,
-    ):
+    ) -> Optional["IndexedParallelDocumentsDataset"]:
         cache_dir = hf_datasets.config.HF_DATASETS_CACHE
 
         fp = IndexedParallelFingerprints.make_fingerprints(src_paths, tgt_paths, align_paths, cls.version)
@@ -260,8 +259,8 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
     @classmethod
     def from_parallel_jsonl_many(
         cls,
-        src_paths: List[str],
-        tgt_paths: List[str],
+        src_paths: str,
+        tgt_paths: str,
         bpe_encoder,
         dictionary: Dictionary,
         encoder: Encoder,
@@ -278,7 +277,6 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             cached_dataset = cls.load_from_cache(
                 src_paths,
                 tgt_paths,
-                bpe_encoder,
                 dictionary,
                 encoder,
                 max_seq_len=max_seq_len,
@@ -297,6 +295,8 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         src_dataset = hf_datasets.Dataset.from_json(src_paths, split="train", chunksize=40 << 20, features=features)
         logger.info(f"Loading tgt_dataset: {tgt_paths}")
         tgt_dataset = hf_datasets.Dataset.from_json(tgt_paths, split="train", chunksize=40 << 20, features=features)
+        assert isinstance(src_dataset, hf_datasets.Dataset), f"src_dataset is {type(src_dataset)}"
+        assert isinstance(tgt_dataset, hf_datasets.Dataset), f"tgt_dataset is {type(tgt_dataset)}"
 
         src_lang = src_dataset[0][KEYS.LANG]
         tgt_lang = tgt_dataset[0][KEYS.LANG]
@@ -310,10 +310,11 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             logger.info(f"Loading alignments: {align_paths}")
             align_dataset = hf_datasets.Dataset.from_json(
                 align_paths,
-                split="train",  # XXX: @haukurpall, does this always apply?
+                split="train",
                 chunksize=40 << 20,
                 features=hf_datasets.Features(_ALIGNMENTS_JSONL_FEATURE_DICT),
             )
+            assert isinstance(align_dataset, hf_datasets.Dataset), f"align_dataset is {type(align_dataset)}"
             assert set(align_dataset[0][KEYS.LANGS]) == set([src_lang, tgt_lang])
             if align_dataset[0][KEYS.LANGS] != [src_lang, tgt_lang]:
                 flip_alignment = True
@@ -469,6 +470,7 @@ def flatten_document_dataset(
             KEYS.SEGMENT: [],
         }
         for doc_idx, doc in zip(document_idxs, ex_batched[KEYS.DOCUMENT]):
+            doc = cast(List[List[str]], doc)
             doc_segments, doc_pg_idxs, doc_doc_idxs = [], [], []
             for pg_idx, pg in enumerate(doc):
                 if any((not s) for s in pg for pg in doc):

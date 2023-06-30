@@ -2,7 +2,6 @@
 # This file is part of GreynirSeq <https://github.com/mideind/GreynirSeq>.
 # See the LICENSE file in the root of the project for terms of use.
 
-from typing import List, Union
 
 import numpy as np
 import torch
@@ -48,22 +47,16 @@ class Encoder:
             char_noiser_config=char_noise_config,
         )
 
-    def encode(self, parts: List[Union[str, int, torch.Tensor]]):
+    def encode(self, sequence: str) -> torch.Tensor:
         """Encode a sequence of tokens into a sequence of integers using BPE and then the fairseq dictionary."""
-        encoded_parts = [
-            self.dictionary.encode_line(self.bpe.encode(part), append_eos=False, add_if_not_exist=False).long()
-            if isinstance(part, str)
-            else torch.tensor([part]).long()
-            for part in parts
-        ]
-        return torch.cat(encoded_parts).long()
+        return self.dictionary.encode_line(self.bpe.encode(sequence), append_eos=False, add_if_not_exist=False).long()
 
-    def encode_noisy(self, sequence: List[Union[str, int, torch.Tensor]]):
+    def encode_noisy(self, sequence: str) -> torch.Tensor:
         """Encode a sequence of tokens into a sequence of integers using BPE and then the fairseq dictionary and
         apply noise to the sequence."""
         if np.random.rand() < self.global_skip_noise_prob:
             return self.encode(sequence)
-        sequence = [self.char_noiser.apply(item) if isinstance(item, str) else item for item in sequence]
+        sequence = self.char_noiser.apply(sequence)
         res = self.word_noiser.apply(sequence)
         res = self.noisy_subword_enc.apply(res)
         seq_tensor = self.fragment_noiser.apply(res.sequence, res.noise_allowed_mask)

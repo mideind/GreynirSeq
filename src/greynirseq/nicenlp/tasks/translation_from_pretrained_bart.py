@@ -13,7 +13,7 @@ from typing import cast
 
 import torch
 from fairseq import utils
-from fairseq.data import LanguagePairDataset
+from fairseq.data import Dictionary, LanguagePairDataset
 from fairseq.tasks import TASK_CLASS_NAMES, TASK_REGISTRY, register_task
 from fairseq.tasks.translation import TranslationConfig, TranslationTask, load_langpair_dataset
 from omegaconf import MISSING
@@ -67,7 +67,7 @@ class TranslationFromPretrainedBARTTask(TranslationTask):
         :prog:
     """
 
-    def __init__(self, cfg, src_dict, tgt_dict):
+    def __init__(self, cfg: TranslationFromPretrainedBARTConfig, src_dict: Dictionary, tgt_dict: Dictionary):
         super().__init__(cfg, src_dict=src_dict, tgt_dict=tgt_dict)
         self.langs = cfg.langs.split(",")
         for dictionary in [src_dict, tgt_dict]:
