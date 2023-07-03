@@ -325,15 +325,11 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         )
         flat_src = flatten_document_dataset(
             src_dataset,
-            bpe_encoder,
-            dictionary,
             load_from_cache_file=load_from_cache_file,
             num_proc=num_proc,
         )
         flat_tgt = flatten_document_dataset(
             tgt_dataset,
-            bpe_encoder,
-            dictionary,
             load_from_cache_file=load_from_cache_file,
             num_proc=num_proc,
         )
@@ -410,6 +406,9 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             self._sorted_lengths = lengths[self._sorted_indices]
             self._sizes = self._sorted_lengths
 
+    def __str__(self) -> str:
+        return f"ParallelDataset(src={self.src}, tgt={self.tgt}, length={len(self.index_dataset)})"
+
 
 def compute_doc_offsets(
     dataset: HFDataset,
@@ -443,8 +442,6 @@ def compute_doc_offsets(
 
 def flatten_document_dataset(
     dataset: HFDataset,
-    bpe_encoder,
-    dictionary: Dictionary,
     load_from_cache_file=True,
     num_proc: int = 4,
 ):

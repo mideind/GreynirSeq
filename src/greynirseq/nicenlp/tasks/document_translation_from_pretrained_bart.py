@@ -217,13 +217,13 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 max_merges=self.cfg.max_merges,
                 num_proc=self.cfg.num_preprocess_workers,
             )
-            # often a trainer will check to see if dataset is empty before training/validation
-            dataset.set_epoch(1)
         else:
             dataset = split_datasets[0]
 
+        dataset.set_epoch(1)
         logger.info("Dataset loading done.")
         self.datasets[split] = dataset
+        logger.info(f"split dataset: {dataset}")
         return dataset
 
     def get_batch_iterator(

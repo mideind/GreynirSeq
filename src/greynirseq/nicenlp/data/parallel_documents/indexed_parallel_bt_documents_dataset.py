@@ -241,3 +241,6 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
     @property
     def can_reuse_epoch_itr_across_epochs(self):
         return False
+
+    def __str__(self) -> str:
+        return f"ParallelBTDataset(src={self.src}, tgt={self.tgt}, length={len(self.index_dataset)})"
