@@ -5,7 +5,7 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, cast
+from typing import List, Optional, Tuple, cast
 
 import datasets as hf_datasets
 import numpy as np
@@ -101,11 +101,11 @@ class IndexedParallelFingerprints:
     align: str
 
     @classmethod
-    def make_fingerprints(cls, src_paths: List[str], tgt_paths: List[str], align_paths: List[str], version):
+    def make_fingerprints(cls, src_path: str, tgt_path: str, align_path: Optional[str], version):
         from datasets.fingerprint import Hasher
 
         # there is no randomness that goes into flattening so we don't need seed here
-        prefix = [src_paths, tgt_paths, align_paths, version]
+        prefix = [src_path, tgt_path, align_path, version]
         align_hash = Hasher.hash(prefix + ["flat_align"])
         src_hash = Hasher.hash(prefix + ["flat_src"])
         tgt_hash = Hasher.hash(prefix + ["flat_tgt"])
@@ -123,12 +123,11 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         dictionary: Dictionary,
         encoder: Encoder,
         fingerprints: IndexedParallelFingerprints,
-        append_source_id=None,
-        append_target_id=None,
+        append_source_id: int,
+        append_target_id: int,
+        max_seq_len: int,
         seed: int = 1,
-        max_seq_len=None,
-        max_merges=10,
-        paths=None,
+        max_merges: int = 10,
     ):
         super().__init__(None, 0, dictionary)
         self.flat_align = flat_align
@@ -139,9 +138,6 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         self.index_dataset = None  # gets set beginning of each bepoch
         self.dictionary = dictionary
         self.seed = seed
-        self.paths = paths
-        # ConcatDataset expects a numpy array or list
-        # self.sizes = np.array(self.index_dataset[KEYS.LENGTH])
         self.append_source_id = append_source_id
         self.append_target_id = append_target_id
         self.encoder = encoder
@@ -157,7 +153,6 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         self._interleave_epoch_index = None
         self.src_sizes = self.sizes
         self.tgt_sizes = None
-        self._dataset_ntokens = None
         self._sorted_indices = None
         self._sorted_lengths = None
         self._bpe = None
@@ -169,12 +164,6 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
 
     def size(self, index):
         return self.index_dataset[int(index)][KEYS.LENGTH]
-
-    @property
-    def dataset_ntokens(self):
-        if self._dataset_ntokens is None:
-            self._dataset_ntokens = sum(self.document_dataset[f"{KEYS.DOCUMENT_WEIGHT}.{KEYS.LANG1}"])
-        return self._dataset_ntokens
 
     def __getitem__(self, index):
         item = self.index_dataset[int(index)]
@@ -213,7 +202,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
     def cache_to_disk(self):
         if self.fingerprints is None:
             raise ValueError("Cannot save without fingerprints")
-        cache_dir = hf_datasets.config.HF_DATASETS_CACHE
+        cache_dir = hf_datasets.config.HF_DATASETS_CACHE  # type: ignore
         self.flat_src.save_to_disk(f"{cache_dir}/{self.fingerprints.source}")
         self.flat_tgt.save_to_disk(f"{cache_dir}/{self.fingerprints.target}")
         self.flat_align.save_to_disk(f"{cache_dir}/{self.fingerprints.align}")
@@ -221,25 +210,28 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
     @classmethod
     def load_from_cache(
         cls,
-        src_paths: List[str],
-        tgt_paths: List[str],
+        src_path: str,
+        tgt_path: str,
         dictionary: Dictionary,
         encoder: Encoder,
-        max_seq_len: int = None,
-        append_source_id: int = None,
-        append_target_id: int = None,
-        max_merges: Optional[int] = 10,
-        align_paths: Optional[str] = None,
+        max_seq_len: int,
+        append_source_id: int,
+        append_target_id: int,
+        max_merges: int = 10,
+        align_path: Optional[str] = None,
         seed: int = 1,
     ) -> Optional["IndexedParallelDocumentsDataset"]:
-        cache_dir = hf_datasets.config.HF_DATASETS_CACHE
+        cache_dir = hf_datasets.config.HF_DATASETS_CACHE  # type: ignore
 
-        fp = IndexedParallelFingerprints.make_fingerprints(src_paths, tgt_paths, align_paths, cls.version)
+        fp = IndexedParallelFingerprints.make_fingerprints(src_path, tgt_path, align_path, cls.version)
         if not all(Path(f"{cache_dir}/{val}").exists() for val in [fp.source, fp.target, fp.align]):
             return None
         flat_src = hf_datasets.load_from_disk(f"{cache_dir}/{fp.source}")
         flat_tgt = hf_datasets.load_from_disk(f"{cache_dir}/{fp.target}")
         flat_align = hf_datasets.load_from_disk(f"{cache_dir}/{fp.align}")
+        assert isinstance(flat_src, hf_datasets.arrow_dataset.Dataset)
+        assert isinstance(flat_tgt, hf_datasets.arrow_dataset.Dataset)
+        assert isinstance(flat_align, hf_datasets.arrow_dataset.Dataset)
 
         return cls(
             flat_align,
@@ -253,64 +245,63 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             max_seq_len=max_seq_len,
             max_merges=max_merges,
             fingerprints=fp,
-            paths=[src_paths, tgt_paths],
         )
 
     @classmethod
-    def from_parallel_jsonl_many(
+    def from_parallel_jsonl(
         cls,
-        src_paths: str,
-        tgt_paths: str,
+        src_path: str,
+        tgt_path: str,
         bpe_encoder,
         dictionary: Dictionary,
         encoder: Encoder,
-        max_seq_len: int = None,
-        append_source_id: int = None,
-        append_target_id: int = None,
+        max_seq_len: int,
+        append_source_id: int,
+        append_target_id: int,
         max_merges: int = 10,
         load_from_cache_file: bool = True,
         num_proc: int = 8,
-        align_paths: Optional[str] = None,
+        align_path: Optional[str] = None,
         seed: int = 1,
     ):
         if load_from_cache_file:
             cached_dataset = cls.load_from_cache(
-                src_paths,
-                tgt_paths,
+                src_path,
+                tgt_path,
                 dictionary,
-                encoder,
+                encoder=encoder,
                 max_seq_len=max_seq_len,
                 append_source_id=append_source_id,
                 append_target_id=append_target_id,
                 max_merges=max_merges,
-                align_paths=align_paths,
+                align_path=align_path,
                 seed=seed,
             )
             if cached_dataset is not None:
-                logger.info(f"Found matching cached dataset for {src_paths} and {tgt_paths}")
+                logger.info(f"Found matching cached dataset for {src_path} and {tgt_path}")
                 return cached_dataset
 
         features = hf_datasets.Features(_DOCUMENT_JSONL_FEATURE_DICT)
-        logger.info(f"Loading src_dataset: {src_paths}")
-        src_dataset = hf_datasets.Dataset.from_json(src_paths, split="train", chunksize=40 << 20, features=features)
-        logger.info(f"Loading tgt_dataset: {tgt_paths}")
-        tgt_dataset = hf_datasets.Dataset.from_json(tgt_paths, split="train", chunksize=40 << 20, features=features)
+        logger.info(f"Loading src_dataset: {src_path}")
+        src_dataset = hf_datasets.Dataset.from_json(src_path, split="train", chunksize=40 << 20, features=features)  # type: ignore
+        logger.info(f"Loading tgt_dataset: {tgt_path}")
+        tgt_dataset = hf_datasets.Dataset.from_json(tgt_path, split="train", chunksize=40 << 20, features=features)  # type: ignore
         assert isinstance(src_dataset, hf_datasets.Dataset), f"src_dataset is {type(src_dataset)}"
         assert isinstance(tgt_dataset, hf_datasets.Dataset), f"tgt_dataset is {type(tgt_dataset)}"
 
         src_lang = src_dataset[0][KEYS.LANG]
         tgt_lang = tgt_dataset[0][KEYS.LANG]
 
-        if not any("valid" in p for p in src_paths):
+        if not any("valid" in p for p in src_path):
             pass
 
         flip_alignment = False
         align_dataset = None
-        if align_paths is not None:
-            logger.info(f"Loading alignments: {align_paths}")
+        if align_path is not None:
+            logger.info(f"Loading alignments: {align_path}")
             align_dataset = hf_datasets.Dataset.from_json(
-                align_paths,
-                split="train",
+                align_path,
+                split="train",  # type: ignore
                 chunksize=40 << 20,
                 features=hf_datasets.Features(_ALIGNMENTS_JSONL_FEATURE_DICT),
             )
@@ -318,7 +309,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             assert set(align_dataset[0][KEYS.LANGS]) == set([src_lang, tgt_lang])
             if align_dataset[0][KEYS.LANGS] != [src_lang, tgt_lang]:
                 flip_alignment = True
-                logger.info(f"Flipping alignments: {align_paths}")
+                logger.info(f"Flipping alignments: {align_path}")
         else:
             align_dataset = make_align_dataset_default_alignments(src_dataset, tgt_dataset)
 
@@ -349,7 +340,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
 
         flat_src = flat_src.remove_columns([i for i in flat_src.column_names if i != KEYS.SEGMENT])
         flat_tgt = flat_tgt.remove_columns([i for i in flat_tgt.column_names if i != KEYS.SEGMENT])
-        fingerprints = IndexedParallelFingerprints.make_fingerprints(src_paths, tgt_paths, align_paths, cls.version)
+        fingerprints = IndexedParallelFingerprints.make_fingerprints(src_path, tgt_path, align_path, cls.version)
 
         obj = cls(
             flat_align,
@@ -363,23 +354,21 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             max_seq_len=max_seq_len,
             max_merges=max_merges,
             fingerprints=fingerprints,
-            paths=[src_paths, tgt_paths],
         )
 
         # we do this so that HuggingFace's InMemoryTable/ ConcatenationTable is memorymapped,
         #    that is, it becomes a MemoryMappedTable
         obj.cache_to_disk()
         memorymapped_obj = cls.load_from_cache(
-            src_paths,
-            tgt_paths,
-            bpe_encoder,
+            src_path,
+            tgt_path,
             dictionary,
-            encoder,
+            encoder=encoder,
             max_seq_len=max_seq_len,
             append_source_id=append_source_id,
             append_target_id=append_target_id,
             max_merges=max_merges,
-            align_paths=align_paths,
+            align_path=align_path,
             seed=seed,
         )
         assert memorymapped_obj is not None
@@ -526,7 +515,7 @@ def make_align_dataset_from_monolingual_document_dataset(
         load_from_cache_file=load_from_cache_file,
         num_proc=num_proc,
     )
-    dataset = dataset.add_column(KEYS.LANGS, len(dataset) * [langs])
+    dataset = dataset.add_column(KEYS.LANGS, len(dataset) * [langs])  # type: ignore
     return dataset
 
 
@@ -567,7 +556,7 @@ def make_align_dataset_default_alignments(
         num_proc=num_proc,
     )
     langs = [src_dataset[0][KEYS.LANG], tgt_dataset[0][KEYS.LANG]]
-    dataset = dataset.add_column(KEYS.LANGS, len(dataset) * [langs])
+    dataset = dataset.add_column(KEYS.LANGS, len(dataset) * [langs])  # type: ignore
     return dataset
 
 
@@ -647,7 +636,7 @@ def get_mono_document_sentence_lengths_dataset(
     load_from_cache_file=True,
     num_proc: int = 4,
 ):
-    def _mono_document_to_sentence_lengths2(example, bpe_encoder=None, dictionary: Dictionary = None):
+    def _mono_document_to_sentence_lengths2(example, bpe_encoder, dictionary: Dictionary):
         sent_lens_per_pg = [
             [
                 np.array(
@@ -679,7 +668,7 @@ def get_mono_document_sentence_lengths_dataset(
         num_proc=num_proc,
     )
     # this fixes internal pyarrow block length mismatch which occurs when concatting this table with offsets table
-    return hf_datasets.Dataset.from_pandas(dataset.to_pandas()).with_format("numpy", KEYS.SENTENCE_WEIGHTS)
+    return hf_datasets.Dataset.from_pandas(dataset.to_pandas()).with_format("numpy", KEYS.SENTENCE_WEIGHTS)  # type: ignore
 
 
 def flatten_alignments(
@@ -763,19 +752,19 @@ def flatten_alignments(
 def merge_adjacent_sentences(
     flat_align: HFDataset,
     num_proc: int = 4,
-    max_seq_len=None,
-    max_merges=10,
-    passthrough_prob=0.1,
-    seed=1,
+    max_seq_len: int = 1024,
+    max_merges: int = 10,
+    passthrough_prob: float = 0.1,
+    seed: Tuple[int, ...] = (1,),
 ):
     def _inner(
         ex_batched,
         abs_align_indices,
         *,
-        max_seq_len=1024,
-        max_merges=10,
-        passthrough_prob=0.1,
-        seed,
+        max_seq_len: int,
+        max_merges: int,
+        passthrough_prob: float,
+        seed: Tuple[int, ...],
     ):
         keys = [
             KEYS.DOCUMENT_INDEX,

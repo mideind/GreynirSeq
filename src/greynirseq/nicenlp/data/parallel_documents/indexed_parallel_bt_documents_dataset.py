@@ -3,7 +3,7 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
-from typing import List
+from typing import List, Optional
 
 import datasets as hf_datasets
 import numpy as np
@@ -28,14 +28,14 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         bt_datasets: List[IndexedParallelDocumentsDataset],
         dictionary: Dictionary,
         encoder: Encoder,
-        append_source_id=None,
-        append_target_id=None,
+        append_source_id: Optional[int] = None,
+        append_target_id: Optional[int] = None,
         parallel_prob: float = 1.0,
         seed: int = 1,
-        max_seq_len=None,
+        max_seq_len: int = 1024,
         num_proc: int = 4,
-        max_merges=10,
-        passthrough_prob=0.1,
+        max_merges: int = 10,
+        passthrough_prob: float = 0.1,
     ):
         super().__init__(None, 0, dictionary)
         self.dictionary = dictionary
@@ -55,21 +55,11 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             [d.flat_src for d in all_datasets],
             axis=0,
         )
-        # logger.info(f"Loaded {len(self.flat_src)} source segments")
-        # self.flat_src.to_parquet("/data/scratch/haukur/document_translation/parquet/flat_src.parquet")
-        # self.flat_src = hf_datasets.Dataset.from_parquet(
-        #     "/data/scratch/haukur/document_translation/parquet/flat_src.parquet"
-        # )
 
         self.flat_tgt: hf_datasets.Dataset = hf_datasets.concatenate_datasets(
             [d.flat_tgt for d in all_datasets],
             axis=0,
         )
-        # logger.info(f"Loaded {len(self.flat_tgt)} target segments")
-        # self.flat_tgt.to_parquet("/data/scratch/haukur/document_translation/parquet/flat_tgt.parquet")
-        # self.flat_tgt = hf_datasets.Dataset.from_parquet(
-        #     "/data/scratch/haukur/document_translation/parquet/flat_tgt.parquet"
-        # )
 
         self.bt_src_start = (
             np.cumsum([len(dset.flat_src) for dset in parallel_datasets])[-1] if parallel_datasets else 0
@@ -94,19 +84,19 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         # The reason we keep them separated is that they are super/sub-sampled during the interleave
         # which is discarded after each epoch (with a new seed)
         self.flat_align_parallel = (
-            hf_datasets.concatenate_datasets([d.flat_align for d in parallel_datasets], axis=0)
+            hf_datasets.concatenate_datasets([d.flat_align for d in parallel_datasets], axis=0)  # type: ignore
             .add_column(KEYS.SOURCE_OFFSETS, column=p_all_offsets[:, 0])
             .add_column(KEYS.TARGET_OFFSETS, column=p_all_offsets[:, 1])
         )
         self.flat_align_bt = (
-            hf_datasets.concatenate_datasets([d.flat_align for d in bt_datasets], axis=0)
+            hf_datasets.concatenate_datasets([d.flat_align for d in bt_datasets], axis=0)  # type: ignore
             .add_column(KEYS.SOURCE_OFFSETS, column=b_all_offsets[:, 0])
             .add_column(KEYS.TARGET_OFFSETS, column=b_all_offsets[:, 1])
         )
 
         # this gets set after set_epoch or interleave_indices is called
         self.index_dataset = None
-        self.epoch = None
+        self.epoch = 0
         self._interleave_seed = None
         # definitions for langpairdataset functionality
         # ConcatDataset expects a numpy array or list
@@ -200,7 +190,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
                 passthrough_prob=self.passthrough_prob,
                 max_seq_len=self.max_seq_len,
                 max_merges=self.max_merges,
-                seed=self.seed,
+                seed=(self.seed, self.epoch),
             )
         if self.flat_align_bt is not None:
             logger.info(f"Merging adjacent bt using {self.num_proc} workers")
@@ -210,7 +200,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
                 passthrough_prob=self.passthrough_prob,
                 max_seq_len=self.max_seq_len,
                 max_merges=self.max_merges,
-                seed=self.seed,
+                seed=(self.seed, self.epoch),
             )
         if parallel_merged is not None and bt_merged is not None:
             logger.info("Interleaving parallel and bt")
@@ -222,6 +212,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
 
         else:
             self.index_dataset = parallel_merged or bt_merged
+        assert self.index_dataset is not None
 
         self._interleave_seed = self.epoch
         logger.info("Sorting index dataset on lengths")

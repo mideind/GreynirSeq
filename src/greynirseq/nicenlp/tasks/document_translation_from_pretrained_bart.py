@@ -80,6 +80,7 @@ class DocumentTranslationFromPretrainedBARTConfig(TranslationFromPretrainedBARTC
     spm_model: str = II("bpe.sentencepiece_model")
     valid_subset: str = II("dataset.valid_subset")
     seed: int = II("common.seed")
+    max_sentences: int = II("dataset.batch_size")
 
 
 @register_task("document_translation_from_pretrained_bart", dataclass=DocumentTranslationFromPretrainedBARTConfig)
@@ -105,7 +106,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         logger.info(f"Split name {split}")
         self.cfg = cast(DocumentTranslationFromPretrainedBARTConfig, self.cfg)
         # this is for sharding
-        paths = utils.split_paths(self.cfg.data)
+        paths = utils.split_paths(self.cfg.data)  # type: ignore
         assert len(paths) > 0
         data_dir_path = paths[(epoch - 1) % len(paths)]
 
@@ -147,7 +148,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             bpe=bpe,
             noisy_bpe=noisy_bpe,
             allowed_dictionary_min=self.src_dict.nspecial,
-            allowed_dictionary_max=len(self.src_dict) - 1 - len(self.langs),
+            allowed_dictionary_max=len(self.src_dict) - 1 - len(self.langs),  # type: ignore
             fragment_noise_prob=self.cfg.fragment_noise_prob,
             global_skip_noise_prob=self.cfg.global_skip_noise_prob,
             word_noise_config=self.cfg.word_noise_config,
@@ -167,27 +168,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         def create_path(name: str, lang: str, align=False) -> str:
             return f"{data_dir_path}/{name}.{direction}.{lang if not align else 'align'}.jsonl"
 
-        if split in self.cfg.valid_subset:
-            src_paths = [f"{data_dir_path}/{name}.{direction}.{src}.jsonl" for name in parallel_dataset_names]
-            tgt_paths = [f"{data_dir_path}/{name}.{direction}.{tgt}.jsonl" for name in parallel_dataset_names]
-            parallel_dataset = IndexedParallelDocumentsDataset.from_parallel_jsonl_many(
-                src_paths,
-                tgt_paths,
-                bpe,
-                self.src_dict,
-                encoder=my_enc,
-                max_seq_len=max_seq_len,
-                max_merges=self.cfg.max_merges,
-                append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),  # 250_004 for english
-                append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),  # 250_012 for icelandic
-                num_proc=self.cfg.num_preprocess_workers,
-                seed=self.cfg.seed,
-            )
-            self.datasets[split] = parallel_dataset
-            return parallel_dataset
-
-        bt_datasets = []
-        parallel_datasets = []
+        split_datasets = []
         for dataset_name in split_dataset_names:
             if dataset_name == "":
                 continue
@@ -197,7 +178,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             if dataset_name in align_dataset_names:
                 alignment_path = create_path(lang="none", name=dataset_name, align=True)
 
-            dataset = IndexedParallelDocumentsDataset.from_parallel_jsonl_many(
+            dataset = IndexedParallelDocumentsDataset.from_parallel_jsonl(
                 src_path,
                 tgt_path,
                 bpe,
@@ -207,35 +188,39 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 max_merges=self.cfg.max_merges,
                 append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),  # 250_004 for english
                 append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),  # 250_012 for icelandic
-                align_paths=alignment_path,
+                align_path=alignment_path,
                 num_proc=self.cfg.num_preprocess_workers,
                 seed=self.cfg.seed,
             )
-            if dataset_name in bt_dataset_names:
-                bt_datasets.append(dataset)
-            else:
-                parallel_datasets.append(dataset)
+            split_datasets.append(dataset)
 
-        # we already handled this
-        valid_dataset_names = self.cfg.valid_subset
-        if split in valid_dataset_names:
-            assert False
+        if len(split_datasets) != 1:
+            parallel_datasets = [
+                split_datasets[i]
+                for i in range(len(split_datasets))
+                if split_dataset_names[i] in parallel_dataset_names
+            ]
+            bt_datasets = [
+                split_datasets[i] for i in range(len(split_datasets)) if split_dataset_names[i] in bt_dataset_names
+            ]
 
-        dataset = IndexedParallelBTDocumentsDataset(
-            parallel_datasets,
-            bt_datasets,
-            self.src_dict,
-            encoder=my_enc,
-            append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),
-            append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),
-            parallel_prob=self.cfg.parallel_prob,
-            seed=self.cfg.seed,
-            max_seq_len=max_seq_len,
-            max_merges=self.cfg.max_merges,
-            num_proc=self.cfg.num_preprocess_workers,
-        )
-        # often a trainer will check to see if dataset is empty before training/validation
-        dataset.set_epoch(1)
+            dataset = IndexedParallelBTDocumentsDataset(
+                parallel_datasets,
+                bt_datasets,
+                self.src_dict,
+                encoder=my_enc,
+                append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),
+                append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),
+                parallel_prob=self.cfg.parallel_prob,
+                seed=self.cfg.seed,
+                max_seq_len=max_seq_len,
+                max_merges=self.cfg.max_merges,
+                num_proc=self.cfg.num_preprocess_workers,
+            )
+            # often a trainer will check to see if dataset is empty before training/validation
+            dataset.set_epoch(1)
+        else:
+            dataset = split_datasets[0]
 
         logger.info("Dataset loading done.")
         self.datasets[split] = dataset
@@ -295,7 +280,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         # get indices ordered by example size
         with data_utils.numpy_seed(seed):
             indices = dataset.ordered_indices()
-        lengths = dataset.ordered_sizes()
+        lengths = dataset.ordered_sizes()  # type: ignore
 
         logger.info(f"Batching by size... with max_tokens={max_tokens} and max_sentences={max_sentences}")
         with data_utils.numpy_seed(seed, epoch):
