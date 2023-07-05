@@ -35,7 +35,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         max_seq_len: int = 1024,
         num_proc: int = 4,
         max_merges: int = 10,
-        passthrough_prob: float = 0.1,
+        no_merge_prob: float = 0.1,
     ):
         super().__init__(None, 0, dictionary)
         self.dictionary = dictionary
@@ -45,7 +45,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         self.seed = seed
         self.max_seq_len = max_seq_len
         self.max_merges = max_merges
-        self.passthrough_prob = passthrough_prob
+        self.no_merge_prob = no_merge_prob
         self.num_proc = num_proc
 
         assert parallel_datasets or bt_datasets
@@ -72,17 +72,30 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         doc_src_offsets = lengths_to_offsets([len(d.flat_src) for d in all_datasets])
         doc_tgt_offsets = lengths_to_offsets([len(d.flat_tgt) for d in all_datasets])
 
+        # create the offsets for the combined dataset by concatenating the offsets of the datasets and repeating them
+        # creates a list of (n_i, 2) arrays where n_i is the number of alignments/pairs in the i-th dataset
         all_offsets = [
-            np.tile([src, tgt], len(dset.flat_align)).reshape(-1, 2)
-            for (dset, src, tgt) in zip(all_datasets, doc_src_offsets, doc_tgt_offsets)
+            np.tile([src_offset, tgt_offset], len(dset.flat_align)).reshape(-1, 2)
+            for (dset, src_offset, tgt_offset) in zip(all_datasets, doc_src_offsets, doc_tgt_offsets)
         ]
         parallel_offsets, bt_offsets = all_offsets[:nparallel], all_offsets[nparallel:]
         empty_array = np.array([], dtype=np.int64).reshape(0, 2)
+        # split the offsets into parallel and backtranslation
+        # The reason we keep them separated is that they are super/sub-sampled during the interleave
+        # which is discarded after each epoch (with a new seed)
         p_all_offsets = np.concatenate(parallel_offsets) if parallel_offsets else empty_array
         b_all_offsets = np.concatenate(bt_offsets) if bt_offsets else empty_array
 
-        # The reason we keep them separated is that they are super/sub-sampled during the interleave
-        # which is discarded after each epoch (with a new seed)
+        # keep in mind that the flat_align dataset has the following columns:
+        # - document_index: int, the index of the document in the original dataset
+        # - paragraph_index: int, the index of the paragraph in the document
+        # - weight: int, the max of src and tgt number of BPEs in the segment pair
+        # - source_indices: list of ints, the indices of the source segments in the pair
+        # - target_indices: list of ints, the indices of the target segments in the pair
+        # - skip: bool, whether to skip this pair
+        # we then add two columns for the offsets of the source and target segments
+        # those values are "global" offsets, i.e. they are the offsets in the concatenated dataset
+        # so that we can index into the concatenated flat_src and flat_tgt datasets with the source_indices + source_offsets
         self.flat_align_parallel = (
             hf_datasets.concatenate_datasets([d.flat_align for d in parallel_datasets], axis=0)  # type: ignore
             .add_column(KEYS.SOURCE_OFFSETS, column=p_all_offsets[:, 0])
@@ -187,7 +200,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             parallel_merged = merge_adjacent_sentences(
                 self.flat_align_parallel,
                 num_proc=self.num_proc,
-                passthrough_prob=self.passthrough_prob,
+                no_merge_prob=self.no_merge_prob,
                 max_seq_len=self.max_seq_len,
                 max_merges=self.max_merges,
                 seed=(self.seed, self.epoch),
@@ -197,7 +210,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             bt_merged = merge_adjacent_sentences(
                 self.flat_align_bt,
                 num_proc=self.num_proc,
-                passthrough_prob=self.passthrough_prob,
+                no_merge_prob=self.no_merge_prob,
                 max_seq_len=self.max_seq_len,
                 max_merges=self.max_merges,
                 seed=(self.seed, self.epoch),
@@ -243,4 +256,4 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         return False
 
     def __str__(self) -> str:
-        return f"ParallelBTDataset(src={self.src}, tgt={self.tgt}, length={len(self.index_dataset)})"
+        return f"ParallelBTDataset(num_parallel_alignment_pairs={len(self.flat_align_parallel)}, num_bt_alignment_pairs={len(self.flat_align_bt)}, num_training_pairs={len(self.index_dataset)})"

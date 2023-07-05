@@ -5,7 +5,7 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple, cast
+from typing import Dict, List, Optional, Tuple, cast
 
 import datasets as hf_datasets
 import numpy as np
@@ -32,6 +32,13 @@ _DOCUMENT_JSONL_FEATURE_DICT = {
     "uuid": Value(dtype="string", id=None),
 }
 
+# Types for alignment data
+SegmentAlignment = Tuple[int, int]  # pg_idx, sent_idx
+SrcAlignment = List[SegmentAlignment]
+TgtAlignment = List[SegmentAlignment]
+PairAlignment = Tuple[SrcAlignment, TgtAlignment]
+DocumentAlignment = List[PairAlignment]
+# An alignment json object
 _ALIGNMENTS_JSONL_FEATURE_DICT = {
     "langs": Sequence(feature=Value(dtype="string", id=None), length=-1, id=None),
     "alignments": Sequence(
@@ -59,7 +66,8 @@ TMP_DICT = {
 }
 
 
-def lengths_to_offsets(lengths):
+def lengths_to_offsets(lengths: np.ndarray) -> np.ndarray:
+    """Convert a 1D array of lengths to offsets."""
     return np.cumsum(lengths) - lengths
 
 
@@ -322,6 +330,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             load_from_cache_file=load_from_cache_file,
             num_proc=num_proc,
             flip_alignment=flip_alignment,
+            max_sequence_length=max_seq_len,
         )
         flat_src = flatten_document_dataset(
             src_dataset,
@@ -407,7 +416,9 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             self._sizes = self._sorted_lengths
 
     def __str__(self) -> str:
-        return f"ParallelDataset(src={self.src}, tgt={self.tgt}, length={len(self.index_dataset)})"
+        return (
+            f"ParallelDataset(num_alignment_pairs={len(self.flat_align)}, num_training_pairs={len(self.index_dataset)})"
+        )
 
 
 def compute_doc_offsets(
@@ -416,7 +427,12 @@ def compute_doc_offsets(
     num_proc: int = 4,
     fingerprint: Optional[str] = None,
 ):
+    """Compute the segment offsets of each document in the dataset, over the whole dataset.
+    This returns a dataset with a single column, NUM_SEGMENTS, which is a list of integers, one integer per document
+    and it is the number of segments in previous documents."""
+
     def _get_num_segments(batched_docs):
+        """Compute the number of segments in each document"""
         return {KEYS.NUM_SEGMENTS: [sum(len(pg) for pg in doc) for doc in batched_docs]}
 
     dataset = dataset.map(
@@ -430,9 +446,11 @@ def compute_doc_offsets(
     )
     dataset.set_format(type="numpy", columns=[KEYS.NUM_SEGMENTS], output_all_columns=False)
 
+    # compute offsets, i.e. the start index of each in terms of segment indieces
+    # this is "just" the cumulative sum of the number of segments over the dataset
     dataset = hf_datasets.Dataset(
         pa.Table.from_arrays(
-            [lengths_to_offsets(dataset[KEYS.NUM_SEGMENTS])],
+            [lengths_to_offsets(dataset[KEYS.NUM_SEGMENTS])],  # type: ignore
             names=[KEYS.NUM_SEGMENTS],
         ),
         fingerprint=str(fingerprint) + f".{KEYS.DOCUMENT_SEGMENT_OFFSETS}",
@@ -522,7 +540,9 @@ def make_align_dataset_default_alignments(
     *,
     load_from_cache_file=True,
     num_proc: int = 4,
-):
+) -> HFDataset:
+    """Creates an alignment dataset which assumes 1-1 alignment between source and target sentences."""
+
     def _inner(example, doc_idx):
         idxs = []
         for pg_idx, (src_pg, tgt_pg) in enumerate(zip(example[KEYS.DOCUMENT], example[KEYS.DOCUMENT + ".tgt"])):
@@ -566,9 +586,28 @@ def compute_offsets_and_flatten_alignments(
     load_from_cache_file=True,
     num_proc: int = 4,
     flip_alignment: bool = False,
+    max_sequence_length: int = 1024,
 ):
+    """Flattens the alignments so that each element of the dataset refers to a translation pair.
+    Additionally computes "weights" (number of BPEs) of src and tgt and "skip", i.e. whether a pair should be skipped.
+
+    Returns a Dataset with the following columns:
+    - document_index: int, the index of the document in the original dataset
+    - paragraph_index: int, the index of the paragraph in the document
+    - weight: int, the max of src and tgt number of BPEs in the segment pair
+    - source_indices: list of ints, the indices of the source segments in the pair
+    - target_indices: list of ints, the indices of the target segments in the pair
+    - skip: bool, whether to skip this pair
+    """
     num_proc = 1 if len(src_dataset) < 11_000 else num_proc
     logger.info("Computing sentence lengths of src documents")
+    # src_num_bpes has a single column: sentence_weights and a single example (document) is a
+    # list of lists of segment lengths:
+    # [
+    #   [56, 31, 622, 1239, 4983], # first paragraph has 5 segments of these lengths
+    #   [954, 33, 3, 4, 5, 6, 7],
+    #   ...
+    # ]
     src_num_bpes = get_mono_document_sentence_lengths_dataset(
         src_dataset,
         bpe_encoder,
@@ -586,6 +625,10 @@ def compute_offsets_and_flatten_alignments(
     ).rename_column(KEYS.SENTENCE_WEIGHTS, KEYS.TARGET_WEIGHTS, new_fingerprint=None)
 
     logger.info("Computing offsets")
+    # the offset is a single column which is a list of integers, which is the cumulative sum of the
+    # number of segments in each document, over all the documents.
+    # For example, if the first document has 5 segments and the second document has 7 segments, then
+    # the offset will start with: [0, 5, 12, ...]
     src_doc_offsets = compute_doc_offsets(
         src_dataset,
         num_proc=num_proc,
@@ -600,6 +643,16 @@ def compute_offsets_and_flatten_alignments(
     ).rename_column(KEYS.NUM_SEGMENTS, KEYS.TARGET_OFFSETS, new_fingerprint="tgt")
 
     logger.info("Flattening alignments")
+    # align_w_info is a dataset with the following columns:
+    # - alignments as per the original alignment dataset
+    # - langs as per the original alignment dataset
+    # - uuid as per the original alignment dataset
+    # - src_doc: the source document
+    # - tgt_doc: the target document
+    # - src_offsets: the cumulative sum of the number of segments in each document, over all the documents.
+    # - tgt_offsets: the cumulative sum of the number of segments in each document, over all the documents.
+    # - src_weights: the number of BPEs in each segment of the source document
+    # - tgt_weights: the number of BPEs in each segment of the target document
     align_w_info = hf_datasets.concatenate_datasets(
         [
             align_dataset,
@@ -622,6 +675,7 @@ def compute_offsets_and_flatten_alignments(
         load_from_cache_file=load_from_cache_file,
         num_proc=num_proc,
         flip_alignment=flip_alignment,
+        max_sequence_length=max_sequence_length,
     )
     return flat
 
@@ -633,6 +687,9 @@ def get_mono_document_sentence_lengths_dataset(
     load_from_cache_file=True,
     num_proc: int = 4,
 ):
+    """Computes the number of BPEs in each sentence, for each paragraph for each document in the dataset.
+    Returns a Dataset with a single column which is a list of lists of ints, where the ints are the number of BPEs."""
+
     def _mono_document_to_sentence_lengths2(example, bpe_encoder, dictionary: Dictionary):
         sent_lens_per_pg = [
             [
@@ -674,8 +731,33 @@ def flatten_alignments(
     load_from_cache_file=True,
     num_proc: int = 4,
     flip_alignment: bool = False,
+    max_sequence_length: int = 1024,
 ):
-    def _inner(ex_batched, indices, *, flip_alignment):
+    """Flattens the alignments in the dataset, so that each row is a single alignment pair.
+    Returns a Dataset with the following columns:
+    - document_index: int, the index of the document in the original dataset
+    - paragraph_index: int, the index of the paragraph in the document
+    - weight: int, the max of src and tgt number of BPEs in the segment pair
+    - source_indices: list of ints, the indices of the source segments in the pair
+    - target_indices: list of ints, the indices of the target segments in the pair
+    - skip: bool, whether to skip this pair
+    """
+
+    def pair_is_long(src_weight: int, tgt_weight: int, min_long_weight: int = 4) -> bool:
+        return src_weight > min_long_weight and tgt_weight > min_long_weight
+
+    def pair_is_not_within_relative_bounds(src_weight: int, tgt_weight: int, max_relative_diff: float = 1.4) -> bool:
+        return (src_weight * max_relative_diff < tgt_weight) or (tgt_weight * max_relative_diff < src_weight)
+
+    def _inner(
+        ex_batched,
+        indices: List[int],
+        *,
+        flip_alignment: bool = False,
+        min_long_weight: int = 4,
+        max_relative_diff: float = 1.4,
+        max_sequence_length: int = 1024,
+    ):
         # this should be applied with batched=True and with_indices=True
         ex_out = {
             KEYS.DOCUMENT_INDEX: [],
@@ -686,39 +768,54 @@ def flatten_alignments(
             KEYS.SKIP: [],
         }
         for rel_doc_idx, (abs_idx, doc_alignments) in enumerate(zip(indices, ex_batched[KEYS.ALIGNMENTS])):
+            doc_alignments = cast(DocumentAlignment, doc_alignments)
             # semantics of each index:
             # doc_alignments[pair_idx][source or target][segments in pair][pg_idx or seg_idx]
+            # src_doc_offset and tgt_doc_offset are the segment offsets over the whole dataset
+            # i.e. the number of segments in all the documents before this one
             src_doc_offset = ex_batched[KEYS.SOURCE_OFFSETS][rel_doc_idx]
+            assert isinstance(src_doc_offset, int)
             tgt_doc_offset = ex_batched[KEYS.TARGET_OFFSETS][rel_doc_idx]
-            src_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx]])
-            tgt_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx]])
-            skip_arr = np.repeat(False, len(doc_alignments))
-            weight_arr = np.repeat(0, len(doc_alignments))
-            ex_out[KEYS.DOCUMENT_INDEX].extend(len(doc_alignments) * [indices[rel_doc_idx]])
+            assert isinstance(tgt_doc_offset, int)
+            # scr_pg_offsets and tgt_pg_offsets are the segment offsets for each paragraph in the document
+            # i.e. the number of segments in all the paragraphs of this document, starting from this document
+            # example: given a document with 3 paragraphs, with 2, 3, and 1 segments respectively, the offsets are
+            # [0, 2, 5]
+            src_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx]])  # type: ignore
+            tgt_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx]])  # type: ignore
+
+            skip_pairs = np.repeat(False, len(doc_alignments))
+            pair_weights = np.repeat(0, len(doc_alignments))
+            ex_out[KEYS.DOCUMENT_INDEX].extend(len(doc_alignments) * [abs_idx])
             for rel_pair_idx, (src_parts, tgt_parts) in enumerate(doc_alignments):
                 if flip_alignment:
                     src_parts, tgt_parts = tgt_parts, src_parts
                 src_pg_indices, rel_src_seg_indices = zip(*src_parts)
                 tgt_pg_indices, rel_tgt_seg_indices = zip(*tgt_parts)
                 pg_idx = src_pg_indices[0]
-                assert all(pg_idx == idx for idx in src_pg_indices) and all(pg_idx == idx for idx in tgt_pg_indices)
+                assert all(pg_idx == idx for idx in src_pg_indices) and all(
+                    pg_idx == idx for idx in tgt_pg_indices
+                ), "all segments in a pair must be from the same paragraph"
+                # the total "weight" (number of BPE fragments) of the source and target segments
                 src_weight = sum(
                     ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx][pg_idx][seg_idx] for seg_idx in rel_src_seg_indices
                 )
                 tgt_weight = sum(
                     ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx][pg_idx][seg_idx] for seg_idx in rel_tgt_seg_indices
                 )
-                weight_arr[rel_pair_idx] = max(src_weight, tgt_weight)
+                pair_weights[rel_pair_idx] = max(src_weight, tgt_weight)
 
                 # TODO: make this a parameter instead of hardcoded
                 # skip if this sample has very unbalanced lengths
-                if (src_weight > 4 and tgt_weight > 4) and (
-                    (src_weight * 1.4 < tgt_weight) or (tgt_weight * 1.4 < src_weight)
-                ):
-                    skip_arr[rel_pair_idx] = True
+                if pair_is_long(
+                    src_weight, tgt_weight, min_long_weight=min_long_weight
+                ) and pair_is_not_within_relative_bounds(src_weight, tgt_weight, max_relative_diff=max_relative_diff):
+                    skip_pairs[rel_pair_idx] = True
                 # skip if any part is of length 0
                 elif min(src_weight, tgt_weight) == 0:
-                    skip_arr[rel_pair_idx] = min(src_weight, tgt_weight) == 0
+                    skip_pairs[rel_pair_idx] = min(src_weight, tgt_weight) == 0
+                elif max(src_weight, tgt_weight) >= max_sequence_length:
+                    skip_pairs[rel_pair_idx] = True
 
                 ex_out[KEYS.PARAGRAPH_INDEX].append(pg_idx)
                 ex_out[KEYS.SOURCE_INDICES].append(
@@ -728,8 +825,8 @@ def flatten_alignments(
                     [tgt_doc_offset + tgt_pg_offsets[pg_idx] + seg_offset for seg_offset in rel_tgt_seg_indices]
                 )
 
-            ex_out[KEYS.SKIP].extend(skip_arr.tolist())
-            ex_out[KEYS.WEIGHT].extend(weight_arr.tolist())
+            ex_out[KEYS.SKIP].extend(skip_pairs.tolist())
+            ex_out[KEYS.WEIGHT].extend(pair_weights.tolist())
         return ex_out
 
     dataset = align_dataset.map(
@@ -737,7 +834,7 @@ def flatten_alignments(
         batched=True,
         batch_size=250,
         with_indices=True,
-        fn_kwargs={"flip_alignment": flip_alignment},
+        fn_kwargs={"flip_alignment": flip_alignment, "max_sequence_length": max_sequence_length},
         remove_columns=align_dataset.column_names,
         load_from_cache_file=load_from_cache_file,
         num_proc=num_proc,
@@ -751,7 +848,7 @@ def merge_adjacent_sentences(
     num_proc: int = 4,
     max_seq_len: int = 1024,
     max_merges: int = 10,
-    passthrough_prob: float = 0.1,
+    no_merge_prob: float = 0.1,
     seed: Tuple[int, ...] = (1,),
 ):
     def _inner(
@@ -760,9 +857,10 @@ def merge_adjacent_sentences(
         *,
         max_seq_len: int,
         max_merges: int,
-        passthrough_prob: float,
+        no_merge_prob: float,
         seed: Tuple[int, ...],
-    ):
+    ) -> Dict[str, List]:
+        # The keys of the flat_align dataset - see the docstring of the compute_offsets_and_flatten_alignments function
         keys = [
             KEYS.DOCUMENT_INDEX,
             KEYS.PARAGRAPH_INDEX,
@@ -773,12 +871,29 @@ def merge_adjacent_sentences(
         ]
         doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip = [ex_batched[k] for k in keys]
 
+        # these keys are present only if we are dealing with a IndexedParallelBTDocumentsDataset
+        # where many flat_src and flat_tgt are concatenated together, this would skew the source/target_indices
+        # so we need to offset them by the document offsets
         if KEYS.SOURCE_OFFSETS in ex_batched:
             src_doc_offsets = ex_batched[KEYS.SOURCE_OFFSETS]
-            all_src_idxs = [[i + o for i in idxs] for (idxs, o) in zip(all_src_idxs, src_doc_offsets)]
+            all_src_idxs = [
+                [idx + document_offset for idx in idxs]
+                for (idxs, document_offset) in zip(all_src_idxs, src_doc_offsets)
+            ]
         if KEYS.TARGET_OFFSETS in ex_batched:
             tgt_doc_offsets = ex_batched[KEYS.TARGET_OFFSETS]
-            all_tgt_idxs = [[i + o for i in idxs] for (idxs, o) in zip(all_tgt_idxs, tgt_doc_offsets)]
+            all_tgt_idxs = [
+                [idx + document_offset for idx in idxs]
+                for (idxs, document_offset) in zip(all_tgt_idxs, tgt_doc_offsets)
+            ]
+        # cast for readability
+        all_src_idxs = cast(List[List[int]], all_src_idxs)
+        all_tgt_idxs = cast(List[List[int]], all_tgt_idxs)
+        doc_idxs = cast(List[int], doc_idxs)
+        pg_idxs = cast(List[int], pg_idxs)
+        weights = cast(List[int], weights)
+        skip = cast(List[bool], skip)
+        abs_align_indices = cast(List[int], abs_align_indices)
 
         ex_out = {
             KEYS.SOURCE_INDICES: [],
@@ -788,97 +903,86 @@ def merge_adjacent_sentences(
         }
         # set up reproducible rng state that depends implicitly on batch_size but is invariant to num_proc
         rng = np.random.default_rng((seed, abs_align_indices))
-        bin_lengths = np.array([50, 100, 150, 350, max_seq_len], dtype=np.int64)
+        # these are the sequence lengths of the bins we will use to merge sentences
+        maximum_lengths = np.array([50, 100, 150, 350, max_seq_len], dtype=np.int64)
 
         # fetch maximum number of rolls to minimize fn calls
-        roll_bins = np.clip(rng.poisson(_POISSON_MEAN, size=len(doc_idxs)), 0, len(bin_lengths) - 1)
-        passthrough = (
-            rng.random(len(doc_idxs)) > passthrough_prob
-            if passthrough_prob is not None
-            else np.repeat(True, len(doc_idxs))
-        )
+        bin_idxs = np.clip(rng.poisson(_POISSON_MEAN, size=len(doc_idxs)), 0, len(maximum_lengths) - 1)
+        # examples to pass through without merging
+        ok_to_merge = rng.random(len(doc_idxs)) > no_merge_prob
 
-        last_doc_idx, last_pg_idx = doc_idxs[0], pg_idxs[0]
-        accum_src, accum_tgt, accum_weight, accum_exact = (
-            all_src_idxs[0],
-            all_tgt_idxs[0],
-            weights[0],
-            True,
+        # Initial conditions
+        last_context_idxs: Optional[Tuple[int, int]] = None
+        accum_src, accum_tgt, accum_weight = (
+            [],
+            [],
+            0,
         )
-        num_outputs, nmerges_in_curr = 0, 1
+        num_outputs, curr_num_merges = 0, 0
         for _loop_idx, (
             doc_idx,
             pg_idx,
             weight,
             src_idxs,
             tgt_idxs,
-            skip_,
+            skip_example,
         ) in enumerate(zip(doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip)):
-            if _loop_idx < 1:
-                # skip first, it is already in accumulators
+            # This loop is a bit tricky to understand, here is a high level overview:
+            # We iterate over the examples in the batch, and for each example we roll a dice to decide whether to
+            # merge it with the next example or not. If we decide to merge, we check whether the accumulated weight
+            # is within the maximum sequence length, if it is, we merge the current example with the accumulator
+            # and continue. If it is not, we store the accumulator and reset it to the current example.
+            # An implicit assumption here is that the examples have not been shuffled,
+            # so that nearby examples "are in context"
+
+            # examples are skipped if they are structurally invalid: too long, too short (no fragments) or src and tgt
+            # have very different relative lengths
+            if skip_example:
                 continue
 
-            skip_ = skip_ or weight > max_seq_len
-            rolled_length = bin_lengths[roll_bins[num_outputs]]
-            is_boundary = (doc_idx != last_doc_idx) or (pg_idx != last_pg_idx) or (nmerges_in_curr == max_merges)
-            has_budget = accum_weight + weight <= rolled_length
-
-            # if passthrough succeeded store accumulator and reset,
-            # passthrough is only performed once at the beginning of each concatenation chain
-            if nmerges_in_curr == 1 and (not skip_) and passthrough[num_outputs]:
-                # ic("passing through")
-                ex_out[KEYS.SOURCE_INDICES].append(accum_src)
-                ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
-                ex_out[KEYS.WEIGHT].append(accum_weight)
-                ex_out[KEYS.EXACT_ALIGNMENT].append(accum_exact)
-
-                accum_src, accum_tgt, accum_weight = src_idxs, tgt_idxs, weight
-                accum_exact = len(src_idxs) == len(tgt_idxs)
-                last_doc_idx, last_pg_idx = doc_idx, pg_idx
-                num_outputs += 1
-                nmerges_in_curr = 1
-                continue
-
-            # we did not perform passthrough, perform regular concatenation
-            if (not is_boundary) and has_budget and (not skip_):
+            # only happens on the first iteration
+            if last_context_idxs is None:
+                is_boundary = False
+            else:
+                # if we are at a boundary - we cannot merge.
+                is_boundary = last_context_idxs != (doc_idx, pg_idx) or (curr_num_merges == max_merges)
+            # if we are not ok with merging - we cannot merge
+            is_not_ok_to_merge = not ok_to_merge[num_outputs]
+            # if we do not have a budget to merge the current example with the accumulator - we cannot merge
+            has_no_budget = accum_weight + weight > maximum_lengths[bin_idxs[num_outputs]]
+            # if we are at any of these conditions - we cannot merge the current example to our accumulator
+            if is_boundary or is_not_ok_to_merge or has_no_budget:
+                if accum_src and accum_tgt:
+                    ex_out[KEYS.SOURCE_INDICES].append(accum_src)
+                    ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
+                    ex_out[KEYS.WEIGHT].append(accum_weight)
+                    ex_out[KEYS.EXACT_ALIGNMENT].append(len(accum_src) == len(accum_tgt))
+                    num_outputs += 1
+                    curr_num_merges = 0
+                # store the current example in the accumulator
+                accum_src, accum_tgt, accum_weight = (
+                    src_idxs,
+                    tgt_idxs,
+                    weight,
+                )
+            else:
+                # merge the current example to the accumulator
                 accum_src.extend(src_idxs)
                 accum_tgt.extend(tgt_idxs)
                 accum_weight += weight
-                accum_exact &= len(src_idxs) == len(tgt_idxs)
-                last_doc_idx, last_pg_idx = doc_idx, pg_idx
-                nmerges_in_curr += 1
-                continue
+                curr_num_merges += 1
 
+            # update the context
+            last_context_idxs = (doc_idx, pg_idx)
+
+        # if we have something left in the accumulator - add it
+        if accum_src and accum_tgt:
+            ex_out[KEYS.SOURCE_INDICES].append(accum_src)
+            ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
+            ex_out[KEYS.WEIGHT].append(accum_weight)
+            ex_out[KEYS.EXACT_ALIGNMENT].append(len(accum_src) == len(accum_tgt))
             num_outputs += 1
-            nmerges_in_curr = 1
-            # clear accumulators since we exceeded budget, met a boundary or should skip
-            if accum_src and accum_tgt:
-                # store examples
-                ex_out[KEYS.SOURCE_INDICES].append(accum_src)
-                ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
-                ex_out[KEYS.WEIGHT].append(accum_weight)
-                ex_out[KEYS.EXACT_ALIGNMENT].append(accum_exact)
 
-            if skip_:
-                # discard newest
-                accum_src, accum_tgt, accum_weight = [], [], 0
-                accum_exact = True
-                last_doc_idx, last_pg_idx = None, None
-                nmerges_in_curr = 0
-            else:
-                accum_src, accum_tgt, accum_weight = src_idxs, tgt_idxs, weight
-                accum_exact = len(src_idxs) == len(tgt_idxs)
-                last_doc_idx, last_pg_idx = doc_idx, pg_idx
-
-        if skip or not accum_src or not accum_tgt or accum_weight == 0:
-            # nothing legal to add
-            return ex_out
-
-        # there must be something legal to add
-        ex_out[KEYS.SOURCE_INDICES].append(accum_src)
-        ex_out[KEYS.TARGET_INDICES].append(accum_tgt)
-        ex_out[KEYS.WEIGHT].append(accum_weight)
-        ex_out[KEYS.EXACT_ALIGNMENT].append(accum_exact)
         return ex_out
 
     assert max_seq_len is not None
@@ -892,7 +996,7 @@ def merge_adjacent_sentences(
             "max_seq_len": max_seq_len,
             "seed": seed,
             "max_merges": max_merges,
-            "passthrough_prob": passthrough_prob,
+            "no_merge_prob": no_merge_prob,
         },
         # we never want to load this from cache, since it should be fresh per epoch
         load_from_cache_file=False,

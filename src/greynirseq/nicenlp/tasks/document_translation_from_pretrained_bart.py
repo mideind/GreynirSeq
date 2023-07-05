@@ -116,10 +116,6 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         bt_dataset_names = self.cfg.bt_subset.split(",")
         # all alignment datasets defined for this task
         align_dataset_names = self.cfg.align_subset.split(",")
-        # the parallel (1-to-1) datasets are the ones that are not bt or alignment datasets
-        parallel_dataset_names = [
-            name for name in split_dataset_names if name not in bt_dataset_names and name not in align_dataset_names
-        ]
 
         # langcode and translation direction
         src, tgt = self.cfg.source_lang, self.cfg.target_lang
@@ -196,9 +192,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
 
         if len(split_datasets) != 1:
             parallel_datasets = [
-                split_datasets[i]
-                for i in range(len(split_datasets))
-                if split_dataset_names[i] in parallel_dataset_names
+                split_datasets[i] for i in range(len(split_datasets)) if split_dataset_names[i] not in bt_dataset_names
             ]
             bt_datasets = [
                 split_datasets[i] for i in range(len(split_datasets)) if split_dataset_names[i] in bt_dataset_names
@@ -216,6 +210,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 max_seq_len=max_seq_len,
                 max_merges=self.cfg.max_merges,
                 num_proc=self.cfg.num_preprocess_workers,
+                no_merge_prob=0.1,  # TODO: add to config
             )
         else:
             dataset = split_datasets[0]
@@ -246,7 +241,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         update_epoch_batch_itr=False,
     ):
         max_sentences = max_sentences or self.cfg.max_sentences
-        logger.info(f"S Batching by size... with max_tokens={max_tokens} and max_sentences={max_sentences}")
+        logger.info(f"Batching by size... with max_tokens={max_tokens} and max_sentences={max_sentences}")
         if not hasattr(dataset, "ordered_sizes"):
             logger.info("FOOFOO")
             return super().get_batch_iterator(
