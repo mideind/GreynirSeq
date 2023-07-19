@@ -19,7 +19,6 @@ def worker_init_fn(worker_id):
 
 
 class ErrorDataset(Dataset):
-
     error_generators = list()
     sentences = list()
     has_pos: bool = False
@@ -30,7 +29,7 @@ class ErrorDataset(Dataset):
         self.has_pos = posfile is not None
         self.args = args
 
-        self.sentences = infile.read().split("\n")
+        self.sentences = infile
         self.end = len(self.sentences)
 
         if self.has_pos:
