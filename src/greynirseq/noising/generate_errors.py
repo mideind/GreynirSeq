@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 
 import torch
@@ -14,7 +15,6 @@ from ieg.errorrules import (
     SwapErrorRule,
 )
 from tokenizer import correct_spaces
-import json
 
 
 def main() -> None:
@@ -61,7 +61,6 @@ def main() -> None:
         with open(f"{output_file}_noised.jsonl", "w", encoding="utf-8") as outfile:
             for doc in json_list:
                 [doc_text] = json.loads(doc)["document"]
-                doc_text_out = " ".join(doc_text)
 
                 error_dataset = ErrorDataset(doc_text, args.posfile, args, error_generators=error_generators)
 
