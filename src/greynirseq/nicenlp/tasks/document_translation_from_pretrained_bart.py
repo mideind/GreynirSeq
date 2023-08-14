@@ -81,6 +81,10 @@ class DocumentTranslationFromPretrainedBARTConfig(TranslationFromPretrainedBARTC
     valid_subset: str = II("dataset.valid_subset")
     seed: int = II("common.seed")
     max_sentences: int = II("dataset.batch_size")
+    no_merge_prob: float = field(
+        default=0.1,
+        metadata={"help": "Probability of not merging a segment"},
+    )
 
 
 @register_task("document_translation_from_pretrained_bart", dataclass=DocumentTranslationFromPretrainedBARTConfig)
@@ -210,7 +214,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 max_seq_len=max_seq_len,
                 max_merges=self.cfg.max_merges,
                 num_proc=self.cfg.num_preprocess_workers,
-                no_merge_prob=0.1,  # TODO: add to config
+                no_merge_prob=self.cfg.no_merge_prob,
             )
         else:
             dataset = split_datasets[0]

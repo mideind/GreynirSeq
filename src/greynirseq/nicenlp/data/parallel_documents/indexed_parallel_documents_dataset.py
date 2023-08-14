@@ -166,6 +166,8 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         self._bpe = None
         self.epoch = 1
         self.fingerprints = fingerprints
+        # we count the skipped examples here
+        self.num_skipped = sum(self.flat_align[KEYS.SKIP])
 
     def __len__(self):
         return len(self.index_dataset)
@@ -416,9 +418,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             self._sizes = self._sorted_lengths
 
     def __str__(self) -> str:
-        return (
-            f"ParallelDataset(num_alignment_pairs={len(self.flat_align)}, num_training_pairs={len(self.index_dataset)})"
-        )
+        return f"ParallelDataset(num_alignment_pairs={len(self.flat_align)}, num_training_pairs={len(self.index_dataset)}, skipped={self.num_skipped})"
 
 
 def compute_doc_offsets(

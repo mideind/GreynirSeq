@@ -130,6 +130,8 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         self._dataset_ntokens = None
         self._sorted_indices = None
         self._sorted_lengths = None
+        self.num_parallel_skipped = sum(self.flat_align_parallel[KEYS.SKIP])
+        self.num_bt_skipped = sum(self.flat_align_bt[KEYS.SKIP])
 
     def __getitem__(self, index):
         assert (
@@ -256,4 +258,8 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         return False
 
     def __str__(self) -> str:
-        return f"ParallelBTDataset(num_parallel_alignment_pairs={len(self.flat_align_parallel)}, num_bt_alignment_pairs={len(self.flat_align_bt)}, num_training_pairs={len(self.index_dataset)})"
+        return (
+            f"ParallelBTDataset(num_parallel_alignment_pairs={len(self.flat_align_parallel)}, "
+            f"num_bt_alignment_pairs={len(self.flat_align_bt)}, num_parallel_skipped={self.num_parallel_skipped}, "
+            f"num_bt_skipped={self.num_bt_skipped}, num_training_pairs={len(self.index_dataset)})"
+        )
