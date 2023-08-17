@@ -121,23 +121,25 @@ class IndexedParallelFingerprints:
 
 
 class IndexedParallelDocumentsDataset(LanguagePairDataset):
-    version = "2.0"
+    version = "3.0"
 
     def __init__(
         self,
+        name: str,
+        is_bt: bool,
         flat_align: HFDataset,
         flat_src: HFDataset,
         flat_tgt: HFDataset,
         dictionary: Dictionary,
         encoder: Encoder,
         fingerprints: IndexedParallelFingerprints,
-        append_source_id: int,
-        append_target_id: int,
         max_seq_len: int,
         seed: int = 1,
         max_merges: int = 10,
     ):
         super().__init__(None, 0, dictionary)
+        self.name = name
+        self.is_bt = is_bt
         self.flat_align = flat_align
         self.flat_src = flat_src
         self.flat_tgt = flat_tgt
@@ -146,8 +148,6 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         self.index_dataset = None  # gets set beginning of each bepoch
         self.dictionary = dictionary
         self.seed = seed
-        self.append_source_id = append_source_id
-        self.append_target_id = append_target_id
         self.encoder = encoder
         # this is compatibility with LanguagePairDataset collater and its teacher forcing adjustments
         self.src_dict = self.dictionary
@@ -177,32 +177,41 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
 
     def __getitem__(self, index):
         item = self.index_dataset[int(index)]
+        maybe_noised_encode_fn = self.encoder.encode_noisy if self.is_bt else self.encoder.encode
         src_segments: List[str] = [self.flat_src[int(i)]["segment"] for i in item[KEYS.SOURCE_INDICES]]
         tgt_segments: List[str] = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
+        src_langs: List[str] = [self.flat_src[int(i)]["lang"] for i in item[KEYS.SOURCE_INDICES]]
+        tgt_langs: List[str] = [self.flat_tgt[int(i)]["lang"] for i in item[KEYS.TARGET_INDICES]]
+        assert len(set(src_langs)) == 1, "source segments must be from the same language"
+        assert len(set(tgt_langs)) == 1, "target segments must be from the same language"
 
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             insert_sep = np.random.randint(2, dtype=bool)
 
-        assert KEYS.EXACT_ALIGNMENT in item or not insert_sep  # insert_sep implies exact_alignment
-        if insert_sep and len(src_segments) > 1 and np.all(item[KEYS.EXACT_ALIGNMENT]):
-            # only insert separator when alignment is *exact*
-            bos = torch.tensor([self.dictionary.bos()])
-            src_out = [bos] * (len(src_segments) * 2 - 1)
-            src_out[0::2] = [self.encoder.encode(seg) for seg in src_segments]
-            tgt_out = [bos] * (len(tgt_segments) * 2 - 1)
-            tgt_out[0::2] = [self.encoder.encode(seg) for seg in tgt_segments]
-        else:
-            src_out = [self.encoder.encode(seg) for seg in src_segments]
-            tgt_out = [self.encoder.encode(seg) for seg in tgt_segments]
+            assert KEYS.EXACT_ALIGNMENT in item or not insert_sep  # insert_sep implies exact_alignment
+            if insert_sep and len(src_segments) > 1 and np.all(item[KEYS.EXACT_ALIGNMENT]):
+                # only insert separator when alignment is *exact*
+                bos = torch.tensor([self.dictionary.bos()])
+                src_out = [bos] * (len(src_segments) * 2 - 1)
+                src_out[0::2] = [maybe_noised_encode_fn(seg) for seg in src_segments]
+                tgt_out = [bos] * (len(tgt_segments) * 2 - 1)
+                tgt_out[0::2] = [self.encoder.encode(seg) for seg in tgt_segments]
+            else:
+                src_out = [maybe_noised_encode_fn(seg) for seg in src_segments]
+                tgt_out = [self.encoder.encode(seg) for seg in tgt_segments]
 
-        src_affix = (
-            [self.dictionary.eos()] if self.append_source_id is None else [self.dictionary.eos(), self.append_source_id]
+        # This language code handling is like the mBart-50 model and nllb-200
+        src_out = torch.cat(
+            [torch.tensor([self.dictionary.index(src_langs[0])])] + src_out + [torch.tensor([self.dictionary.eos()])]
         )
-        tgt_affix = (
-            [self.dictionary.eos()] if self.append_target_id is None else [self.dictionary.eos(), self.append_target_id]
+        tgt_out = torch.cat(
+            [torch.tensor([self.dictionary.index(tgt_langs[0])])] + tgt_out + [torch.tensor([self.dictionary.eos()])]
         )
-        src_out = torch.cat(src_out + [torch.tensor(src_affix)])
-        tgt_out = torch.cat(tgt_out + [torch.tensor(tgt_affix)])
+
+        if len(src_out) > 1020 or len(tgt_out) > 1020:
+            print(f"Source: {self.encoder.bpe.decode(self.src_dict.string(src_out))}")
+            print(f"Target: {self.encoder.bpe.decode(self.src_dict.string(tgt_out))}")
+            assert False
 
         return {"id": index, "source": src_out, "target": tgt_out}
 
@@ -220,13 +229,13 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
     @classmethod
     def load_from_cache(
         cls,
+        name: str,
+        is_bt: bool,
         src_path: str,
         tgt_path: str,
         dictionary: Dictionary,
         encoder: Encoder,
         max_seq_len: int,
-        append_source_id: int,
-        append_target_id: int,
         max_merges: int = 10,
         align_path: Optional[str] = None,
         seed: int = 1,
@@ -236,6 +245,8 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         fp = IndexedParallelFingerprints.make_fingerprints(src_path, tgt_path, align_path, cls.version)
         if not all(Path(f"{cache_dir}/{val}").exists() for val in [fp.source, fp.target, fp.align]):
             return None
+        for val in [fp.source, fp.target, fp.align]:
+            logger.info(f"Loading {cache_dir}/{val}")
         flat_src = hf_datasets.load_from_disk(f"{cache_dir}/{fp.source}")
         flat_tgt = hf_datasets.load_from_disk(f"{cache_dir}/{fp.target}")
         flat_align = hf_datasets.load_from_disk(f"{cache_dir}/{fp.align}")
@@ -244,13 +255,13 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         assert isinstance(flat_align, hf_datasets.arrow_dataset.Dataset)
 
         return cls(
+            name,
+            is_bt,
             flat_align,
             flat_src,
             flat_tgt,
             dictionary,
             encoder=encoder,
-            append_source_id=append_source_id,
-            append_target_id=append_target_id,
             seed=seed,
             max_seq_len=max_seq_len,
             max_merges=max_merges,
@@ -260,14 +271,15 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
     @classmethod
     def from_parallel_jsonl(
         cls,
+        name: str,
+        is_bt: bool,
         src_path: str,
         tgt_path: str,
         bpe_encoder,
         dictionary: Dictionary,
         encoder: Encoder,
         max_seq_len: int,
-        append_source_id: int,
-        append_target_id: int,
+        data_language_mapper: Dict[str, str],
         max_merges: int = 10,
         load_from_cache_file: bool = True,
         num_proc: int = 8,
@@ -276,13 +288,13 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
     ):
         if load_from_cache_file:
             cached_dataset = cls.load_from_cache(
+                name,
+                is_bt,
                 src_path,
                 tgt_path,
                 dictionary,
                 encoder=encoder,
                 max_seq_len=max_seq_len,
-                append_source_id=append_source_id,
-                append_target_id=append_target_id,
                 max_merges=max_merges,
                 align_path=align_path,
                 seed=seed,
@@ -348,15 +360,18 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         flat_src = flat_src.remove_columns([i for i in flat_src.column_names if i != KEYS.SEGMENT])
         flat_tgt = flat_tgt.remove_columns([i for i in flat_tgt.column_names if i != KEYS.SEGMENT])
         fingerprints = IndexedParallelFingerprints.make_fingerprints(src_path, tgt_path, align_path, cls.version)
+        # Add the language information by adding a new column to flat_src and flat_tgt
+        flat_src = flat_src.add_column(KEYS.LANG, [data_language_mapper[src_lang]] * len(flat_src))  # type: ignore
+        flat_tgt = flat_tgt.add_column(KEYS.LANG, [data_language_mapper[tgt_lang]] * len(flat_tgt))  # type: ignore
 
         obj = cls(
+            name,
+            is_bt,
             flat_align,
             flat_src,
             flat_tgt,
             dictionary,
             encoder=encoder,
-            append_source_id=append_source_id,
-            append_target_id=append_target_id,
             seed=seed,
             max_seq_len=max_seq_len,
             max_merges=max_merges,
@@ -367,13 +382,13 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         #    that is, it becomes a MemoryMappedTable
         obj.cache_to_disk()
         memorymapped_obj = cls.load_from_cache(
+            name,
+            is_bt,
             src_path,
             tgt_path,
             dictionary,
             encoder=encoder,
             max_seq_len=max_seq_len,
-            append_source_id=append_source_id,
-            append_target_id=append_target_id,
             max_merges=max_merges,
             align_path=align_path,
             seed=seed,
@@ -391,6 +406,7 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
         self.epoch = epoch
         logger.info(f"Preparing epoch {epoch}")
         self.interleave_indices()
+        logger.info(str(self))
         logger.info(f"Done preparing epoch {epoch}")
 
     def interleave_indices(self):
@@ -418,7 +434,8 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
             self._sizes = self._sorted_lengths
 
     def __str__(self) -> str:
-        return f"ParallelDataset(num_alignment_pairs={len(self.flat_align)}, num_training_pairs={len(self.index_dataset)}, skipped={self.num_skipped})"
+        return f"ParallelDataset(name={self.name},\
+is_bt={self.is_bt},num_alignment_pairs={len(self.flat_align)}, num_training_pairs={len(self.index_dataset)}, skipped={self.num_skipped})"
 
 
 def compute_doc_offsets(
@@ -743,12 +760,6 @@ def flatten_alignments(
     - skip: bool, whether to skip this pair
     """
 
-    def pair_is_long(src_weight: int, tgt_weight: int, min_long_weight: int = 4) -> bool:
-        return src_weight > min_long_weight and tgt_weight > min_long_weight
-
-    def pair_is_not_within_relative_bounds(src_weight: int, tgt_weight: int, max_relative_diff: float = 1.4) -> bool:
-        return (src_weight * max_relative_diff < tgt_weight) or (tgt_weight * max_relative_diff < src_weight)
-
     def _inner(
         ex_batched,
         indices: List[int],
@@ -805,15 +816,9 @@ def flatten_alignments(
                 )
                 pair_weights[rel_pair_idx] = max(src_weight, tgt_weight)
 
-                # TODO: make this a parameter instead of hardcoded
-                # skip if this sample has very unbalanced lengths
-                if pair_is_long(
-                    src_weight, tgt_weight, min_long_weight=min_long_weight
-                ) and pair_is_not_within_relative_bounds(src_weight, tgt_weight, max_relative_diff=max_relative_diff):
+                # skip if any part is of length 0 or maximum length is exceeded
+                if min(src_weight, tgt_weight) == 0:
                     skip_pairs[rel_pair_idx] = True
-                # skip if any part is of length 0
-                elif min(src_weight, tgt_weight) == 0:
-                    skip_pairs[rel_pair_idx] = min(src_weight, tgt_weight) == 0
                 elif max(src_weight, tgt_weight) >= max_sequence_length:
                     skip_pairs[rel_pair_idx] = True
 

@@ -3,7 +3,7 @@
 # See the LICENSE file in the root of the project for terms of use.
 
 import logging
-from typing import List, Optional
+from typing import List
 
 import datasets as hf_datasets
 import numpy as np
@@ -28,8 +28,6 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         bt_datasets: List[IndexedParallelDocumentsDataset],
         dictionary: Dictionary,
         encoder: Encoder,
-        append_source_id: Optional[int] = None,
-        append_target_id: Optional[int] = None,
         parallel_prob: float = 1.0,
         seed: int = 1,
         max_seq_len: int = 1024,
@@ -114,9 +112,6 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         # definitions for langpairdataset functionality
         # ConcatDataset expects a numpy array or list
         self._sizes = None
-        self.append_source_id = append_source_id
-        self.append_target_id = append_target_id
-        self.tgt_eos = self.dictionary.eos() if self.append_target_id is None else self.append_target_id
         # this is compatibility with LanguagePairDataset collater and its teacher forcing adjustments
         self.src_dict = self.dictionary
         self.left_pad_source = False  # expected by bart model
@@ -142,6 +137,10 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         maybe_noised_encode_fn = self.encoder.encode_noisy if is_bt else self.encoder.encode
         src_segments: List[str] = [self.flat_src[int(i)]["segment"] for i in item[KEYS.SOURCE_INDICES]]
         tgt_segments: List[str] = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
+        src_langs: List[str] = [self.flat_src[int(i)]["lang"] for i in item[KEYS.SOURCE_INDICES]]
+        tgt_langs: List[str] = [self.flat_tgt[int(i)]["lang"] for i in item[KEYS.TARGET_INDICES]]
+        assert len(set(src_langs)) == 1, "source segments must be from the same language"
+        assert len(set(tgt_langs)) == 1, "target segments must be from the same language"
 
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             insert_sep = np.random.randint(2, dtype=bool)
@@ -158,14 +157,13 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
                 src_out = [maybe_noised_encode_fn(seg) for seg in src_segments]
                 tgt_out = [self.encoder.encode(seg) for seg in tgt_segments]
 
-        src_affix = (
-            [self.dictionary.eos()] if self.append_source_id is None else [self.dictionary.eos(), self.append_source_id]
+        # This language code handling is like the mBart-50 model and nllb-200
+        src_out = torch.cat(
+            [torch.tensor([self.dictionary.index(src_langs[0])])] + src_out + [torch.tensor([self.dictionary.eos()])]
         )
-        tgt_affix = (
-            [self.dictionary.eos()] if self.append_target_id is None else [self.dictionary.eos(), self.append_target_id]
+        tgt_out = torch.cat(
+            [torch.tensor([self.dictionary.index(tgt_langs[0])])] + tgt_out + [torch.tensor([self.dictionary.eos()])]
         )
-        src_out = torch.cat(src_out + [torch.tensor(src_affix)])
-        tgt_out = torch.cat(tgt_out + [torch.tensor(tgt_affix)])
 
         if len(src_out) > 1020 or len(tgt_out) > 1020:
             print(f"Source: {self.encoder.bpe.decode(self.src_dict.string(src_out))}")
@@ -241,7 +239,6 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
             logger.info(
                 f"Interleaving parallel and bt datasets with ratios={self.mixture_ratios}, at epoch {self.epoch}"
             )
-
             self._interleave_indices_inner()
 
     def __len__(self):

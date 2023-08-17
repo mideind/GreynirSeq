@@ -10,9 +10,13 @@
 #    This source code is licensed under the MIT license found in the
 #    LICENSE file in the root directory of this source tree.
 
+import copy
+import glob
 import logging
+import os
+import pathlib
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Dict, cast
 
 from fairseq import utils
 from fairseq.data import Dictionary, FairseqDataset, data_utils, iterators
@@ -49,10 +53,6 @@ class DocumentTranslationFromPretrainedBARTConfig(TranslationFromPretrainedBARTC
         default="",
         metadata={"help": "comma separated list of subsets to use for backtranslation"},
     )
-    align_subset: str = field(
-        default="",
-        metadata={"help": "The subset of parallel data that has requires an alignment jsonl file"},
-    )
     parallel_prob: float = field(
         default=0.33,
         metadata={"help": "Probability of sampling parallel data if bt data is included (Note: NOT sample weight)"},
@@ -85,20 +85,61 @@ class DocumentTranslationFromPretrainedBARTConfig(TranslationFromPretrainedBARTC
         default=0.1,
         metadata={"help": "Probability of not merging a segment"},
     )
+    dict_path: str = field(default="", metadata={"help": "Path to the dictionary"})
+    data_language_mappings: str = field(
+        default="",
+        metadata={
+            "help": "Comma separated list of language mappings from the JSONL language to the language string expected by the model, e.g. 'is:is_IS,en:en_XX'"
+        },
+    )
 
 
 @register_task("document_translation_from_pretrained_bart", dataclass=DocumentTranslationFromPretrainedBARTConfig)
 class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
     """Task for training multi sentence translation models from pre-trained BART models."""
 
-    def __init__(self, cfg: DocumentTranslationFromPretrainedBARTConfig, src_dict: Dictionary, tgt_dict: Dictionary):
-        super().__init__(cfg, src_dict=src_dict, tgt_dict=tgt_dict)
+    def __init__(
+        self, cfg: DocumentTranslationFromPretrainedBARTConfig, the_dict: Dictionary, language_mappings: Dict[str, str]
+    ):
+        super().__init__(cfg, src_dict=the_dict, tgt_dict=copy.deepcopy(the_dict))
         # this is for typing only
-        self.src_dict = src_dict
-        self.tgt_dict = tgt_dict
+        self.the_dict = the_dict
+        # TODO: This is a temp hack for NLLB-200
+        # the_dict.add_symbol("<mask1>")
+        # the_dict.add_symbol("<mask2>")
+        # self.tgt_dict = the_dict
+        # Hack done
+        self.language_mappings = language_mappings
+
+    @classmethod
+    def setup_task(cls, cfg: DocumentTranslationFromPretrainedBARTConfig, **kwargs):
+        """Setup the task (e.g., load dictionaries).
+
+        Args:
+            args (argparse.Namespace): parsed command-line arguments
+        """
+        if cfg.dict_path == "":
+            raise ValueError("Must specify a dictionary path")
+        if cfg.data_language_mappings == "":
+            raise ValueError("Must specify languages to train on")
+        the_dict = cls.load_dictionary(cfg.dict_path)
+        logger.info("dictionary: {} types".format(len(the_dict)))
+        # langcode and translation direction
+        language_mappings_pairs = cfg.data_language_mappings.split(",")
+        language_mappings = {}
+        for pair in language_mappings_pairs:
+            parts = pair.split(":")
+            if len(parts) != 2:
+                raise ValueError("Invalid language mapping: {}".format(pair))
+            language_mappings[parts[0]] = parts[1]
+
+        return cls(cfg, the_dict, language_mappings)
 
     def load_dataset(self, split: str, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.
+
+        This function is called once per train split (e.g., "train") and multiple times per validation split.
+        This function has deviated a lot from the original fairseq implementation.
 
         Args:
             split (str): The value of --train-subset OR
@@ -107,25 +148,83 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 Each is a comma-separated list of dataset names.
                 This method is called separately for each subset.
         """
-        logger.info(f"Split name {split}")
         self.cfg = cast(DocumentTranslationFromPretrainedBARTConfig, self.cfg)
         # this is for sharding
         paths = utils.split_paths(self.cfg.data)  # type: ignore
         assert len(paths) > 0
         data_dir_path = paths[(epoch - 1) % len(paths)]
 
-        # all datasets in this split
-        split_dataset_names = sorted(set(split.split(",")))
-        # all bt datasets defined for this task
-        bt_dataset_names = self.cfg.bt_subset.split(",")
-        # all alignment datasets defined for this task
-        align_dataset_names = self.cfg.align_subset.split(",")
+        # if a split contains a comma, we should crash - since that is no longer supported
+        assert "," not in split, "Split should not contain a comma"
+        # now lets list all the 'jsonl' files in the data dir
+        jsonl_files = glob.glob(os.path.join(data_dir_path, "*.jsonl"))
+        jsonl_files_paths = [pathlib.Path(path) for path in jsonl_files]
+        # now we gather all the files which start with the same string as the split
+        split_files = [path for path in jsonl_files_paths if path.stem.startswith(split)]
+        for path in split_files:
+            logger.info(f"Found file {path}")
 
-        # langcode and translation direction
-        src, tgt = self.cfg.source_lang, self.cfg.target_lang
-        direction = f"{src}-{tgt}"
-        if src is None or tgt is None:
-            raise ValueError("--source-lang and --target-lang must be set")
+        def metadata_from_filename(path: pathlib.Path):
+            """Extract translation metadata from filename.
+
+            There are 3 types of files:
+            1. {name}.{lang1}-{lang2}.{lang1}.jsonl
+            2. {name}.{lang1}-{lang2}.{lang2}.jsonl
+            3. {name}.{lang1}-{lang2}.align.jsonl [optional]
+            """
+            name, direction, file_type = path.stem.split(".")  # .stem removes the jsonl extension
+            lang1, lang2 = direction.split("-")
+            assert lang1 in self.language_mappings
+            assert lang2 in self.language_mappings
+            assert file_type in [lang1, lang2, "align"]
+            print(self.the_dict.index(self.language_mappings[lang1]), lang1)
+            print(self.the_dict.index(self.language_mappings[lang2]), lang2)
+            if file_type == "align":
+                file_type = "align"
+            elif file_type == lang1:
+                file_type = "src"
+            elif file_type == lang2:
+                file_type = "tgt"
+            return {
+                "name": name,
+                "direction": direction,
+                "type": file_type,
+                "path": str(path),
+            }
+
+        datasets_metadata = [metadata_from_filename(path) for path in split_files]
+        # group the datasets by name and direction
+        datasets_by_name_and_direction = {}
+        for dataset_metadata in datasets_metadata:
+            name = dataset_metadata["name"]
+            direction = dataset_metadata["direction"]
+            if name + direction not in datasets_by_name_and_direction:
+                datasets_by_name_and_direction[name + direction] = []
+            datasets_by_name_and_direction[name + direction].append(dataset_metadata)
+
+        bt_dataset_names = self.cfg.bt_subset.split(",")
+
+        logger.info(datasets_by_name_and_direction)
+        # We combine the lists into a single entity with the same name and direction
+        datasets_for_loading = {}
+        for name_direction, datasets in datasets_by_name_and_direction.items():
+            assert len(datasets) <= 3, "There should be at most 3 files per dataset"
+            assert len(datasets) >= 2, "There should be at least 2 files per dataset"
+            src_dataset = [dataset for dataset in datasets if dataset["type"] == "src"][0]
+            tgt_dataset = [dataset for dataset in datasets if dataset["type"] == "tgt"][0]
+            align_datasets = [dataset for dataset in datasets if dataset["type"] == "align"]
+            if len(align_datasets) == 0:
+                align_dataset = None
+            else:
+                align_dataset = align_datasets[0]
+
+            datasets_for_loading[name_direction] = {
+                "name": datasets[0]["name"],
+                "src_path": src_dataset["path"],
+                "tgt_path": tgt_dataset["path"],
+                "align_path": align_dataset["path"] if align_dataset is not None else None,
+                "is_bt": datasets[0]["name"] in bt_dataset_names,
+            }
 
         # sanity checks
         assert (
@@ -144,11 +243,11 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         from greynirseq.nicenlp.data.encoders import Encoder
 
         my_enc = Encoder(
-            dictionary=self.src_dict,
+            dictionary=self.the_dict,
             bpe=bpe,
             noisy_bpe=noisy_bpe,
-            allowed_dictionary_min=self.src_dict.nspecial,
-            allowed_dictionary_max=len(self.src_dict) - 1 - len(self.langs),  # type: ignore
+            allowed_dictionary_min=self.the_dict.nspecial,
+            allowed_dictionary_max=len(self.the_dict) - 1 - len(self.langs),  # type: ignore
             fragment_noise_prob=self.cfg.fragment_noise_prob,
             global_skip_noise_prob=self.cfg.global_skip_noise_prob,
             word_noise_config=self.cfg.word_noise_config,
@@ -156,8 +255,8 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         )
 
         def decode(example):
-            src_string = self.src_dict.string(example["source"])
-            tgt_string = self.src_dict.string(example["target"])
+            src_string = self.the_dict.string(example["source"])
+            tgt_string = self.the_dict.string(example["target"])
             # decoded = bpe.decode(spm_string)
             print()
             print(bpe.decode(src_string))
@@ -165,50 +264,34 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             print(bpe.decode(tgt_string))
             print()
 
-        def create_path(name: str, lang: str, align=False) -> str:
-            return f"{data_dir_path}/{name}.{direction}.{lang if not align else 'align'}.jsonl"
-
-        split_datasets = []
-        for dataset_name in split_dataset_names:
-            if dataset_name == "":
-                continue
-            alignment_path = None
-            src_path = create_path(name=dataset_name, lang=src)
-            tgt_path = create_path(name=dataset_name, lang=tgt)
-            if dataset_name in align_dataset_names:
-                alignment_path = create_path(lang="none", name=dataset_name, align=True)
-
+        datasets = []
+        for _, dataset_values in datasets_for_loading.items():
             dataset = IndexedParallelDocumentsDataset.from_parallel_jsonl(
-                src_path,
-                tgt_path,
-                bpe,
-                self.src_dict,
+                name=dataset_values["name"],
+                is_bt=dataset_values["is_bt"],
+                src_path=dataset_values["src_path"],
+                tgt_path=dataset_values["tgt_path"],
+                bpe_encoder=bpe,
+                dictionary=self.the_dict,
                 encoder=my_enc,
+                data_language_mapper=self.language_mappings,
                 max_seq_len=max_seq_len,
                 max_merges=self.cfg.max_merges,
-                append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),  # 250_004 for english
-                append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),  # 250_012 for icelandic
-                align_path=alignment_path,
+                align_path=dataset_values["align_path"],
                 num_proc=self.cfg.num_preprocess_workers,
                 seed=self.cfg.seed,
             )
-            split_datasets.append(dataset)
+            datasets.append(dataset)
 
-        if len(split_datasets) != 1:
-            parallel_datasets = [
-                split_datasets[i] for i in range(len(split_datasets)) if split_dataset_names[i] not in bt_dataset_names
-            ]
-            bt_datasets = [
-                split_datasets[i] for i in range(len(split_datasets)) if split_dataset_names[i] in bt_dataset_names
-            ]
+        if len(datasets) != 1:
+            parallel_datasets = [dataset for dataset in datasets if not dataset.is_bt]
+            bt_datasets = [dataset for dataset in datasets if dataset.is_bt]
 
             dataset = IndexedParallelBTDocumentsDataset(
                 parallel_datasets,
                 bt_datasets,
-                self.src_dict,
+                self.the_dict,
                 encoder=my_enc,
-                append_source_id=self.src_dict.index("[{}]".format(self.cfg.source_lang)),
-                append_target_id=self.tgt_dict.index("[{}]".format(self.cfg.target_lang)),
                 parallel_prob=self.cfg.parallel_prob,
                 seed=self.cfg.seed,
                 max_seq_len=max_seq_len,
@@ -217,7 +300,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 no_merge_prob=self.cfg.no_merge_prob,
             )
         else:
-            dataset = split_datasets[0]
+            dataset = datasets[0]
 
         dataset.set_epoch(1)
         logger.info("Dataset loading done.")
