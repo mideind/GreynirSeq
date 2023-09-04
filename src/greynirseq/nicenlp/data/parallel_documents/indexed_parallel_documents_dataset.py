@@ -876,7 +876,7 @@ def merge_adjacent_sentences(
         ]
         doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip = [ex_batched[k] for k in keys]
 
-        # these keys are present only if we are dealing with a IndexedParallelBTDocumentsDataset
+        # SOURCE_OFFSETS and TARGET_OFFSETS keys are present only if we are dealing with a IndexedParallelBTDocumentsDataset
         # where many flat_src and flat_tgt are concatenated together, this would skew the source/target_indices
         # so we need to offset them by the document offsets
         if KEYS.SOURCE_OFFSETS in ex_batched:
@@ -885,12 +885,14 @@ def merge_adjacent_sentences(
                 [idx + document_offset for idx in idxs]
                 for (idxs, document_offset) in zip(all_src_idxs, src_doc_offsets)
             ]
+            doc_idxs = [idx + document_offset for (idx, document_offset) in zip(doc_idxs, src_doc_offsets)]
         if KEYS.TARGET_OFFSETS in ex_batched:
             tgt_doc_offsets = ex_batched[KEYS.TARGET_OFFSETS]
             all_tgt_idxs = [
                 [idx + document_offset for idx in idxs]
                 for (idxs, document_offset) in zip(all_tgt_idxs, tgt_doc_offsets)
             ]
+
         # cast for readability
         all_src_idxs = cast(List[List[int]], all_src_idxs)
         all_tgt_idxs = cast(List[List[int]], all_tgt_idxs)
@@ -909,7 +911,8 @@ def merge_adjacent_sentences(
         # set up reproducible rng state that depends implicitly on batch_size but is invariant to num_proc
         rng = np.random.default_rng((seed, abs_align_indices))
         # these are the sequence lengths of the bins we will use to merge sentences
-        maximum_lengths = np.array([50, 100, 150, 350, max_seq_len], dtype=np.int64)
+        extra_padding = max_merges + 1 + 1 + 1  # SENT_SEP*max_merges + Start + End + Maybe BT info
+        maximum_lengths = np.array([50, 100, 150, 350, max_seq_len - extra_padding], dtype=np.int64)
 
         # fetch maximum number of rolls to minimize fn calls
         bin_idxs = np.clip(rng.poisson(_POISSON_MEAN, size=len(doc_idxs)), 0, len(maximum_lengths) - 1)
@@ -934,7 +937,7 @@ def merge_adjacent_sentences(
         ) in enumerate(zip(doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip)):
             # This loop is a bit tricky to understand, here is a high level overview:
             # We iterate over the examples in the batch, and for each example we roll a dice to decide whether to
-            # merge it with the next example or not. If we decide to merge, we check whether the accumulated weight
+            # merge it with the next example or not. If we decide to merge, we check whether the accumulated weight/length
             # is within the maximum sequence length, if it is, we merge the current example with the accumulator
             # and continue. If it is not, we store the accumulator and reset it to the current example.
             # An implicit assumption here is that the examples have not been shuffled,

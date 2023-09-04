@@ -42,8 +42,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DocumentTranslationFromPretrainedBARTConfig(TranslationFromPretrainedBARTConfig):
     max_sequence_length: int = field(
-        default=int(1024 * 0.75),
-        metadata={"help": "max sequence length"},
+        default=1000,
+        metadata={
+            "help": "Maximum sequence length to train model on. Some sequences might be longer due to sentence separator tokens."
+        },
     )
     num_preprocess_workers: int = field(
         default=2,
@@ -51,7 +53,10 @@ class DocumentTranslationFromPretrainedBARTConfig(TranslationFromPretrainedBARTC
     )
     bt_subset: str = field(
         default="",
-        metadata={"help": "comma separated list of subsets to use for backtranslation"},
+        metadata={
+            "help": "Prefix of backtranslation included in the training data.\
+Should include the 'train_subset' prefix, i.e. if train_subset='train' then bt_subset='train_bt' will work."
+        },
     )
     parallel_prob: float = field(
         default=0.33,
@@ -104,11 +109,6 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
         super().__init__(cfg, src_dict=the_dict, tgt_dict=copy.deepcopy(the_dict))
         # this is for typing only
         self.the_dict = the_dict
-        # TODO: This is a temp hack for NLLB-200
-        # the_dict.add_symbol("<mask1>")
-        # the_dict.add_symbol("<mask2>")
-        # self.tgt_dict = the_dict
-        # Hack done
         self.language_mappings = language_mappings
 
     @classmethod
@@ -124,7 +124,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             raise ValueError("Must specify languages to train on")
         the_dict = cls.load_dictionary(cfg.dict_path)
         logger.info("dictionary: {} types".format(len(the_dict)))
-        # langcode and translation direction
+        # langcode and translation direction, e.g. "en:en_XX,is:is_IS"
         language_mappings_pairs = cfg.data_language_mappings.split(",")
         language_mappings = {}
         for pair in language_mappings_pairs:
@@ -177,8 +177,6 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             assert lang1 in self.language_mappings
             assert lang2 in self.language_mappings
             assert file_type in [lang1, lang2, "align"]
-            print(self.the_dict.index(self.language_mappings[lang1]), lang1)
-            print(self.the_dict.index(self.language_mappings[lang2]), lang2)
             if file_type == "align":
                 file_type = "align"
             elif file_type == lang1:
@@ -202,9 +200,8 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 datasets_by_name_and_direction[name + direction] = []
             datasets_by_name_and_direction[name + direction].append(dataset_metadata)
 
-        bt_dataset_names = self.cfg.bt_subset.split(",")
+        self.cfg.bt_subset.split(",")
 
-        logger.info(datasets_by_name_and_direction)
         # We combine the lists into a single entity with the same name and direction
         datasets_for_loading = {}
         for name_direction, datasets in datasets_by_name_and_direction.items():
@@ -223,18 +220,13 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 "src_path": src_dataset["path"],
                 "tgt_path": tgt_dataset["path"],
                 "align_path": align_dataset["path"] if align_dataset is not None else None,
-                "is_bt": datasets[0]["name"] in bt_dataset_names,
+                "is_bt": datasets[0]["name"].startswith(self.cfg.bt_subset),
             }
 
         # sanity checks
         assert (
             self.cfg.max_sequence_length <= self.cfg.max_source_positions
         ), "The maximum training sequence length should be lesser than the positional encoding."
-        max_seq_len = self.cfg.max_sequence_length
-
-        logger.info(f"Max sequence length={max_seq_len}")
-        logger.info(f"Max merges={self.cfg.max_merges}")
-        print(self.cfg)
 
         bpe = SentencepieceBPE(SentencepieceConfig(sentencepiece_model=self.cfg.spm_model))
         noisy_bpe = SentencepieceBPE(
@@ -252,6 +244,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
             global_skip_noise_prob=self.cfg.global_skip_noise_prob,
             word_noise_config=self.cfg.word_noise_config,
             char_noise_config=self.cfg.char_noise_config,
+            max_sequence_length=self.cfg.max_sequence_length,
         )
 
         def decode(example):
@@ -275,7 +268,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 dictionary=self.the_dict,
                 encoder=my_enc,
                 data_language_mapper=self.language_mappings,
-                max_seq_len=max_seq_len,
+                max_seq_len=self.cfg.max_sequence_length,
                 max_merges=self.cfg.max_merges,
                 align_path=dataset_values["align_path"],
                 num_proc=self.cfg.num_preprocess_workers,
@@ -294,7 +287,7 @@ class DocumentTranslationFromPretrainedBART(TranslationFromPretrainedBARTTask):
                 encoder=my_enc,
                 parallel_prob=self.cfg.parallel_prob,
                 seed=self.cfg.seed,
-                max_seq_len=max_seq_len,
+                max_seq_len=self.cfg.max_sequence_length,
                 max_merges=self.cfg.max_merges,
                 num_proc=self.cfg.num_preprocess_workers,
                 no_merge_prob=self.cfg.no_merge_prob,

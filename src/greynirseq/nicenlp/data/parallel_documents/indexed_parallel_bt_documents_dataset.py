@@ -139,9 +139,15 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         tgt_segments: List[str] = [self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]]
         src_langs: List[str] = [self.flat_src[int(i)]["lang"] for i in item[KEYS.SOURCE_INDICES]]
         tgt_langs: List[str] = [self.flat_tgt[int(i)]["lang"] for i in item[KEYS.TARGET_INDICES]]
-        assert len(set(src_langs)) == 1, "source segments must be from the same language"
-        assert len(set(tgt_langs)) == 1, "target segments must be from the same language"
+        if len(set(src_langs)) != 1:
+            self.log_example(index=index)
+            raise ValueError("source segments must be from the same language")
+        if len(set(tgt_langs)) != 1:
+            self.log_example(index=index)
+            raise ValueError("target segments must be from the same language")
 
+        # Experimental: add BT information
+        bt_info = self.encoder.encode("BT") if is_bt else torch.tensor([], dtype=torch.long)
         with data_utils.numpy_seed(self.seed, self.epoch, index):
             insert_sep = np.random.randint(2, dtype=bool)
 
@@ -159,16 +165,23 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
 
         # This language code handling is like the mBart-50 model and nllb-200
         src_out = torch.cat(
-            [torch.tensor([self.dictionary.index(src_langs[0])])] + src_out + [torch.tensor([self.dictionary.eos()])]
+            [torch.tensor([self.dictionary.index(src_langs[0])])]
+            + src_out
+            + [torch.tensor([self.dictionary.eos()]), bt_info]
         )
         tgt_out = torch.cat(
             [torch.tensor([self.dictionary.index(tgt_langs[0])])] + tgt_out + [torch.tensor([self.dictionary.eos()])]
         )
 
-        if len(src_out) > 1020 or len(tgt_out) > 1020:
-            print(f"Source: {self.encoder.bpe.decode(self.src_dict.string(src_out))}")
-            print(f"Target: {self.encoder.bpe.decode(self.src_dict.string(tgt_out))}")
-            assert False
+        if len(src_out) > self.max_seq_len or len(tgt_out) > self.max_seq_len:
+            logger.warning(
+                f"Truncating example at index={index} because it is too long: src={len(src_out)}, tgt={len(tgt_out)}"
+            )
+            self.log_example(index=index)
+            # We take the first 510 tokens and the last 510 tokens
+            half_seq_len = self.max_seq_len // 2
+            src_out = torch.cat([src_out[:half_seq_len], src_out[-half_seq_len:]])
+            tgt_out = torch.cat([tgt_out[:half_seq_len], tgt_out[-half_seq_len:]])
 
         example = {
             "id": index,
@@ -184,6 +197,18 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         print(f"{self.encoder.bpe.decode(src_string)}")
         print(f"{self.encoder.bpe.decode(tgt_string)}")
         print()
+
+    def log_example(self, index: int):
+        """For debugging"""
+        item = self.index_dataset[int(index)]
+        logger.error(f"index={index}")
+        print(f"item={item}")
+        is_bt = any(item[KEYS.SOURCE_INDICES] >= self.bt_src_start)
+        logger.error(f"is_bt={is_bt}")
+        logger.error([self.flat_src[int(i)]["segment"] for i in item[KEYS.SOURCE_INDICES]])
+        logger.error([self.flat_tgt[int(i)]["segment"] for i in item[KEYS.TARGET_INDICES]])
+        logger.error([self.flat_src[int(i)]["lang"] for i in item[KEYS.SOURCE_INDICES]])
+        logger.error([self.flat_tgt[int(i)]["lang"] for i in item[KEYS.TARGET_INDICES]])
 
     def set_epoch(self, epoch: int):
         self.epoch = epoch

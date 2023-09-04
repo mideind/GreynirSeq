@@ -53,7 +53,7 @@ class WordNoiser(Noiser):
             max_shuffle_distance=config.max_shift_distance, shift_prob=config.shift_prob
         )
 
-    def apply(self, sequence: str):
+    def apply(self, sequence: str) -> str:
         return word_noise(
             sequence,
             self.config.drop_word_prob,

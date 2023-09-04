@@ -33,6 +33,7 @@ class Encoder:
         global_skip_noise_prob: float,
         word_noise_config: WordNoiserConfig,
         char_noise_config: CharacterNoiserConfig,
+        max_sequence_length: int,
     ):
         self.bpe = bpe
         self.dictionary = dictionary
@@ -46,6 +47,7 @@ class Encoder:
         self.char_noiser = CharacterNoiser(
             char_noiser_config=char_noise_config,
         )
+        self.max_sequence_length = max_sequence_length
 
     def encode(self, sequence: str) -> torch.Tensor:
         """Encode a sequence of tokens into a sequence of integers using BPE and then the fairseq dictionary."""
@@ -60,4 +62,7 @@ class Encoder:
         res = self.word_noiser.apply(sequence)
         res = self.noisy_subword_enc.apply(res)
         seq_tensor = self.fragment_noiser.apply(res.sequence, res.noise_allowed_mask)
+        # If the noisy sequence is too long, we encode it again without noise
+        if len(seq_tensor) > self.max_sequence_length:
+            return self.encode(sequence)
         return seq_tensor
