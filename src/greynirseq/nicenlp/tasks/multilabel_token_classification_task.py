@@ -22,7 +22,8 @@ from fairseq.data import (
 )
 from fairseq.tasks import FairseqTask, register_task
 
-from greynirseq.nicenlp.data.datasets import (
+from greynirseq.nicenlp.data.encoding import get_word_beginnings
+from greynirseq.nicenlp.data.gs_datasets import (
     IgnoreLabelsDataset,
     NestedDictionaryDatasetFix,
     NumWordsDataset,
@@ -30,7 +31,6 @@ from greynirseq.nicenlp.data.datasets import (
     RightPad2dDataset,
     WordEndMaskDataset,
 )
-from greynirseq.nicenlp.data.encoding import get_word_beginnings
 from greynirseq.nicenlp.utils.label_schema.label_schema import (
     label_schema_as_dictionary,
     make_dict_idx_to_vec_idx,
@@ -321,7 +321,7 @@ def _clean_cats_attrs(ldict: Dictionary, schema, pred_cats: torch.Tensor, pred_a
         split_pred_attrs = [pred_attrs]
     else:
         split_pred_attrs = pred_attrs.split(1, dim=0)
-    for (_cat_idx, attr_idxs) in zip(pred_cats.tolist(), split_pred_attrs):
+    for _cat_idx, attr_idxs in zip(pred_cats.tolist(), split_pred_attrs):
         seq_attrs = [lbl for lbl in ldict.string((attr_idxs.squeeze())).split(" ")]
         if not any(it for it in seq_attrs):
             seq_attrs = []

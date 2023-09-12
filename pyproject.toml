@@ -39,6 +39,7 @@ dependencies = [
     "nltk>=3.5",
     "reynir>=3.5.0",
     "transformers>=4.3.2",
+    "datasets",
     "spacy>=2",
     "pyjarowinkler>=1.8",
     "scipy>=1.5",
@@ -62,6 +63,9 @@ dev = [
     "flake8>=3.8.4",
     "mypy>=0.812"
     ]
+
+[tool.ruff]
+line-length = 120
 
 [tool.black]
 line-length = 120

@@ -20,13 +20,13 @@ from fairseq.data import (
 )
 from fairseq.tasks import FairseqTask, register_task
 
-from greynirseq.nicenlp.data.datasets import (
+from greynirseq.nicenlp.data.encoding import get_word_beginnings
+from greynirseq.nicenlp.data.gs_datasets import (
     NestedDictionaryDatasetFix,
     NoBosEosDataset,
     NumWordsDataset,
     WordEndMaskDataset,
 )
-from greynirseq.nicenlp.data.encoding import get_word_beginnings
 
 logger = logging.getLogger(__name__)
 

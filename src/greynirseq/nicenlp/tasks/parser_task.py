@@ -25,7 +25,7 @@ from fairseq.data import (
 )
 from fairseq.tasks import FairseqTask, register_task
 
-from greynirseq.nicenlp.data.datasets import (
+from greynirseq.nicenlp.data.gs_datasets import (
     DynamicLabelledSpanDataset,
     NestedDictionaryDatasetFix,
     NumWordsDataset,
