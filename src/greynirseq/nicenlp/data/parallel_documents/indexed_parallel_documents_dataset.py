@@ -305,9 +305,9 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
 
         features = hf_datasets.Features(_DOCUMENT_JSONL_FEATURE_DICT)
         logger.info(f"Loading src_dataset: {src_path}")
-        src_dataset = hf_datasets.Dataset.from_json(src_path, split="train", chunksize=40 << 20, features=features)  # type: ignore
+        src_dataset = hf_datasets.Dataset.from_json(src_path, split="train", chunksize=40 << 20, features=features)
         logger.info(f"Loading tgt_dataset: {tgt_path}")
-        tgt_dataset = hf_datasets.Dataset.from_json(tgt_path, split="train", chunksize=40 << 20, features=features)  # type: ignore
+        tgt_dataset = hf_datasets.Dataset.from_json(tgt_path, split="train", chunksize=40 << 20, features=features)
         assert isinstance(src_dataset, hf_datasets.Dataset), f"src_dataset is {type(src_dataset)}"
         assert isinstance(tgt_dataset, hf_datasets.Dataset), f"tgt_dataset is {type(tgt_dataset)}"
 
@@ -435,7 +435,8 @@ class IndexedParallelDocumentsDataset(LanguagePairDataset):
 
     def __str__(self) -> str:
         return f"ParallelDataset(name={self.name},\
-is_bt={self.is_bt},num_alignment_pairs={len(self.flat_align)}, num_training_pairs={len(self.index_dataset)}, skipped={self.num_skipped})"
+is_bt={self.is_bt},num_alignment_pairs={len(self.flat_align)},\
+num_training_pairs={len(self.index_dataset)}, skipped={self.num_skipped})"
 
 
 def compute_doc_offsets(
@@ -739,7 +740,7 @@ def get_mono_document_sentence_lengths_dataset(
         num_proc=num_proc,
     )
     # this fixes internal pyarrow block length mismatch which occurs when concatting this table with offsets table
-    return hf_datasets.Dataset.from_pandas(dataset.to_pandas()).with_format("numpy", KEYS.SENTENCE_WEIGHTS)  # type: ignore
+    return hf_datasets.Dataset.from_pandas(dataset.to_pandas()).with_format("numpy", KEYS.SENTENCE_WEIGHTS)
 
 
 def flatten_alignments(
@@ -792,8 +793,8 @@ def flatten_alignments(
             # i.e. the number of segments in all the paragraphs of this document, starting from this document
             # example: given a document with 3 paragraphs, with 2, 3, and 1 segments respectively, the offsets are
             # [0, 2, 5]
-            src_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx]])  # type: ignore
-            tgt_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx]])  # type: ignore
+            src_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.SOURCE_WEIGHTS][rel_doc_idx]])
+            tgt_pg_offsets = lengths_to_offsets([len(pg) for pg in ex_batched[KEYS.TARGET_WEIGHTS][rel_doc_idx]])
 
             skip_pairs = np.repeat(False, len(doc_alignments))
             pair_weights = np.repeat(0, len(doc_alignments))
@@ -876,7 +877,7 @@ def merge_adjacent_sentences(
         ]
         doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip = [ex_batched[k] for k in keys]
 
-        # SOURCE_OFFSETS and TARGET_OFFSETS keys are present only if we are dealing with a IndexedParallelBTDocumentsDataset
+        # SOURCE_OFFSETS and TARGET_OFFSETS in a IndexedParallelBTDocumentsDataset
         # where many flat_src and flat_tgt are concatenated together, this would skew the source/target_indices
         # so we need to offset them by the document offsets
         if KEYS.SOURCE_OFFSETS in ex_batched:
@@ -937,7 +938,7 @@ def merge_adjacent_sentences(
         ) in enumerate(zip(doc_idxs, pg_idxs, weights, all_src_idxs, all_tgt_idxs, skip)):
             # This loop is a bit tricky to understand, here is a high level overview:
             # We iterate over the examples in the batch, and for each example we roll a dice to decide whether to
-            # merge it with the next example or not. If we decide to merge, we check whether the accumulated weight/length
+            # merge it with the next example or not. If we decide to merge, we check whether the accumulated weight
             # is within the maximum sequence length, if it is, we merge the current example with the accumulator
             # and continue. If it is not, we store the accumulator and reset it to the current example.
             # An implicit assumption here is that the examples have not been shuffled,

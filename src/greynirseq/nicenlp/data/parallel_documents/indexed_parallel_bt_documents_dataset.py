@@ -93,7 +93,7 @@ class IndexedParallelBTDocumentsDataset(LanguagePairDataset):
         # - skip: bool, whether to skip this pair
         # we then add two columns for the offsets of the source and target segments
         # those values are "global" offsets, i.e. they are the offsets in the concatenated dataset
-        # so that we can index into the concatenated flat_src and flat_tgt datasets with the source_indices + source_offsets
+        # so that we can index into the concatenated flat_src and flat_tgt datasets with the source indices + offsets
         self.flat_align_parallel = (
             hf_datasets.concatenate_datasets([d.flat_align for d in parallel_datasets], axis=0)  # type: ignore
             .add_column(KEYS.SOURCE_OFFSETS, column=p_all_offsets[:, 0])

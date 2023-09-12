@@ -4,14 +4,11 @@
 
 # flake8: noqa
 
-import json
 import logging
 import os
-from collections import namedtuple
 from pathlib import Path
 
 import numpy as np
-import torch
 from fairseq.data import (
     Dictionary,
     IdDataset,
@@ -20,15 +17,11 @@ from fairseq.data import (
     PrependTokenDataset,
     RightPadDataset,
     SortDataset,
-    TruncateDataset,
     data_utils,
     encoders,
 )
 from fairseq.tasks import FairseqTask, register_task
-from fairseq.tasks.sentence_prediction import SentencePredictionTask
-
-from greynirseq.nicenlp.data.datasets import (
-    DynamicLabelledSpanDataset,
+from greynirseq.nicenlp.data.gs_datasets import (
     LabelledSpanDataset,
     NestedDictionaryDatasetFix,
     NumSpanDataset,
@@ -36,12 +29,7 @@ from greynirseq.nicenlp.data.datasets import (
     ProductSpanDataset,
     WordSpanDataset,
 )
-from greynirseq.nicenlp.utils.label_schema.label_schema import (
-    label_schema_as_dictionary,
-    make_group_masks,
-    make_vec_idx_to_dict_idx,
-    parse_label_schema,
-)
+from greynirseq.nicenlp.utils.label_schema.label_schema import parse_label_schema
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +72,7 @@ class MultiSpanPredictionTask(FairseqTask):
 
         label_dict, label_schema = cls.load_label_dictionary(args, args.nonterm_schema)
         logger.info("[label] dictionary: {} types".format(len(label_dict)))
-        return MultiSpanPredictionTask(args, data_dict, label_dict, is_word_initial, label_schema)
+        return cls(args, data_dict, label_dict, is_word_initial, label_schema)
 
     @classmethod
     def load_label_dictionary(cls, args, filename, **kwargs):

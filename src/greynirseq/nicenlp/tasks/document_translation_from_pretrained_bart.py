@@ -43,9 +43,7 @@ logger = logging.getLogger(__name__)
 class DocumentTranslationFromPretrainedBARTConfig(TranslationFromPretrainedBARTConfig):
     max_sequence_length: int = field(
         default=1000,
-        metadata={
-            "help": "Maximum sequence length to train model on. Some sequences might be longer due to sentence separator tokens."
-        },
+        metadata={"help": "Maximum sequence length to train model on. Should be less than the positional encoding."},
     )
     num_preprocess_workers: int = field(
         default=2,
@@ -94,7 +92,8 @@ Should include the 'train_subset' prefix, i.e. if train_subset='train' then bt_s
     data_language_mappings: str = field(
         default="",
         metadata={
-            "help": "Comma separated list of language mappings from the JSONL language to the language string expected by the model, e.g. 'is:is_IS,en:en_XX'"
+            "help": "Comma separated list of language mappings"
+            " from the JSONL language to the language string expected by the model, e.g. 'is:is_IS,en:en_XX'"
         },
     )
 
