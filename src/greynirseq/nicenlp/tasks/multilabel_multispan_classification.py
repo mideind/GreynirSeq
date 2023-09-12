@@ -21,6 +21,7 @@ from fairseq.data import (
     encoders,
 )
 from fairseq.tasks import FairseqTask, register_task
+
 from greynirseq.nicenlp.data.gs_datasets import (
     LabelledSpanDataset,
     NestedDictionaryDatasetFix,
