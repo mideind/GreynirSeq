@@ -1,3 +1,5 @@
+import random
+
 from ieg import bin_islenska
 
 from .errors import ErrorRule
@@ -9,6 +11,7 @@ class NounCaseErrorRule(ErrorRule):
     """
 
     needs_pos = True
+    CUSTOM_RATIO = 0.5
 
     @classmethod
     def _apply(cls, data):
@@ -45,3 +48,10 @@ class NounCaseErrorRule(ErrorRule):
             if "-" not in tok:
                 return bin_no_result[0].bmynd.replace("-", "")
         return tok
+
+    @classmethod
+    def random_apply(cls, data) -> bool:
+        # lowering the application ratio
+        if random.random() < cls.CUSTOM_RATIO:
+            return super().random_apply(data)
+        return False

@@ -6,14 +6,14 @@ import sys
 from tqdm import tqdm
 
 from .fixed_random import coinflip, exp_len, random, set_random_state
-from .rules import Rules
+from .rules_universal import Rules
 
 TARGET_USE_RATIO = 0.1
 
 CORRUPT_WORDS = 0
 TOTAL_WORDS = 0
 
-ERROR_RATE = 0.5
+ERROR_RATE = 1
 
 
 def should_error(error_rate=ERROR_RATE):

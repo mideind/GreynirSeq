@@ -8,6 +8,8 @@ class NoiseErrorRule(ErrorRule):
     Also applies word substitution from a list of common errors (to be abstracted out).
     """
 
+    needs_pos = False
+
     @staticmethod
     def _apply(data) -> str:
         text = errorify_line(data["text"], word_error_rate=data["args"].word_spelling_error_rate)
