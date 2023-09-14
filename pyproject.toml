@@ -1,6 +1,6 @@
 [project]
 name = "greynirseq"
-version = "0.5"
+version = "0.5.1"
 description = "Natural language processing for Icelandic"
 authors = [{name = "Miðeind ehf", email="tauganet@mideind.is"}]
 classifiers = [
@@ -59,7 +59,7 @@ dev = [
     "flake8>=3.8.4",
     "mypy>=0.812"
     ]
-ner_processing = [
+ner-pipeline = [
     "spacy>=2",
     "pyjarowinkler>=1.8",
     "scipy>=1.5",
