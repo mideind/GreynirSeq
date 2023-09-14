@@ -36,15 +36,12 @@ readme = "README.md"
 # include = ["LICENSE"]
 dependencies = [
     "fairseq>=0.12.2",
-    "nltk>=3.5",
+    "nltk>=3.5",  # parser
     "reynir>=3.5.0",
     "transformers>=4.3.2",
-    "spacy>=2",
-    "pyjarowinkler>=1.8",
-    "scipy>=1.5",
     "sentencepiece>=0.1.96",
-    "langid>=1.1.6",
-    "editdistance>=0.6.0"
+    "langid>=1.1.6",  # filters
+    "editdistance>=0.6.0"  # filters
 ]
 
 [project.scripts]
@@ -62,6 +59,11 @@ dev = [
     "flake8>=3.8.4",
     "mypy>=0.812"
     ]
+ner_processing = [
+    "spacy>=2",
+    "pyjarowinkler>=1.8",
+    "scipy>=1.5",
+]
 
 [tool.black]
 line-length = 120
