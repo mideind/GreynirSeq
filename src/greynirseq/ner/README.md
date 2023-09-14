@@ -2,6 +2,13 @@
 
 In training data for NMT (neural machine translation) systems it is of benefit to have a large and varried corpus. Unfortunately this is not often the case. This submodule implements a pipeline for tagging, filtering, matching and substituing named entities in a parallel English to Icelandic corpus. Currently it only support Persons but it should not be much work to extend this to other label sets.
 
+## Installation
+For local installation, clone the repository and install the package with pip
+
+```bash
+pip install -e .[ner-pipeline]  # extra dependencies for the pipeline
+```
+
 ### Name Tagging
 
 For Icelandic NER the included IceBERT-NER model is used. For english a NER model fine tuned on BERT large from huggingface is used with spacy as fallback (`python -m spacy download en_core_web_lg`) if sentence length is too long for the model to process. Note that this results in downloading of data beyond 1Gb.
