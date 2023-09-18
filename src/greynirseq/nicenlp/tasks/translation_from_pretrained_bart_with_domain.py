@@ -98,6 +98,7 @@ class TranslationFromPretrainedBARTTaskWithDomain(TranslationFromPretrainedBARTT
 
     def __init__(self, cfg, src_dict, tgt_dict):
         super().__init__(cfg, src_dict, tgt_dict)
+        self.args = cfg
         self.langs = cfg.langs.split(",")
         self.load_domains(cfg)
         for dict_ in [src_dict, tgt_dict]:
