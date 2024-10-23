@@ -1,4 +1,7 @@
-[![superlinter](https://github.com/mideind/greynirseq/actions/workflows/superlinter.yml/badge.svg)]() [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![superlinter](https://github.com/mideind/greynirseq/actions/workflows/superlinter.yml/badge.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 ---
 
@@ -10,7 +13,9 @@ GreynirSeq is a natural language parsing toolkit for Icelandic focused on sequen
 
 The modeling part (nicenlp) of GreynirSeq is built on top of the excellent [fairseq](https://github.com/pytorch/fairseq) from Facebook (which is built on top of pytorch).
 
-GreynirSeq is licensed under the MIT license unless otherwise stated at the top of a file. Model files hosted by Miðeind or on Hugging Face are under the GNU AFFERO GPLv3 license unless released elsewhere under CC-BY, e.g. on CLARIN.
+GreynirSeq is licensed under the MIT license unless otherwise stated at the top of a file.
+Model files hosted by Miðeind or on Hugging Face are under the CC-BY-4.0 or the GNU AFFERO GPLv3
+licenses; please see the individual repositories for details.
 
 ---
 
