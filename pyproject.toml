@@ -26,9 +26,6 @@ classifiers = [
     "Topic :: Text Processing :: Linguistic",
 ]
 keywords = ["nlp", "pos", "ner", "icelandic", "translation"]
-license = [
-    {file="LICENSE"},
-]
 requires-python = ">=3.8"
 readme = "README.md"
 dependencies = [
