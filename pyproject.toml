@@ -6,7 +6,7 @@ authors = [{name = "Miðeind ehf", email="tauganet@mideind.is"}]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: Unix",
     "Operating System :: POSIX",
     "Natural Language :: Icelandic",
@@ -26,14 +26,11 @@ classifiers = [
     "Topic :: Text Processing :: Linguistic",
 ]
 keywords = ["nlp", "pos", "ner", "icelandic", "translation"]
-license = {text="AGPLv3+"}
+license = [
+    {file="LICENSE"},
+]
 requires-python = ">=3.8"
 readme = "README.md"
-# These fields are not yet supported by any PEP spec, but were supported by poetry.
-# We might want to add them back in the future.
-# homepage = "https://github.com/mideind/GreynirSeq"
-# repository = "https://github.com/mideind/GreynirSeq"
-# include = ["LICENSE"]
 dependencies = [
     "fairseq>=0.12.2",
     "nltk>=3.5",  # parser
@@ -43,6 +40,10 @@ dependencies = [
     "langid>=1.1.6",  # filters
     "editdistance>=0.6.0"  # filters
 ]
+
+[project.urls]
+Homepage = "https://github.com/mideind/GreynirSeq"
+Repository = "https://github.com/mideind/GreynirSeq"
 
 [project.scripts]
 greynirseq = "greynirseq.cli.greynirseq_main:main"
