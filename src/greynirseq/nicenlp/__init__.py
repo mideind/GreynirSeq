@@ -8,6 +8,7 @@ from greynirseq.nicenlp.criterions import (
 from greynirseq.nicenlp.data import datasets
 from greynirseq.nicenlp.models import multiclass, multilabel, simple_parser
 from greynirseq.nicenlp.tasks import (
+    document_translation_from_pretrained_bart,
     multiclass_token_classification_task,
     multilabel_token_classification_task,
     parser_task,
